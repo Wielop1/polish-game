@@ -70,3 +70,8 @@ Wszystkie liczby (płace, czynsze, stawki podatkowe, ceny) muszą mieć status *
 ## Branże biznesowe (v0.5)
 
 Działalność gospodarczą można prowadzić w profilu branżowym — pierwszy to **usługi remontowo-wykończeniowe**: gracz wybiera specjalizację, kupuje sprzęt, pozyskuje klientów (zapytania zależą od reputacji, reklamy, sezonu i dostępności), wycenia, negocjuje, podpisuje umowy, kupuje materiały, realizuje prace własnymi godzinami (dzielonymi z etatem), rozlicza klientów, obsługuje reklamacje i buduje reputację. Rachunki, podatki, czas i należności pozostają we wspólnym silniku. Ceny i normy branży są parametrami symulacyjnymi.
+
+## Zatrudnianie i delegowanie (v0.6)
+
+Z jednoosobowej działalności można przejść do firmy zatrudniającej ludzi: rekrutacja (ogłoszenie, zgłoszenia, negocjacja), umowy o pracę z kosztami pracodawcy, podwykonawcy B2B, ekipy, pojazdy i równoległe kontrakty. Właściciel może pracować, nadzorować albo delegować całkowicie. Zatrudnienie kosztuje stale (także w czasie bezczynności), więc opłaca się dopiero przy odpowiednim wolumenie zleceń — podwykonawcy dają zmienny koszt przy mniejszym ryzyku bezczynności. Ceny, płace rynkowe i normy są parametrami symulacyjnymi.
+

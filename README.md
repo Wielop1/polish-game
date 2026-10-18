@@ -1,7 +1,7 @@
 # POLSKI TYCOON
 
 Symulator życia i przedsiębiorczości w Polsce — otwarty sandbox ekonomiczny w przeglądarce.
-Stan projektu: **v0.5 (etat + JDG + branża remontowa: zapytania, wyceny, kontrakty, materiały, reputacja, księgowość)** — patrz [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
+Stan projektu: **v0.6 (etat + JDG + branża remontowa, pracownicy, ekipy, podwykonawcy, pojazdy, rentowność)** — patrz [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
 
 ```bash
 npm install

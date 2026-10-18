@@ -14,6 +14,7 @@ import { SavingsScreen } from './screens/SavingsScreen.tsx';
 import { TimeScreen } from './screens/TimeScreen.tsx';
 import { BizCalendarScreen, BizDocsScreen, BizFinanceScreen, BizOrdersScreen, BizOverviewScreen, BizRegisterScreen, BizTaxScreen } from './screens/BusinessScreens.tsx';
 import { BizReportScreen, BizSettlementScreen, PlanningScreen } from './screens/AnnualScreens.tsx';
+import { HrEmployeesScreen, HrRecruitmentScreen, MultiScheduleScreen, ProfitabilityScreen, SubcontractorsScreen, TeamsScreen, VehiclesScreen } from './screens/WorkforceScreens.tsx';
 import { BizAccountingScreen } from './screens/AccountingScreen.tsx';
 import { RenoContractsScreen, RenoDashboardScreen, RenoEnquiriesScreen, RenoQuotesScreen, RenoReputationScreen, RenoScheduleScreen, RenoStockScreen } from './screens/RenovationScreens.tsx';
 import { CharacterScreen } from './screens/CharacterScreen.tsx';
@@ -64,6 +65,8 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { id: 'bizReport', label: 'Podsumowanie roku', icon: 'list' },
       { id: 'planning', label: 'Planowanie', icon: 'trend' },
       { id: 'bizAccounting', label: 'Księgowość', icon: 'file' },
+      { id: 'hrEmployees', label: 'Pracownicy', icon: 'user' },
+      { id: 'hrRecruitment', label: 'Rekrutacja', icon: 'bell' },
       { id: 'bizCalendar', label: 'Kalendarz obowiązków', icon: 'calendar' },
     ],
   },
@@ -77,6 +80,11 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { id: 'renoSchedule', label: 'Harmonogram', icon: 'calendar' },
       { id: 'renoStock', label: 'Magazyn i sprzęt', icon: 'coins' },
       { id: 'renoReputation', label: 'Reputacja i reklamacje', icon: 'heart' },
+      { id: 'opsSubcontractors', label: 'Podwykonawcy', icon: 'file' },
+      { id: 'opsTeams', label: 'Ekipy', icon: 'user' },
+      { id: 'opsSchedule', label: 'Harmonogram wielu kontraktów', icon: 'calendar' },
+      { id: 'opsVehicles', label: 'Pojazdy', icon: 'home' },
+      { id: 'opsProfit', label: 'Rentowność', icon: 'trend' },
     ],
   },
   { title: 'System', items: [{ id: 'game', label: 'Nowa gra / Wczytaj', icon: 'save' }] },
@@ -128,6 +136,13 @@ function renderScreen(screen: Screen) {
     case 'renoSchedule': return <RenoScheduleScreen />;
     case 'renoStock': return <RenoStockScreen />;
     case 'renoReputation': return <RenoReputationScreen />;
+    case 'hrEmployees': return <HrEmployeesScreen />;
+    case 'hrRecruitment': return <HrRecruitmentScreen />;
+    case 'opsSubcontractors': return <SubcontractorsScreen />;
+    case 'opsTeams': return <TeamsScreen />;
+    case 'opsSchedule': return <MultiScheduleScreen />;
+    case 'opsVehicles': return <VehiclesScreen />;
+    case 'opsProfit': return <ProfitabilityScreen />;
     case 'game': return <GameScreen />;
   }
 }
@@ -183,7 +198,7 @@ export function App() {
             </div>
           ))}
         </nav>
-        <p className="text-[11px] leading-relaxed text-slate-500">v0.5 · branża remontowa i księgowość. Symulacja — nie porada prawna ani podatkowa.</p>
+        <p className="text-[11px] leading-relaxed text-slate-500">v0.6 · pracownicy, ekipy i podwykonawcy. Symulacja — nie porada prawna ani podatkowa.</p>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

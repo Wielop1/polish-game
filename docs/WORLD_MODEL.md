@@ -21,6 +21,9 @@
 | **Enterprise** (przedsiębiorstwo) | Działalność gospodarcza (JDG albo spółki): branża, pracownicy, kontrakty, ewidencja. | 🟡 `businesses` — tylko JDG (v0.3): profil/PKD, forma opodatkowania, VAT, reżim ZUS, rachunek firmowy |
 | **ServiceOffer / ServiceOrder** | Oferta i zlecenie usługowe: klient, wartość, godziny, koszty, termin wykonania i płatności, kara za zwłokę. | ✅ `serviceOffers`, `serviceOrders` (v0.3) |
 | **Document** (dokument) | Rekord sprzedaży/kosztu JDG: numer, daty, netto/VAT/brutto, powiązane zobowiązania. Nie jest fakturą KSeF. | ✅ `documents` (v0.3) |
+| **WorkerPerson / Employment / EmployerPayslip** | Pracownik jako osoba (umiejętności, morale, zmęczenie, oczekiwania), jego umowa o pracę u pracodawcy i miesięczne listy płac z kosztami pracodawcy; osoba przeżywa zakończenie umowy. | ✅ `ops.people/employments/payslips` |
+| **Subcontractor / Subcontract** | Firma B2B wykonująca zakres kontraktu za cenę umowną (przedpłata → odbiór → rozliczenie), bez ZUS i płacy etatowej. | ✅ `ops.subcontractors/subcontracts` |
+| **Team / Assignment / Vehicle** | Ekipa z właściciela, pracowników i podwykonawców; rezerwacje zasobów (pracownicy, sprzęt, pojazdy) do kontraktów; pojazdy firmowe jako aktywa. | ✅ `ops.teams/assignments/vehicles` |
 | **TaxPeriod** (rozliczenie miesiąca) | Składki ZUS, zdrowotna, zaliczka PIT, wartości narastające i użyte reguły prawne. | ✅ `taxPeriods` (v0.3) |
 | **Party** (strona zewnętrzna) | Pracodawca, wynajmujący, dostawca, bank, urząd. W v0.1 bierna i zawsze wypłacalna. | ✅ `parties` |
 | **Account** (rachunek) | Rachunek pieniężny należący do podmiotu; saldo = suma wpisów w rejestrze. Typy: bieżący, oszczędnościowy (z zasadami odsetek). | ✅ `accounts` (bieżący + oszczędnościowy, v0.2) |

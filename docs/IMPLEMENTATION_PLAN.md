@@ -46,7 +46,11 @@ Weryfikacja źródeł i wdrożenie pozycji z `FEATURE_EVOLUTION.md` oznaczonych 
 
 Moduł branżowy (interfejs `IndustryModule`) z usługami malowania, gładzi, paneli i drobnych prac: sprzęt, umiejętności, zapytania klientów, wyceny, negocjacje, kontrakty, materiały i zapas, realizacja z etapami, jakość, reklamacje, reputacja; księgowość i biuro rachunkowe; zapis v5. Bez pracowników, spółek, kredytów i nowego backendu.
 
-## v0.6+ — Kredyty, leasing, odsetki (dawniej v0.4/v0.5)
+## v0.6 — Pracownicy, ekipy i rozwój firmy ✅ (zakończona, patrz `PROJECT_STATUS.md`)
+
+Wspólny system pracowników (rekrutacja, umowy o pracę, płace i koszty pracodawcy 2026), podwykonawcy B2B, ekipy z kalendarzem zasobów, równoległe kontrakty, delegowanie, pojazdy firmowe, rentowność i prognoza płynności; korekta zaliczek (zobowiązanie do wykonania usługi); zapis v6. Bez spółek, kredytów, leasingu i kolejnych branż.
+
+## v0.7+ — Kredyty, leasing, odsetki (dawniej v0.4/v0.5/v0.6)
 
 Harmonogramy rat (kapitał + odsetki, w groszach, bez dryfu zaokrągleń), zdolność kredytowa (uproszczona), odsetki za zwłokę, windykacja (poziom 1). Banki jako strony z własną logiką.
 

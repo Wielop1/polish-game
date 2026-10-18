@@ -63,6 +63,7 @@ Brak backendu, bazy zewnętrznej, logowania, płatnych API, generatywnego AI. Pa
 | `business.ts` · `businessCatalog.ts` | JDG: rejestracja, dokumenty (VAT), zlecenia, miesięczne i roczne rozliczenia; profile usługowe z PKD 2025 |
 | `industry.ts` · `industries.ts` · `industryDefaults.ts` | **Interfejs modułów branżowych** (`IndustryModule`: `onRegister`, `processDay`, `gaps`) i rejestr; moduł działa na wspólnym silnikiem (dokumenty, zobowiązania, czas, rachunki) — nie liczy podatków i nie księguje na własną rękę |
 | `renovation.ts` · `renovationCatalog.ts` | Moduł **remontów** (v0.5): zapytania, wyceny, negocjacje, kontrakt (`ServiceOrder kind: renovation` + `RenoJob`), materiały i zapas, sprzęt, realizacja, jakość, reklamacje, reputacja; katalog usług/materiałów/sprzętu (parametry symulacyjne) |
+| `workforce.ts` · `teams.ts` · `subcontractors.ts` · `fleet.ts` · `profitability.ts` · `opsCommon.ts` | **Wspólny silnik firmy (v0.6)**: pracownicy, rekrutacja, umowy, listy płac i koszty pracodawcy; ekipy i kalendarz zasobów (przydziały); podwykonawcy B2B (oferta, przedpłata, odbiór, rozliczenie); pojazdy; rentowność i prognoza płynności; wspólne kontrole gotówki i zakupów |
 | `accounting.ts` | Księgowość: biuro rachunkowe (abonament jako dokument kosztowy, powiadomienia, automatyczny wniosek o zwrot, porównanie form z obliczeń silnika) |
 | `simulate.ts` | naliczenia z reguł, rozliczenia, zmęczenie, `processDay`, `advanceDays`, `advanceToNextMonth` |
 | `schedule.ts` | Reguły dnia, termin płatności, urodziny, **projekcja** przyszłych zdarzeń (kalendarz, „najbliższe płatności”) |
@@ -99,7 +100,7 @@ interface SaveRepository { list(); get(slot); put(slot, json, savedAt, meta); re
 
 - **Magazyn:** IndexedDB (baza `polski-tycoon`, store `saves`, klucz `slot`). Rekord: `{slot, savedAt, meta, json}`. Sloty: `autosave`, `slot-1`, `slot-2`, `slot-3`. Gdy IndexedDB jest niedostępne, store przełącza się na magazyn w pamięci i UI pokazuje ostrzeżenie.
 - **Koperta zapisu (JSON):** `{ format: "polski-tycoon-save", version, savedAt, meta, state }`.
-- **Wersjonowanie:** `SAVE_VERSION = 5` (migracje v1 → … → v5 w `src/persistence/migrations.ts`, ADR-024/031/039/046). Zmiana kształtu `GameState` ⇒ `SAVE_VERSION + 1` + `MIGRATIONS[n]` (stan v n → n+1). Zapis z nowszej wersji jest odrzucany z czytelnym komunikatem.
+- **Wersjonowanie:** `SAVE_VERSION = 6` (migracje v1 → … → v6 w `src/persistence/migrations.ts`, ADR-024/031/039/046/054). Zmiana kształtu `GameState` ⇒ `SAVE_VERSION + 1` + `MIGRATIONS[n]` (stan v n → n+1). Zapis z nowszej wersji jest odrzucany z czytelnym komunikatem.
 - **Walidacja przy wczytaniu** (`parseSave`): poprawny JSON → koperta → migracje → **schemat Zod całego stanu** → **`checkInvariants`**. Dopiero wtedy stan trafia do gry. Błąd = komunikat w UI, bieżąca gra nietknięta.
 - **Walidacja przy zapisie** (`serializeSave`): odmowa zapisu stanu naruszającego niezmienniki.
 - **Autozapis:** po każdym przesunięciu czasu i po starcie nowej gry (asynchroniczny, bez blokowania UI; błąd → komunikat).

@@ -5,6 +5,8 @@ import { commands } from '../engine/commands.ts';
 import type { CommandResult } from '../engine/commands.ts';
 import type { Grosze } from '../engine/money.ts';
 import type { QuoteInput } from '../engine/renovation.ts';
+import type { Offer } from '../engine/workforce.ts';
+import type { TeamMember } from '../engine/teams.ts';
 import { createNewGame, NewGameInputSchema } from '../engine/newGame.ts';
 import type { NewGameInput } from '../engine/newGame.ts';
 import { advanceOneDay, advanceToNextMonth } from '../engine/simulate.ts';
@@ -20,6 +22,7 @@ export type Screen =
   | 'bizRegister' | 'bizOverview' | 'bizOrders' | 'bizFinance' | 'bizTax' | 'bizDocs' | 'bizCalendar'
   | 'bizSettlement' | 'bizReport' | 'planning' | 'bizAccounting'
   | 'renoDashboard' | 'renoEnquiries' | 'renoQuotes' | 'renoContracts' | 'renoSchedule' | 'renoStock' | 'renoReputation'
+  | 'hrEmployees' | 'hrRecruitment' | 'opsSubcontractors' | 'opsTeams' | 'opsSchedule' | 'opsVehicles' | 'opsProfit'
   | 'game';
 
 export interface Notice {
@@ -93,6 +96,23 @@ interface GameStore {
   signContract: (quoteId: string) => boolean;
   terminateJob: (jobId: string) => boolean;
   resolveComplaint: (complaintId: string, action: 'repair' | 'discount' | 'reject') => boolean;
+  publishListing: (input: { role: string; minLevel: number; tier: 'basic' | 'premium' }) => boolean;
+  closeListing: (listingId: string) => boolean;
+  makeOffer: (candidateId: string, offer: Offer) => boolean;
+  rejectCandidate: (candidateId: string) => boolean;
+  giveNotice: (employmentId: string) => boolean;
+  setWage: (employmentId: string, gross: Grosze) => boolean;
+  requestSubOffer: (subId: string, jobId: string, scopeBps: number) => boolean;
+  acceptSubOffer: (subcontractId: string) => boolean;
+  declineSubOffer: (subcontractId: string) => boolean;
+  cancelSubcontract: (subcontractId: string) => boolean;
+  acceptSubWork: (subcontractId: string) => boolean;
+  createTeam: (name: string, members: TeamMember[]) => boolean;
+  updateTeam: (teamId: string, members: TeamMember[]) => boolean;
+  deleteTeam: (teamId: string) => boolean;
+  assignCrew: (jobId: string, teamId: string | null, supervision: 'worker' | 'supervise' | 'hands-off', vehicleId: string | null, ownerHours?: number) => boolean;
+  assignVehicle: (jobId: string, vehicleId: string | null) => boolean;
+  buyVehicle: (catalogId: string) => boolean;
   hireAccountingOffice: (planId: string) => boolean;
   terminateAccountingOffice: () => boolean;
   acceptServiceOffer: (offerId: string, hoursPerDay: number) => boolean;
@@ -219,6 +239,23 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
     terminateJob: (id) => exec((g) => commands.terminateJob(g, id)),
     resolveComplaint: (id, action) => exec((g) => commands.resolveComplaint(g, id, action)),
+    publishListing: (input) => exec((g) => commands.publishListing(g, input)),
+    closeListing: (id) => exec((g) => commands.closeListing(g, id)),
+    makeOffer: (id, offer) => exec((g) => commands.makeOffer(g, id, offer)),
+    rejectCandidate: (id) => exec((g) => commands.rejectCandidate(g, id)),
+    giveNotice: (id) => exec((g) => commands.giveNotice(g, id)),
+    setWage: (id, gross) => exec((g) => commands.setWage(g, id, gross)),
+    requestSubOffer: (subId, jobId, scope) => exec((g) => commands.requestSubOffer(g, subId, jobId, scope)),
+    acceptSubOffer: (id) => exec((g) => commands.acceptSubOffer(g, id)),
+    declineSubOffer: (id) => exec((g) => commands.declineSubOffer(g, id)),
+    cancelSubcontract: (id) => exec((g) => commands.cancelSubcontract(g, id)),
+    acceptSubWork: (id) => exec((g) => commands.acceptSubWork(g, id)),
+    createTeam: (name, members) => exec((g) => commands.createTeam(g, name, members)),
+    updateTeam: (id, members) => exec((g) => commands.updateTeam(g, id, members)),
+    deleteTeam: (id) => exec((g) => commands.deleteTeam(g, id)),
+    assignCrew: (jobId, teamId, supervision, vehicleId, ownerHours) => exec((g) => commands.assignCrew(g, jobId, teamId, supervision, vehicleId, ownerHours)),
+    assignVehicle: (jobId, vehicleId) => exec((g) => commands.assignVehicle(g, jobId, vehicleId)),
+    buyVehicle: (id) => exec((g) => commands.buyVehicle(g, id)),
     hireAccountingOffice: (id) => exec((g) => commands.hireAccountingOffice(g, id)),
     terminateAccountingOffice: () => exec((g) => commands.terminateAccountingOffice(g)),
     acceptServiceOffer: (offerId, hoursPerDay) => exec((g) => commands.acceptServiceOffer(g, offerId, hoursPerDay)),

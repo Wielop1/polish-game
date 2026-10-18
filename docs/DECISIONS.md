@@ -192,3 +192,27 @@ Statusy: *Zaakceptowana* · *Proponowana* (czeka na zatwierdzenie) · *Zastąpio
 ## ADR-046 · SAVE_VERSION 5 i migracja v4 → v5 — *Zaakceptowana*
 **Decyzja:** `migrateV4ToV5` dodaje `part: 'full'` do dokumentów, `kind: 'service'` do zleceń oraz puste `reno` i `accounting`; historia nietknięta. Test na prawdziwym zapisie z v0.4 (`save-v4.json`). Błąd znaleziony przez testy podczas prac: odwrócona kolejność argumentów `diffDays(późniejsza, wcześniejsza)` w pięciu miejscach modułu — naprawiony, objęty testami (wygaszanie opinii, terminowość, czas odpowiedzi).
 
+## ADR-047 · Pracownicy jako element wspólnego silnika: osoba ≠ umowa — *Zaakceptowana* (polecenie właściciela, v0.6)
+**Decyzja:** `GameState.ops` (wspólny silnik, nie moduł branży) przechowuje osoby (`WorkerPerson`: umiejętności jako doświadczenie, oczekiwania, dostępność, morale, zmęczenie, staranność, lojalność), umowy o pracę (`Employment`: stanowisko, brutto, wymiar, start/koniec, historia wynagrodzeń) i listy płac. Osoba przeżywa zakończenie umowy (historia zatrudnienia i wynagrodzeń), więc w przyszłości może zmieniać pracodawców i stanowiska. Branża remontowa tylko *używa* pracowników (umiejętności = identyfikatory usług).
+
+## ADR-048 · Płace i koszty pracodawcy: kalkulator z v0.4 + składki 2026, trzy zobowiązania i jeden dokument kosztowy — *Zaakceptowana*
+**Decyzja:** lista płac używa `computePayroll` (netto, ZUS i PIT pracownika, ulga dla młodych, PIT-2) oraz `employerContributions` (emerytalna 9,76%, rentowa 6,5%, wypadkowa 1,67%, FP 2,45%, FGŚP 0,10%; limit 30-krotności tylko dla emerytalnej i rentowej; FP/FGŚP od progu płacy minimalnej). Koszt = jeden dokument `part: payroll` (koszt podatkowy = brutto + składki pracodawcy), a gotówka = trzy zobowiązania (netto do 10., ZUS i PIT do 20.) — suma równa kosztowi (niezmiennik), brak podwójnego księgowania. Zestawienia firmy i raport roczny liczą przychody i koszty z dokumentów (`taxAmount`), nie z kategorii zobowiązań.
+
+## ADR-049 · Zaliczki: zobowiązanie do wykonania usługi, przychód po wykonaniu; kontrolowana migracja — *Zaakceptowana*
+**Decyzja:** zaliczka od klienta to osobny dokument (`part: advance`, `taxAmount: 0`, zobowiązanie kategorii `zaliczka_klienta`); przychód podatkowy i ekonomiczny powstaje w dokumencie rozliczenia końcowego (`taxAmount` = reszta + zaliczka), VAT od zaliczki w dacie otrzymania (czynny podatnik). Majątek netto odejmuje zaliczki do czasu wykonania usługi (`deferredAdvances`). Zwrot zaliczki po rozwiązaniu umowy likwiduje zobowiązanie (bez kosztu), z korektą VAT jako należnością od US. Zapisy v5 migrują do trybu `advanceMode: legacy` (ich zaksięgowana historia się nie zmienia); nowe kontrakty — `deferred`. Zaliczka dla podwykonawcy to przedpłata (aktywo) rozliczana przy odbiorze pracy. Zasady PIT dla zaliczek nie zostały odczytane w tekście ustawy → SIMPLIFIED (ADV-PIT).
+
+## ADR-050 · Kalendarz zasobów: rezerwacje (przydziały) + dzienny zbiór użycia — *Zaakceptowana*
+**Decyzja:** przydziały (`ops.assignments`) rezerwują pracowników, podwykonawców, sprzęt i pojazdy na okno umowne kontraktu i są częścią zapisu (kalendarze odtwarzają się po wczytaniu). Przy opóźnieniach obowiązuje dodatkowo dzienny zbiór użytych zasobów w kolejności startu kontraktów (pierwszeństwo wcześniejszego), dzięki czemu zasób nie pracuje przy dwóch kontraktach tego samego dnia, a rezerwacji nie trzeba przedłużać. Niezmiennik pilnuje braku nakładania się rezerwacji.
+
+## ADR-051 · Wydajność ekipy: prosty model wąskich gardeł — *Zaakceptowana*
+**Decyzja:** postęp dnia = suma wkładów (godziny × wydajność osoby × szybkość z poziomu i sprzętu × komplet narzędzi 100%/35%), ograniczona liczbą sensownie zatrudnionych osób (1 na 12 godz. normy; nadwyżka 25%), współczynnikiem koordynacji (≤2: 100%, 3: 93%, 4: 88%, ≥5: 84%) i transportu (pojemność pojazdu vs ładunek; bez pojazdu 90% przy ≥ 2 osobach). Materiały wspólne, z priorytetem kontraktów. Ten sam kod liczy wycenę (`assume`) i realizację (`actual`).
+
+## ADR-052 · Delegowanie bez nowych ról zarządczych — *Zaakceptowana*
+**Decyzja:** właściciel może pracować (godziny w budżecie czasu), nadzorować (1 godz. dziennie) albo delegować całkowicie (0 godzin; jakość −4 pkt i większe ryzyko problemów). Nie ma jeszcze kierowników ekip ani menedżerów — zapisane w rejestrze rozwoju.
+
+## ADR-053 · Pojazdy bez reguł podatkowych — *Zaakceptowana* (polecenie właściciela)
+**Decyzja:** zakup pojazdu to dokument `part: capital` (`taxAmount: 0`) i zobowiązanie `zakup_pojazdu`; wartość = cena × stan techniczny (aktywo). Koszty eksploatacji i koszty stałe księgowane miesięcznie jako zwykły dokument kosztowy. Amortyzacja, limity, VAT od pojazdów, leasing i kredyty — odłożone (VEH-TAX-DEFERRED).
+
+## ADR-054 · SAVE_VERSION 6 i migracja v5 → v6 — *Zaakceptowana*
+**Decyzja:** `migrateV5ToV6` dodaje `ops` (z pulą 5 podwykonawców z ziarna gry), pola kontraktów (`crew`, `advanceMode: legacy`, nowe koszty) i oferty (`teamId`, `supervision`, `vehicleId`); historia nietknięta. Test na prawdziwym zapisie z v0.5 (`save-v5.json`). Błędy znalezione przez testy podczas prac: dzielenie zapasu między kontrakty (podwójne liczenie), tytuł zdarzenia > 200 znaków (powiadomienie księgowe), brak rezerwacji czasu dla kontraktów delegowanych (niezmiennik), dokument w całości pokryty zaliczką bez zobowiązania.
+

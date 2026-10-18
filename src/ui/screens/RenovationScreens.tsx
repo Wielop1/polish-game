@@ -14,6 +14,9 @@ import {
 import type { MaterialStandard } from '../../engine/state.ts';
 import { budgetFor } from '../../engine/time.ts';
 import { businessLiquidity } from '../../engine/selectors.ts';
+import { liquidityForecast, teamLoad } from '../../engine/profitability.ts';
+import { activeEmployments, monthlyEmployerCost, wageOn } from '../../engine/workforce.ts';
+import { vehicleDef } from '../../engine/fleet.ts';
 import { useGameStore } from '../../store/gameStore.ts';
 import { ProgressBar } from '../components/charts.tsx';
 import { Badge, Button, Card, Empty, Money, ScreenHeader, StatCard, cx, moneyTone } from '../components/ui.tsx';
@@ -87,6 +90,24 @@ export function RenoDashboardScreen() {
         <StatCard label="Obciążenie harmonogramu" icon="clock" accent={d.scheduleLoadPct > 60 ? 'gold' : 'violet'} value={`${d.scheduleLoadPct}%`} hint="14 dni, względem 8 godz. dziennie" />
         <StatCard label="Kontrakty w toku" icon="briefcase" accent={d.jobsAtRisk ? 'loss' : 'gold'} value={d.activeJobs} hint={d.jobsAtRisk ? `${d.jobsAtRisk} z wysokim ryzykiem` : 'ryzyko opóźnień: niskie'} />
       </div>
+      <Card title="Firma i zespół">
+        {(() => {
+          const emps = activeEmployments(game);
+          const monthly = emps.reduce((a, e) => a + monthlyEmployerCost(wageOn(e, game.clock.today)), 0);
+          const loads = game.ops.teams.map((tm) => teamLoad(game, tm.id).pct);
+          const avgLoad = loads.length ? Math.round(loads.reduce((a, x) => a + x, 0) / loads.length) : 0;
+          const f = liquidityForecast(game, 60);
+          return (
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-5" data-testid="company-panel">
+              <div><div className="text-xs text-slate-400">Pracownicy</div><div className="text-xl font-semibold text-slate-100">{emps.length}</div></div>
+              <div><div className="text-xs text-slate-400">Koszt zatrudnienia / mies.</div><div className="text-xl font-semibold text-slate-100"><Money value={monthly} round /></div></div>
+              <div><div className="text-xs text-slate-400">Aktywne kontrakty</div><div className="text-xl font-semibold text-slate-100">{d.activeJobs}</div></div>
+              <div><div className="text-xs text-slate-400">Obłożenie ekip (14 dni)</div><div className="text-xl font-semibold text-slate-100">{loads.length ? `${avgLoad}%` : '—'}</div></div>
+              <div><div className="text-xs text-slate-400">Prognoza płynności (60 dni)</div><div className={cx('text-xl font-semibold', f.min < 0 ? 'text-loss' : 'text-gain')}><Money value={f.min} round signed /></div><div className="text-xs text-slate-500">najniższe saldo{f.firstShortfall ? ` · brak środków od ${formatDatePL(f.firstShortfall)}` : ''}</div></div>
+            </div>
+          );
+        })()}
+      </Card>
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="Koszty planowane i rzeczywiste (kontrakty w toku)">
           <dl className="divide-y divide-ink-700/60">
@@ -247,6 +268,13 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
             <div><label htmlFor="q-adv" className="mb-1 block text-xs text-slate-400">Zaliczka (% ceny, 0–50)</label><input id="q-adv" className={field} value={q.advanceBps / 100} onChange={(e) => set({ advanceBps: Math.round(num(e.target.value) * 100) })} inputMode="numeric" /></div>
             <div><label htmlFor="q-term" className="mb-1 block text-xs text-slate-400">Termin płatności reszty (dni)</label><input id="q-term" className={field} value={q.paymentTermDays} onChange={(e) => set({ paymentTermDays: num(e.target.value) })} inputMode="numeric" /></div>
           </div>
+          <div className="grid grid-cols-2 gap-3" data-testid="quote-crew">
+            <div><label htmlFor="q-team" className="mb-1 block text-xs text-slate-400">Wykonawcy</label><select id="q-team" className={field} value={q.teamId ?? ''} onChange={(e) => set({ teamId: e.target.value || null })}><option value="">Właściciel samodzielnie</option>{game.ops.teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}</select></div>
+            <div><label htmlFor="q-veh" className="mb-1 block text-xs text-slate-400">Pojazd</label><select id="q-veh" className={field} value={q.vehicleId ?? ''} onChange={(e) => set({ vehicleId: e.target.value || null })}><option value="">bez pojazdu</option>{game.ops.vehicles.map((v) => <option key={v.id} value={v.id}>{vehicleDef(v).label}</option>)}</select></div>
+            {q.teamId && !game.ops.teams.find((tm) => tm.id === q.teamId)?.members.some((m) => m.kind === 'owner') && (
+              <div className="col-span-2"><label htmlFor="q-sup" className="mb-1 block text-xs text-slate-400">Nadzór właściciela</label><select id="q-sup" className={field} value={q.supervision ?? 'supervise'} onChange={(e) => set({ supervision: e.target.value as 'supervise' | 'hands-off' })}><option value="supervise">nadzoruje (1 godz. dziennie)</option><option value="hands-off">pełne delegowanie (bez godzin, większe ryzyko)</option></select></div>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2 text-xs"><span className="self-center text-slate-400">Cena = koszt + narzut:</span>{[1_500, 2_500, 3_500].map((m) => <Button key={m} variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => setMarkup(m)}>{m / 100}%</Button>)}</div>
         </div>
         <div className="space-y-3 text-sm" data-testid="quote-preview">
@@ -358,6 +386,7 @@ export function RenoContractsScreen() {
                       <Row k="Kara za zwłokę" v="2% ceny za rozpoczęty tydzień (max 15%)" />
                       <Row k="Start → termin" v={`${formatDatePL(j.startDate)} → ${formatDatePL(j.deadline)}`} />
                       <Row k="Standard materiałów" v={STANDARDS[j.standard].label} />
+                      <Row k="Wykonawcy" v={j.crew.teamId ? `${game.ops.teams.find((tm) => tm.id === j.crew.teamId)?.name ?? 'ekipa'} (${j.crew.supervision === 'hands-off' ? 'bez nadzoru' : j.crew.supervision === 'supervise' ? 'nadzór właściciela' : 'z właścicielem'})` : 'właściciel samodzielnie'} />
                     </dl>
                     <dl className="divide-y divide-ink-700/60">
                       <Row k="Koszt planowany" v={<Money value={j.planned.total} />} />
