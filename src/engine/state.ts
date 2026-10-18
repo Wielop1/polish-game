@@ -50,7 +50,7 @@ export const AccountSchema = z.object({
   id: IdSchema,
   ownerId: IdSchema,
   name: z.string().min(1).max(80),
-  type: z.enum(['checking', 'savings']),
+  type: z.enum(['checking', 'savings', 'business']),
   currency: z.literal('PLN'),
   balance: GroszeSchema,
   interest: AccountInterestSchema.nullable(),
@@ -190,6 +190,8 @@ export const ObligationSchema = z.object({
   counterpartyId: IdSchema,
   /** Rachunek, z którego/na który ma nastąpić rozliczenie. */
   accountId: IdSchema,
+  /** Ewidencja: prywatna albo działalności gospodarczej (JDG). */
+  scope: z.enum(['personal', 'business']),
   amount: PositiveGroszeSchema,
   issueDate: IsoDateSchema,
   dueDate: IsoDateSchema,
@@ -228,6 +230,12 @@ export const EventTypeSchema = z.enum([
   'savings.interest',
   'life.event',
   'life.decision',
+  'business.registered',
+  'business.closed',
+  'business.order',
+  'business.document',
+  'business.tax',
+  'business.vat',
 ]);
 
 export const GameEventSchema = z.object({
@@ -356,6 +364,135 @@ export const LifeSchema = z.object({
   lifestyle: LifestyleSchema,
 });
 
+/* ---------- Działalność gospodarcza (JDG) — v0.3 ---------- */
+
+export const TaxFormSchema = z.enum(['skala', 'liniowy', 'ryczalt']);
+export const ZusStartSchema = z.enum(['ulga', 'preferencyjny', 'standard']);
+
+/**
+ * JDG: jednoosobowa działalność gospodarcza osoby fizycznej. To NIE jest osoba prawna —
+ * właścicielem rachunku i wszystkich zobowiązań jest osoba gracza (`ownerId`); „firmowy” jest tylko
+ * rachunek i odrębna ewidencja (zobowiązania z `scope: 'business'`).
+ */
+export const BusinessSchema = z.object({
+  id: IdSchema,
+  ownerId: IdSchema,
+  name: z.string().min(1).max(80),
+  profileId: IdSchema,
+  /** Kod PKD 2025 (np. „62.10.B”). */
+  pkd: z.string().min(1).max(20),
+  registeredOn: IsoDateSchema,
+  /** Pierwszy dzień działalności (zawsze 1. dzień miesiąca w v0.3). */
+  startDate: IsoDateSchema,
+  /** Ostatni dzień działalności po złożeniu wniosku o zakończenie (null = działa). */
+  closeOn: IsoDateSchema.nullable(),
+  status: z.enum(['active', 'closed']),
+  taxForm: TaxFormSchema,
+  vat: z.object({
+    status: z.enum(['exempt', 'active']),
+    activeFrom: IsoDateSchema.nullable(),
+    /** Data czynności, która przekroczyła limit zwolnienia (jeśli to była przyczyna utraty zwolnienia). */
+    limitExceededOn: IsoDateSchema.nullable(),
+  }),
+  zus: z.object({
+    start: ZusStartSchema,
+    /** Dobrowolne ubezpieczenie chorobowe. */
+    sickness: z.boolean(),
+  }),
+  accountId: IdSchema,
+});
+
+export const ServiceOfferSchema = z.object({
+  id: IdSchema,
+  templateId: IdSchema,
+  clientId: IdSchema,
+  title: z.string().min(1).max(160),
+  description: z.string().max(400),
+  netValue: PositiveGroszeSchema,
+  hoursTotal: z.number().int().min(1).max(500),
+  costNet: NonNegGroszeSchema,
+  /** Termin płatności z umowy (dni od wystawienia dokumentu). */
+  paymentTermDays: z.number().int().min(0).max(120),
+  /** Termin wykonania: dni od przyjęcia zlecenia. */
+  deadlineDays: z.number().int().min(1).max(180),
+  latePenaltyBps: z.number().int().min(0).max(5_000),
+  offeredOn: IsoDateSchema,
+  expiresOn: IsoDateSchema,
+  status: z.enum(['open', 'accepted', 'declined', 'expired']),
+});
+
+export const ServiceOrderSchema = z.object({
+  id: IdSchema,
+  offerId: IdSchema,
+  clientId: IdSchema,
+  title: z.string().min(1).max(160),
+  netValue: PositiveGroszeSchema,
+  hoursTotal: z.number().int().min(1),
+  /** Postęp w setnych godziny (uwzględnia wydajność). */
+  progressCentiHours: z.number().int().min(0),
+  hoursPerDay: z.number().int().min(1).max(8),
+  costNet: NonNegGroszeSchema,
+  paymentTermDays: z.number().int().min(0).max(120),
+  latePenaltyBps: z.number().int().min(0).max(5_000),
+  acceptedOn: IsoDateSchema,
+  startDate: IsoDateSchema,
+  deadline: IsoDateSchema,
+  status: z.enum(['in_progress', 'completed', 'failed']),
+  completedOn: IsoDateSchema.nullable(),
+  salesDocumentId: IdSchema.nullable(),
+  commitmentId: IdSchema,
+  /** Czy zlecenie zakończono po terminie (kara umowna zmniejszyła wartość). */
+  late: z.boolean(),
+});
+
+/** Rekord sprzedaży/kosztu. UWAGA: to symulacyjny rekord, nie faktura w rozumieniu KSeF. */
+export const DocumentSchema = z.object({
+  id: IdSchema,
+  businessId: IdSchema,
+  kind: z.enum(['sales', 'cost']),
+  number: z.string().min(1).max(40),
+  issueDate: IsoDateSchema,
+  saleDate: IsoDateSchema,
+  counterpartyId: IdSchema,
+  orderId: IdSchema.nullable(),
+  description: z.string().min(1).max(200),
+  net: PositiveGroszeSchema,
+  vatRateBps: z.number().int().min(0).max(10_000),
+  vat: NonNegGroszeSchema,
+  gross: PositiveGroszeSchema,
+  vatTreatment: z.enum(['exempt', 'taxed']),
+  /** Termin płatności z umowy (zapłata kontrahenta może nastąpić później). */
+  termDate: IsoDateSchema,
+  obligationIds: z.array(IdSchema),
+  /** Kwota stanowiąca przychód (sprzedaż) albo koszt uzyskania przychodu (koszt) dla podatku dochodowego. */
+  taxAmount: PositiveGroszeSchema,
+});
+
+/** Miesięczne rozliczenie podatkowo-składkowe JDG (ślad obliczeń dla ekranu „Podatki i ZUS”). */
+export const TaxPeriodSchema = z.object({
+  businessId: IdSchema,
+  /** Miesiąc rozliczeniowy YYYY-MM. */
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  revenue: GroszeSchema,
+  costs: GroszeSchema,
+  zusRegime: z.enum(['ulga', 'preferencyjny', 'standard', 'etat']),
+  /** Składki społeczne (emerytalna, rentowa, chorobowa, wypadkowa, FP/FS) łącznie. */
+  social: NonNegGroszeSchema,
+  health: NonNegGroszeSchema,
+  /** Podstawa składki zdrowotnej (dochód miesiąca poprzedniego albo przychód narastająco — zależnie od formy). */
+  healthBasis: GroszeSchema,
+  cumulativeRevenue: GroszeSchema,
+  cumulativeCosts: GroszeSchema,
+  /** Podstawa opodatkowania narastająco po odliczeniach. */
+  taxBase: GroszeSchema,
+  taxCumulative: NonNegGroszeSchema,
+  advance: NonNegGroszeSchema,
+  advanceSkipped: z.boolean(),
+  /** Reguły prawne użyte w obliczeniu (identyfikatory z LEGAL_SOURCES.md). */
+  ruleIds: z.array(z.string()),
+  carriedForward: z.boolean(),
+});
+
 /* ---------- Stan gry ---------- */
 
 export const GameStateSchema = z.object({
@@ -384,6 +521,12 @@ export const GameStateSchema = z.object({
   commitments: z.array(CommitmentSchema),
   /** Liczniki do deterministycznych identyfikatorów komend (np. przelewów). */
   counters: z.record(z.string(), z.number().int().min(0)),
+  /** JDG gracza (historia, najwyżej jedna aktywna). v0.3. */
+  businesses: z.array(BusinessSchema),
+  serviceOffers: z.array(ServiceOfferSchema),
+  serviceOrders: z.array(ServiceOrderSchema),
+  documents: z.array(DocumentSchema),
+  taxPeriods: z.array(TaxPeriodSchema),
 });
 
 export type Person = z.infer<typeof PersonSchema>;
@@ -405,6 +548,13 @@ export type JobApplication = z.infer<typeof JobApplicationSchema>;
 export type LifeEvent = z.infer<typeof LifeEventSchema>;
 export type Commitment = z.infer<typeof CommitmentSchema>;
 export type Life = z.infer<typeof LifeSchema>;
+export type TaxForm = z.infer<typeof TaxFormSchema>;
+export type ZusStart = z.infer<typeof ZusStartSchema>;
+export type Business = z.infer<typeof BusinessSchema>;
+export type ServiceOffer = z.infer<typeof ServiceOfferSchema>;
+export type ServiceOrder = z.infer<typeof ServiceOrderSchema>;
+export type BusinessDocument = z.infer<typeof DocumentSchema>;
+export type TaxPeriod = z.infer<typeof TaxPeriodSchema>;
 export type LedgerEntry = z.infer<typeof LedgerEntrySchema>;
 export type Obligation = z.infer<typeof ObligationSchema>;
 export type GameEvent = z.infer<typeof GameEventSchema>;

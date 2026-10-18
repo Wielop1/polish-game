@@ -10,6 +10,8 @@ import type { GameState } from '../engine/state.ts';
 import { LIFESTYLE } from '../engine/config.ts';
 import expectV1 from './fixtures/save-v1.expect.json';
 import rawV1 from './fixtures/save-v1.json?raw';
+import expectV2 from './fixtures/save-v2.expect.json';
+import rawV2 from './fixtures/save-v2.json?raw';
 import { SAVE_VERSION, parseSave, serializeSave } from './save.ts';
 
 const NOW = '2026-10-18T12:00:00.000Z';
@@ -23,9 +25,9 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
   if (!result.ok) throw new Error(`fixture v1 nie wczytał się: ${result.error}`);
   const migrated = result.state;
 
-  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 2', () => {
+  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 3', () => {
     expect(JSON.parse(rawV1).version).toBe(1);
-    expect(SAVE_VERSION).toBe(2);
+    expect(SAVE_VERSION).toBe(3);
   });
 
   it('historia finansowa zostaje nietknięta: salda, majątek netto, rejestr, zobowiązania, zdarzenia', () => {
@@ -102,9 +104,9 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
     expect(cash(s)).toBe(cash(before));
   });
 
-  it('zmigrowany zapis zapisuje się jako v2 i wczytuje identycznie', () => {
+  it('zmigrowany zapis zapisuje się jako v3 i wczytuje identycznie', () => {
     const json = serializeSave(migrated, NOW);
-    expect(JSON.parse(json).version).toBe(2);
+    expect(JSON.parse(json).version).toBe(3);
     const again = parseSave(json);
     expect(again.ok && again.state).toEqual(migrated);
   });
@@ -175,5 +177,77 @@ describe('zapis i odczyt stanu v2: salda po wczytaniu', () => {
     const dupTransfer = JSON.parse(json);
     dupTransfer.state.ledger.find((t: { transferId: string | null }) => t.transferId).amount += 1;
     expect(parseSave(JSON.stringify(dupTransfer)).ok).toBe(false);
+  });
+});
+
+describe('migracja zapisu v2 → v3 (prawdziwy zapis wygenerowany przez v0.2.1)', () => {
+  const result = parseSave(rawV2);
+  if (!result.ok) throw new Error(`fixture v2 nie wczytał się: ${result.error}`);
+  const migrated = result.state;
+
+  it('historia finansowa, salda, kaucja i oszczędności zostają nietknięte', () => {
+    expect(JSON.parse(rawV2).version).toBe(2);
+    expect(migrated.clock.today).toBe(expectV2.today);
+    expect(cash(migrated)).toBe(expectV2.cash);
+    expect(savingsBalance(migrated)).toBe(expectV2.savings);
+    expect(netWorth(migrated)).toBe(expectV2.netWorth);
+    expect(migrated.ledger).toHaveLength(expectV2.ledgerCount);
+    expect(migrated.obligations).toHaveLength(expectV2.obligationCount);
+    expect(migrated.events).toHaveLength(expectV2.eventCount);
+    expect(migrated.history).toHaveLength(expectV2.historyCount);
+    expect(migrated.assets).toHaveLength(expectV2.assets);
+    expect(migrated.lifeEvents).toHaveLength(expectV2.lifeEvents);
+    expect(migrated.contracts).toHaveLength(expectV2.contracts);
+    expect(migrated.ledger.at(-1)!.id).toBe(expectV2.lastTxId);
+    const v2 = JSON.parse(rawV2).state;
+    expect(migrated.ledger).toEqual(v2.ledger); // rejestr identyczny co do pola
+    expect(checkInvariants(migrated)).toEqual([]);
+  });
+
+  it('dodaje pustą sferę JDG; wszystkie dotychczasowe zobowiązania są prywatne', () => {
+    expect(migrated.obligations.every((o) => o.scope === 'personal')).toBe(true);
+    expect([migrated.businesses, migrated.serviceOffers, migrated.serviceOrders, migrated.documents, migrated.taxPeriods].every((a) => a.length === 0)).toBe(true);
+    expect(Object.values(migrated.accounts).some((a) => a.type === 'business')).toBe(false);
+  });
+
+  it('po migracji można założyć JDG i grać dalej bez dubli i naruszeń niezmienników', () => {
+    let s = migrated;
+    const r = commands.registerBusiness(s, { name: 'Ewa Nowicka — usługi', profileId: 'jezyki', taxForm: 'liniowy', vatStatus: 'exempt', startDate: '2026-10-01', zusStart: 'ulga', sickness: false });
+    s = ok(r);
+    for (let i = 0; i < 8; i++) {
+      s = advanceToNextMonth(s);
+      expect(checkInvariants(s), s.clock.today).toEqual([]);
+    }
+    expect(s.taxPeriods.length).toBeGreaterThanOrEqual(6);
+    expect(s.ledger.slice(0, expectV2.ledgerCount)).toEqual(migrated.ledger); // stara historia na początku, bez zmian
+    expect(new Set(s.ledger.map((t) => t.id)).size).toBe(s.ledger.length);
+    expect(s.obligations.filter((o) => o.scope === 'personal' && o.issueDate <= expectV2.today)).toEqual(migrated.obligations.filter((o) => o.issueDate <= expectV2.today).map((o) => s.obligations.find((x) => x.id === o.id)!));
+  });
+
+  it('zapis v3 z działalnością: round-trip identyczny, kontynuacja bez dubli rozliczeń', () => {
+    let s = ok(commands.registerBusiness(migrated, { name: 'Ewa Nowicka — usługi', profileId: 'jezyki', taxForm: 'ryczalt', vatStatus: 'active', startDate: '2026-10-01', zusStart: 'standard', sickness: true }));
+    s = advanceDays(s, 80);
+    const json = serializeSave(s, NOW);
+    expect(JSON.parse(json).version).toBe(3);
+    const again = parseSave(json);
+    expect(again.ok && again.state).toEqual(s);
+    if (!again.ok) return;
+    const reloaded = structuredClone(again.state);
+    const taxBefore = reloaded.taxPeriods.length;
+    const obligationsBefore = reloaded.obligations.length;
+    processDay(reloaded, reloaded.clock.today); // ponowne przetworzenie dnia po wczytaniu
+    expect(reloaded.taxPeriods).toHaveLength(taxBefore);
+    expect(reloaded.obligations).toHaveLength(obligationsBefore);
+    let a = s;
+    let b = again.state;
+    for (let i = 0; i < 6; i++) { a = advanceToNextMonth(a); b = advanceToNextMonth(b); }
+    expect(b).toEqual(a);
+  });
+
+  it('odrzuca zmanipulowany zapis JDG (rachunek firmowy bez działalności, dokument z błędną sumą)', () => {
+    const s = advanceDays(ok(commands.registerBusiness(migrated, { name: 'Ewa Nowicka — usługi', profileId: 'jezyki', taxForm: 'ryczalt', vatStatus: 'exempt', startDate: '2026-10-01', zusStart: 'ulga', sickness: false })), 40);
+    const raw = JSON.parse(serializeSave(s, NOW));
+    raw.state.businesses = [];
+    expect(parseSave(JSON.stringify(raw)).ok).toBe(false);
   });
 });

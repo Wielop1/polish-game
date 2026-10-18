@@ -165,5 +165,41 @@ export function checkInvariants(s: GameState): string[] {
     pendingIds.add(p.id);
     if (s.processed[p.id]) fail(`akcja ${p.id} jest już wykonana, a nadal zaplanowana`);
   }
+
+  // 10. JDG (v0.3): jedna aktywna działalność, rachunek firmowy, dokumenty, zlecenia i rozliczenia.
+  const bizAccounts = Object.values(s.accounts).filter((a) => a.type === 'business');
+  const businessById = new Map(s.businesses.map((b) => [b.id, b]));
+  if (s.businesses.filter((b) => b.status === 'active').length > 1) fail('więcej niż jedna aktywna działalność');
+  for (const b of s.businesses) {
+    const acc = s.accounts[b.accountId];
+    if (!acc || acc.type !== 'business') fail(`działalność ${b.id}: brak rachunku firmowego`);
+    else if (acc.ownerId !== b.ownerId || b.ownerId !== s.person.id) fail(`działalność ${b.id}: rachunek firmowy musi należeć do osoby fizycznej (JDG nie jest osobą prawną)`);
+  }
+  for (const acc of bizAccounts) if (!s.businesses.some((b) => b.accountId === acc.id)) fail(`rachunek firmowy ${acc.id} bez działalności`);
+  for (const o of s.obligations) {
+    const isBiz = s.accounts[o.accountId]?.type === 'business';
+    if ((o.scope === 'business') !== isBiz) fail(`zobowiązanie ${o.id}: ewidencja ${o.scope} niezgodna z rachunkiem`);
+  }
+  const docIds = new Set<string>();
+  for (const d of s.documents) {
+    if (docIds.has(d.id)) fail(`zduplikowany dokument ${d.id}`);
+    docIds.add(d.id);
+    if (!businessById.has(d.businessId)) fail(`dokument ${d.number}: nieznana działalność`);
+    if (d.net + d.vat !== d.gross) fail(`dokument ${d.number}: netto + VAT ≠ brutto`);
+    if (d.vatTreatment === 'exempt' && d.vat !== 0) fail(`dokument ${d.number}: zwolnienie z VAT, ale VAT ≠ 0`);
+    if (d.obligationIds.length === 0 || d.obligationIds.some((id) => !oblIds.has(id))) fail(`dokument ${d.number}: brak powiązanych zobowiązań`);
+  }
+  const numbers = s.documents.map((d) => d.number);
+  if (new Set(numbers).size !== numbers.length) fail('zduplikowane numery dokumentów');
+  for (const o of s.serviceOrders) {
+    if (o.status === 'completed' && (!o.salesDocumentId || !docIds.has(o.salesDocumentId))) fail(`zlecenie ${o.id}: zakończone bez dokumentu sprzedaży`);
+    if (o.status === 'in_progress' && !s.commitments.some((c) => c.id === o.commitmentId)) fail(`zlecenie ${o.id}: brak rezerwacji czasu`);
+  }
+  const periodKeys = new Set<string>();
+  for (const p of s.taxPeriods) {
+    const k = `${p.businessId}:${p.month}`;
+    if (periodKeys.has(k)) fail(`zduplikowane rozliczenie miesiąca ${k}`);
+    periodKeys.add(k);
+  }
   return errors;
 }

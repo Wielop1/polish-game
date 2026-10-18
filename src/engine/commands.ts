@@ -1,5 +1,7 @@
 import { LIFESTYLE_LABELS } from './config.ts';
 import { CommandError, logEvent, recordHistory } from './core.ts';
+import { acceptServiceOffer, closeBusiness, declineServiceOffer, registerBusiness } from './business.ts';
+import type { RegisterInput } from './business.ts';
 import { applyForJob, resignFromJob, respondToJobOffer } from './jobs.ts';
 import { resolveLifeEvent } from './lifeEvents.ts';
 import { signLease } from './housing.ts';
@@ -76,4 +78,8 @@ export const commands = {
   setTimePlan: (state: GameState, plan: TimePlan) => runCommand(state, (d) => changeTimePlan(d, plan)),
   transferFunds: (state: GameState, fromId: string, toId: string, amount: Grosze) => runCommand(state, (d) => transferFunds(d, fromId, toId, amount)),
   resolveLifeEvent: (state: GameState, eventId: string, optionId: string) => runCommand(state, (d) => resolveLifeEvent(d, eventId, optionId)),
+  registerBusiness: (state: GameState, input: RegisterInput) => runCommand(state, (d) => registerBusiness(d, input)),
+  closeBusiness: (state: GameState) => runCommand(state, (d) => closeBusiness(d)),
+  acceptServiceOffer: (state: GameState, offerId: string, hoursPerDay: number) => runCommand(state, (d) => acceptServiceOffer(d, offerId, hoursPerDay)),
+  declineServiceOffer: (state: GameState, offerId: string) => runCommand(state, (d) => declineServiceOffer(d, offerId)),
 };

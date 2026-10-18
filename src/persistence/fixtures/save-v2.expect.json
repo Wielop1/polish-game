@@ -1,0 +1,15 @@
+{
+  "seed": "fixture-v2",
+  "today": "2026-09-08",
+  "cash": 810659,
+  "savings": 100872,
+  "netWorth": 1351431,
+  "ledgerCount": 71,
+  "obligationCount": 70,
+  "eventCount": 149,
+  "historyCount": 251,
+  "assets": 1,
+  "lifeEvents": 2,
+  "contracts": 3,
+  "lastTxId": "tx:settle:obl:rule:transport@2026-09-05"
+}

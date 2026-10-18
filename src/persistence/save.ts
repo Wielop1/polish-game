@@ -3,7 +3,7 @@ import { checkInvariants } from '../engine/invariants.ts';
 import { netWorth, playerAccount } from '../engine/selectors.ts';
 import { GameStateSchema } from '../engine/state.ts';
 import type { GameState } from '../engine/state.ts';
-import { migrateV1ToV2 } from './migrations.ts';
+import { migrateV1ToV2, migrateV2ToV3 } from './migrations.ts';
 
 /**
  * Format zapisu gry.
@@ -13,7 +13,7 @@ import { migrateV1ToV2 } from './migrations.ts';
  * starych zapisów nigdy nie wyrzucamy. Zapis z NOWSZEJ wersji niż znana jest odrzucany.
  */
 export const SAVE_FORMAT = 'polski-tycoon-save';
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export const SaveMetaSchema = z.object({
   playerName: z.string(),
@@ -34,6 +34,7 @@ const EnvelopeSchema = z.object({
 /** MIGRATIONS[n] przekształca surowy stan zapisu w wersji n do wersji n+1. */
 export const MIGRATIONS: Record<number, (state: unknown) => unknown> = {
   1: migrateV1ToV2,
+  2: migrateV2ToV3,
 };
 
 export function metaOf(state: GameState): SaveMeta {

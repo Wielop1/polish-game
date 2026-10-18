@@ -1,6 +1,6 @@
 import { LIFESTYLE_QOL, STANDARD_QOL } from './config.ts';
 import { activeLeases, currentLease, employmentStatus } from './contracts.ts';
-import { addMonthsToKey, ageOn, monthKey } from './date.ts';
+import { addDays as addDaysIso, addMonthsToKey, ageOn, monthKey } from './date.ts';
 import type { IsoDate } from './date.ts';
 import type { Grosze } from './money.ts';
 import { NON_FLOW_CATEGORIES } from './categories.ts';
@@ -26,9 +26,14 @@ export function savingsBalance(s: GameState): Grosze {
   return savingsAccount(s)?.balance ?? 0;
 }
 
-/** Suma sald wszystkich rachunków gracza. */
+/** Suma sald rachunków PRYWATNYCH (bieżący + oszczędnościowy; bez rachunku firmowego). */
 export function totalBalance(s: GameState): Grosze {
-  return Object.values(s.accounts).reduce((a, acc) => a + acc.balance, 0);
+  return Object.values(s.accounts).filter((a) => a.type !== 'business').reduce((a, acc) => a + acc.balance, 0);
+}
+
+/** Saldo rachunku firmowego JDG (0, gdy brak). */
+export function businessBalance(s: GameState): Grosze {
+  return Object.values(s.accounts).filter((a) => a.type === 'business').reduce((a, acc) => a + acc.balance, 0);
 }
 
 export function heldDeposits(s: GameState): Grosze {
@@ -40,6 +45,8 @@ export interface NetWorthBreakdown {
   cash: Grosze;
   /** Saldo rachunku oszczędnościowego. */
   savings: Grosze;
+  /** Saldo rachunku firmowego JDG (JDG nie jest osobą prawną — to nadal majątek właściciela). */
+  business: Grosze;
   /** Kaucje zwrotne (aktywa) przechowywane przez wynajmujących. */
   deposits: Grosze;
   /** Otwarte należności gracza (np. naliczona, niewypłacona pensja). */
@@ -65,7 +72,8 @@ export function netWorthBreakdown(s: GameState): NetWorthBreakdown {
   const c = cash(s);
   const sv = savingsBalance(s);
   const dep = heldDeposits(s);
-  return { cash: c, savings: sv, deposits: dep, receivables, payables, netWorth: c + sv + dep + receivables - payables };
+  const biz = businessBalance(s);
+  return { cash: c, savings: sv, business: biz, deposits: dep, receivables, payables, netWorth: c + sv + biz + dep + receivables - payables };
 }
 
 export function netWorth(s: GameState): Grosze {
@@ -117,6 +125,7 @@ export function monthlySummaries(s: GameState): MonthSummary[] {
     });
   }
   for (const o of s.obligations) {
+    if (o.scope === 'business') continue; // JDG ma odrębną ewidencję (businessSummaries)
     const m = map.get(monthKey(o.issueDate));
     if (!m) continue;
     if (o.direction === 'receivable') m.income += o.amount;
@@ -126,7 +135,7 @@ export function monthlySummaries(s: GameState): MonthSummary[] {
     }
   }
   for (const tx of s.ledger) {
-    if (NON_FLOW_CATEGORIES.has(tx.category)) continue;
+    if (NON_FLOW_CATEGORIES.has(tx.category) || s.accounts[tx.accountId]?.type === 'business') continue;
     const m = map.get(monthKey(tx.date));
     if (!m) continue;
     if (tx.amount > 0) m.cashIn += tx.amount;
@@ -208,3 +217,60 @@ export function overlappingLeases(s: GameState): number {
   return activeLeases(s, s.clock.today).length;
 }
 
+
+export interface BusinessMonth {
+  month: string;
+  /** Przychód netto (sprzedaż). */
+  revenue: Grosze;
+  /** Koszty działalności (netto; przy zwolnieniu z VAT — brutto). */
+  costs: Grosze;
+  /** Dochód przed składkami i podatkiem. */
+  income: Grosze;
+  /** Składki ZUS (społeczne + zdrowotna). */
+  zus: Grosze;
+  /** Zaliczki i rozliczenia PIT. */
+  pit: Grosze;
+  /** Wynik po składkach i podatku (memoriałowo). */
+  result: Grosze;
+}
+
+const isZus = (c: string) => c === 'zus_spoleczne' || c === 'zus_zdrowotna';
+
+/** Odrębna ewidencja działalności: miesięczne przychody, koszty, składki, podatek i wynik (VAT jako przepływ przelotowy pominięty). */
+export function businessSummaries(s: GameState): BusinessMonth[] {
+  const map = new Map<string, BusinessMonth>();
+  const get = (mk: string) => {
+    let m = map.get(mk);
+    if (!m) map.set(mk, (m = { month: mk, revenue: 0, costs: 0, income: 0, zus: 0, pit: 0, result: 0 }));
+    return m;
+  };
+  for (const o of s.obligations) {
+    if (o.scope !== 'business') continue;
+    const m = get(monthKey(o.issueDate));
+    if (o.category === 'przychod_dzialalnosci') m.revenue += o.amount;
+    else if (o.category === 'koszt_dzialalnosci') m.costs += o.amount;
+    else if (isZus(o.category)) m.zus += o.amount;
+    else if (o.category === 'pit_zaliczka' || o.category === 'pit_roczny') m.pit += o.amount;
+    else if (o.category === 'pit_zwrot') m.pit -= o.amount;
+  }
+  for (const m of map.values()) {
+    m.income = m.revenue - m.costs;
+    m.result = m.income - m.zus - m.pit;
+  }
+  return [...map.values()].sort((a, b) => a.month.localeCompare(b.month));
+}
+
+/** Płynność firmy: saldo rachunku firmowego, należności i zobowiązania wymagalne w ciągu `days` dni. */
+export function businessLiquidity(s: GameState, days = 30): { balance: Grosze; receivablesDue: Grosze; payablesDue: Grosze; coverage: Grosze } {
+  const acc = Object.values(s.accounts).find((a) => a.type === 'business');
+  const limit = addDaysIso(s.clock.today, days);
+  let receivablesDue = 0;
+  let payablesDue = 0;
+  for (const o of s.obligations) {
+    if (o.scope !== 'business' || o.status !== 'open' || o.dueDate > limit) continue;
+    if (o.direction === 'receivable') receivablesDue += o.amount;
+    else payablesDue += o.amount;
+  }
+  const balance = acc?.balance ?? 0;
+  return { balance, receivablesDue, payablesDue, coverage: balance - payablesDue };
+}

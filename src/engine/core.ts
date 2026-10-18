@@ -89,6 +89,8 @@ export interface ObligationInput {
   direction: 'receivable' | 'payable';
   counterpartyId: string;
   accountId?: string;
+  /** Ewidencja (domyślnie prywatna). */
+  scope?: 'personal' | 'business';
   amount: Grosze;
   issueDate: IsoDate;
   dueDate: IsoDate;
@@ -113,6 +115,7 @@ export function createObligation(s: GameState, input: ObligationInput): Obligati
     debtorId: receivable ? input.counterpartyId : playerId,
     counterpartyId: input.counterpartyId,
     accountId: input.accountId ?? s.playerAccountId,
+    scope: input.scope ?? 'personal',
     amount: input.amount,
     issueDate: input.issueDate,
     dueDate: input.dueDate,

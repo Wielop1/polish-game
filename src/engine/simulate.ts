@@ -4,6 +4,7 @@ import { accountById, createObligation, logEvent, partyName, periodLabel, postTr
 import { formatPLN, mulBps } from './money.ts';
 import type { Grosze } from './money.ts';
 import { createRng } from './rng.ts';
+import { processBusiness } from './business.ts';
 import { rollLifeEvents } from './lifeEvents.ts';
 import { runPendingActions } from './pending.ts';
 import { applySavingsInterest } from './savings.ts';
@@ -180,12 +181,13 @@ function updateFatigue(s: GameState, date: IsoDate): void {
 /**
  * Przetwarza jeden dzień kalendarzowy (mutuje przekazany stan).
  * Kolejność: (1) akcje zaplanowane, (2) naliczenia z harmonogramu, (3) wydarzenia losowe,
- * (4) rozliczenia, (5) zmęczenie, (6) migawka historii.
+ * (4) JDG (oferty, zlecenia, dokumenty, miesięczne rozliczenia), (5) rozliczenia, (6) zmęczenie, (7) migawka historii.
  */
 export function processDay(s: GameState, date: IsoDate): void {
   runPendingActions(s, date);
   applyScheduledOccurrences(s, date);
   rollLifeEvents(s, date);
+  processBusiness(s, date);
   settleDueObligations(s, date);
   updateFatigue(s, date);
   recordHistory(s, date);

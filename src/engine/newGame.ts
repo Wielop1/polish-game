@@ -199,6 +199,11 @@ export function createNewGame(input: NewGameInput): GameState {
     lifeEvents: [],
     commitments: [],
     counters: {},
+    businesses: [],
+    serviceOffers: [],
+    serviceOrders: [],
+    documents: [],
+    taxPeriods: [],
   };
 
   postTransaction(state, {

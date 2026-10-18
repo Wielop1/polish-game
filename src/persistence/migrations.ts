@@ -89,3 +89,19 @@ export function migrateV1ToV2(raw: unknown): unknown {
   s.counters = {};
   return s;
 }
+
+/**
+ * v2 → v3: działalność gospodarcza (JDG). Historia finansowa nietknięta; zobowiązania z v2 są prywatne
+ * (`scope: 'personal'`), a nowe kolekcje JDG są puste — nic nie jest zmyślane.
+ */
+export function migrateV2ToV3(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) throw new Error('Zapis v2 ma nieprawidłową strukturę stanu.');
+  const s = structuredClone(raw) as Json;
+  for (const o of s.obligations as Json[]) o.scope = 'personal';
+  s.businesses = [];
+  s.serviceOffers = [];
+  s.serviceOrders = [];
+  s.documents = [];
+  s.taxPeriods = [];
+  return s;
+}
