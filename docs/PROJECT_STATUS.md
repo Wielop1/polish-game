@@ -22,6 +22,7 @@ Wszystko z v0.1–v0.5 plus:
 - **Rentowność**: koszty przypisane do kontraktów (materiały, praca wg godzin, podwykonawcy, pojazd) oddzielone od kosztów stałych (bezczynność płac, pojazdy, reklama, księgowość, rekrutacja, ZUS właściciela); rentowność ekip vs właściciel; prognoza płynności 60 dni; panel firmy w „Pulpicie firmy”.
 - **Korekta zaliczek**: zaliczka to gotówka i zobowiązanie do wykonania usługi (nie przychód i nie majątek netto do czasu wykonania); przychód podatkowy i ekonomiczny po wykonaniu usługi; VAT od zaliczki w dacie otrzymania; zwrot zaliczki likwiduje zobowiązanie (bez kosztu). Zaliczki dla podwykonawców jako przedpłata. Zapisy v5 zachowują stare ujęcie (`legacy`).
 - **UI**: „Pracownicy”, „Rekrutacja” (sekcja Firma); „Podwykonawcy”, „Ekipy”, „Harmonogram wielu kontraktów”, „Pojazdy”, „Rentowność” (sekcja Remonty); wybór ekipy, nadzoru i pojazdu przy wycenie; panel firmy (pracownicy, koszty zatrudnienia, kontrakty, obłożenie ekip, prognoza płynności).
+- **Powiadomienia w menu (kropki)**: przy pozycji menu (pulpit, panel mobilny, nagłówek grupy i przycisk „Więcej”) świeci złota kropka, gdy w danym ekranie coś czeka: otwarte zapytania, negocjacje/umowy, kontrakt zablokowany, reklamacje, zużyty sprzęt/pojazd, nowi kandydaci, pracownik z niskim morale/zmęczeniem, oferty podwykonawców, zagrożona płynność, zaległe zobowiązania firmy, nowe powiadomienia biura rachunkowego (te gasną po wejściu na ekran; reszta po załatwieniu sprawy). Logika: `src/ui/navAlerts.ts`; tylko widok — nie zmienia stanu ani zapisu.
 - **Prawo**: 77 reguł: 38 VERIFIED, 29 SIMPLIFIED, 10 DEFERRED (13 nowych/zmienionych; patrz `LEGAL_SOURCES.md`).
 - **Zapisy**: migracja v5 → v6 na **prawdziwym zapisie z v0.5**; historia nietknięta; niezmienniki pilnują list płac, zaliczek, przedpłat, przydziałów i pojazdów.
 
@@ -33,14 +34,14 @@ Zweryfikowane w v0.3 (VERIFIED): skala i kwota zmniejszająca, liniowy 19%, limi
 
 Spółki i wspólnicy, zatrudnianie pracowników, branża remontowa, giełda, nieruchomości inwestycyjne, kredyty i leasing, integracje z urzędami i KSeF, backend. **Vercel**: repo przygotowane do importu (`vercel.json`, `npm ci`, build statyczny); projekt Vercel jest tworzony przez właściciela. Pełna lista uproszczeń (po v0.4): `FEATURE_EVOLUTION.md` §14.
 
-## Wykonane testy (2026-10-18)
+## Wykonane testy (2026-10-19)
 
 | Polecenie | Wynik |
 |---|---|
 | `npm run typecheck` | ✅ bez błędów |
-| `npm test` (Vitest) | ✅ **344/344**, w tym 51 testów v0.6: rekrutacja i zatrudnianie (16), podwykonawcy, ekipy, pojazdy, rentowność, zaliczki (27), scenariusz 24 miesięcy i deterministyczność (2) oraz 6 testów migracji v5 → v6 |
+| `npm test` (Vitest) | ✅ **348/348** (w tym 4 testy kropek menu), w tym 51 testów v0.6: rekrutacja i zatrudnianie (16), podwykonawcy, ekipy, pojazdy, rentowność, zaliczki (27), scenariusz 24 miesięcy i deterministyczność (2) oraz 6 testów migracji v5 → v6 |
 | `npm run build` | ✅ JS 861 kB / 255 kB gzip, CSS 45 kB / 7,8 kB gzip |
-| `npm run test:e2e` (Chromium) | ✅ **26/26** (23 wcześniejsze + 3 z v0.6: rekrutacja i zatrudnienie z listą płac, wszystkie nowe ekrany, menu mobilne) |
+| `npm run test:e2e` (Chromium) | ✅ **27/27** (23 wcześniejsze + 3 z v0.6 + 1 kropka menu: rekrutacja i zatrudnienie z listą płac, wszystkie nowe ekrany, menu mobilne) |
 
 Scenariusz 24 miesięcy (`scenario24.test.ts`): reklama, biuro, rekrutacja pracownika i ekipa bez nadzoru właściciela, pojazd, wyceny z ekipą lub samodzielnie, podwykonawcy dla zleceń bez ekipy; niezmienniki co miesiąc; pracownik z ≥ 12 listami płac, ≥ 3 kontrakty ekipy, ≥ 3 rozliczeni podwykonawcy, pojazd użyty, równoległe kontrakty, zaliczki bez przychodu do wykonania usługi, deterministyczność i wznowienie po zapisie.
 Usterki ujawnione przez testy podczas prac (naprawione): wspólny zapas materiałów liczony podwójnie przy równoległych kontraktach; tytuł zdarzenia > 200 znaków (powiadomienie księgowe) odrzucał zapis; niezmiennik wymagał rezerwacji czasu także dla kontraktów delegowanych; dokument w całości pokryty zaliczką podwykonawcy; umowy z podwykonawcą bez wykonanej pracy rozliczane jako „zero”. Zmiany w starszych testach: wersje zapisu (5 → 6), zwrot zaliczki (zobowiązanie zamiast kosztu), drugi egzemplarz sprzętu dozwolony, domeny źródeł urzędowych.

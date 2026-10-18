@@ -60,6 +60,8 @@ interface GameStore {
 
   init: () => Promise<void>;
   navigate: (screen: Screen) => void;
+  /** Data gry ostatniej wizyty na ekranie (do powiadomień „nowe od ostatniej wizyty”). */
+  visited: Record<string, string>;
   dismissNotice: () => void;
   startNewGame: (input: NewGameInput) => FieldErrors | null;
   advanceDay: () => void;
@@ -175,7 +177,8 @@ export const useGameStore = create<GameStore>((set, get) => {
     loadingSaves: true,
 
     init: refreshSaves,
-    navigate: (screen) => set({ screen, notice: null }),
+    visited: {},
+    navigate: (screen) => set((st) => ({ screen, notice: null, visited: { ...st.visited, [screen]: st.game?.clock.today ?? '' } })),
     dismissNotice: () => set({ notice: null }),
 
     startNewGame: (input) => {

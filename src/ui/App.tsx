@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { pendingLifeEvents } from '../engine/lifeEvents.ts';
 import { useGameStore } from '../store/gameStore.ts';
 import type { Screen } from '../store/gameStore.ts';
+import { computeNavAlerts } from './navAlerts.ts';
 import { Icon } from './components/icons.tsx';
 import type { IconName } from './components/icons.tsx';
 import { cx } from './components/ui.tsx';
@@ -152,7 +153,11 @@ export function App() {
   const screen = useGameStore((s) => s.screen);
   const navigate = useGameStore((s) => s.navigate);
   const init = useGameStore((s) => s.init);
+  const visited = useGameStore((s) => s.visited);
   const [menuOpen, setMenuOpen] = useState(false);
+  const alerts = useMemo(() => (game ? computeNavAlerts(game, visited) : {}), [game, visited]);
+  const groupAlert = (g: { items: NavItem[] }) => g.items.some((n) => alerts[n.id]);
+  const totalAlerts = Object.keys(alerts).length;
   const attention = game ? pendingLifeEvents(game).length + game.applications.filter((a) => a.status === 'offered').length : 0;
 
   useEffect(() => {
@@ -176,7 +181,7 @@ export function App() {
         <nav className="mt-6 flex flex-1 flex-col gap-4 overflow-y-auto" aria-label="Główna nawigacja">
           {NAV_GROUPS.map((g) => (
             <div key={g.title}>
-              <div className="mb-1 px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{g.title}</div>
+              <div className="mb-1 flex items-center gap-1.5 px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{g.title}{groupAlert(g) && <span aria-hidden="true" data-testid={`group-dot-${g.title}`} className="size-1.5 rounded-full bg-gold" />}</div>
               <div className="flex flex-col gap-0.5">
                 {g.items.map((n) => (
                   <button
@@ -184,6 +189,7 @@ export function App() {
                     type="button"
                     onClick={() => navigate(n.id)}
                     aria-current={screen === n.id ? 'page' : undefined}
+                    title={alerts[n.id] ? `${n.label}: ${alerts[n.id]!.count} — ${alerts[n.id]!.hint}` : undefined}
                     className={cx(
                       'flex items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition',
                       screen === n.id ? 'bg-ink-700 text-white shadow-inner ring-1 ring-ink-600' : 'text-slate-400 hover:bg-ink-800 hover:text-slate-100',
@@ -191,6 +197,7 @@ export function App() {
                   >
                     <Icon name={n.icon} />
                     <span className="flex-1">{n.label}</span>
+                    {alerts[n.id] && <span aria-hidden="true" data-testid={`nav-dot-${n.id}`} className="size-2.5 shrink-0 rounded-full bg-gold shadow-[0_0_6px] shadow-gold/60" />}
                     {n.id === 'decisions' && attention > 0 && <span data-testid="attention-badge" className="grid min-w-5 place-items-center rounded-full bg-gold px-1.5 text-[11px] font-bold text-ink-950">{attention}</span>}
                   </button>
                 ))}
@@ -215,11 +222,12 @@ export function App() {
           <div className="fixed inset-x-0 bottom-14 z-30 max-h-[70vh] overflow-y-auto border-t border-ink-700 bg-ink-900/98 p-3 backdrop-blur md:hidden" role="dialog" aria-label="Menu">
             {NAV_GROUPS.map((g) => (
               <div key={g.title} className="mb-2">
-                <div className="px-2 pb-1 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{g.title}</div>
+                <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{g.title}{groupAlert(g) && <span aria-hidden="true" className="size-1.5 rounded-full bg-gold" />}</div>
                 <div className="grid grid-cols-2 gap-1">
                   {g.items.map((n) => (
                     <button key={n.id} type="button" onClick={() => { navigate(n.id); setMenuOpen(false); }} className={cx('flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm', screen === n.id ? 'bg-ink-700 text-white' : 'text-slate-300')}>
                       <Icon name={n.icon} className="size-4" />{n.label}
+                      {alerts[n.id] && <span aria-hidden="true" data-testid={`mnav-dot-${n.id}`} className="ml-auto size-2.5 shrink-0 rounded-full bg-gold" />}
                     </button>
                   ))}
                 </div>
@@ -242,8 +250,9 @@ export function App() {
               {n.id === 'decisions' && attention > 0 && <span className="absolute top-1 right-[28%] grid min-w-4 place-items-center rounded-full bg-gold px-1 text-[10px] font-bold text-ink-950">{attention}</span>}
             </button>
           ))}
-          <button type="button" onClick={() => setMenuOpen((o) => !o)} aria-expanded={menuOpen} aria-label="Więcej" className={cx('flex flex-col items-center gap-0.5 py-2.5 text-[10px]', menuOpen ? 'text-gain' : 'text-slate-400')}>
+          <button type="button" onClick={() => setMenuOpen((o) => !o)} aria-expanded={menuOpen} aria-label="Więcej" className={cx('relative flex flex-col items-center gap-0.5 py-2.5 text-[10px]', menuOpen ? 'text-gain' : 'text-slate-400')}>
             <Icon name="menu" className="size-5" />Więcej
+            {totalAlerts > 0 && !menuOpen && <span aria-hidden="true" data-testid="more-dot" className="absolute top-2 right-[30%] size-2.5 rounded-full bg-gold" />}
           </button>
         </nav>
       </div>
