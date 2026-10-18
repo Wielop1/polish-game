@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { activeBusiness, profileOf } from '../../engine/business.ts';
+import { activeBusiness, businessState, profileOf } from '../../engine/business.ts';
 import { addDays, formatDatePL } from '../../engine/date.ts';
 import { formatPLN, zl } from '../../engine/money.ts';
 import {
@@ -157,13 +157,22 @@ export function RenoEnquiriesScreen() {
   const open = game.reno.enquiries.filter((e) => e.status === 'open');
   const history = [...game.reno.enquiries].filter((e) => e.status !== 'open').reverse().slice(0, 8);
   const rate = enquiryRateBps(game, game.clock.today);
+  const stateNow = businessState(biz, game.clock.today);
+  const openCount = game.reno.enquiries.filter((e) => e.status === 'open' || e.status === 'quoted').length;
+  const noEnquiryReason =
+    stateNow === 'suspended' ? 'Działalność jest zawieszona — zapytania nie przychodzą. Wznów ją w „Mojej działalności”.'
+    : stateNow === 'closing' || stateNow === 'closed' ? 'Działalność się kończy — zapytania nie przychodzą.'
+    : stateNow === 'pending' ? `Działalność rozpocznie się ${formatDatePL(biz.startDate)} — wtedy zaczną napływać zapytania.`
+    : game.reno.specializations.length === 0 ? 'Nie masz żadnej specjalizacji — dodaj ją w „Magazyn i sprzęt”.'
+    : openCount >= 6 ? 'Masz już maksymalną liczbę otwartych zapytań i ofert (6) — odpowiedz na część, aby przyjąć nowe.'
+    : null;
   const label = (st: string) => ({ quoted: 'wyceniono', won: 'wygrane', lost: 'przegrane', expired: 'wygasło', declined: 'odrzucone' }[st] ?? st);
   return (
     <div className="space-y-5">
       <ScreenHeader title="Zapytania klientów" subtitle="Klienci indywidualni pytają o usługi z Twoich specjalizacji. Odpowiedz na czas — szybka oferta poprawia ocenę komunikacji." />
       <ParamNote />
       <Card title="Otwarte zapytania">
-        {open.length === 0 ? <Empty>Brak otwartych zapytań. Szansa na nowe zapytanie dziś: {fmtPct(rate.total)} — zależy od reputacji, reklamy, sezonu, dostępności i cen (ekran „Reputacja i reklamacje”).</Empty> : (
+        {open.length === 0 ? <Empty><span data-testid="no-enquiries">Brak otwartych zapytań.</span> {noEnquiryReason ?? <>Szansa na nowe zapytanie dziś: {fmtPct(rate.total)} — zależy od reputacji, reklamy, sezonu, dostępności i cen (ekran „Reputacja i reklamacje”).</>}</Empty> : (
           <ul className="grid gap-3 lg:grid-cols-2" data-testid="enquiries-list">
             {open.map((e) => {
               const def = SERVICE_BY_ID.get(e.serviceId)!;

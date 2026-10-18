@@ -329,6 +329,16 @@ export function BizOverviewScreen() {
 
 /* ---------- 3. Oferty i kontrakty ---------- */
 
+/** Dlaczego nie ma nowych ofert? Wyjaśnienie wynikające ze stanu działalności (null = oferty mogą się pojawiać). */
+export function offersBlockedReason(game: NonNullable<ReturnType<typeof useGameStore.getState>['game']>, biz: Business): string | null {
+  const today = game.clock.today;
+  if (biz.status === 'closed') return 'Działalność jest zakończona — nowe oferty się nie pojawiają.';
+  if (biz.closeOn !== null) return `Działalność jest w trakcie zamykania (ostatni dzień ${formatDatePL(biz.closeOn)}) — nowe oferty się nie pojawiają.`;
+  if (isSuspendedOn(biz, today)) return 'Działalność jest zawieszona — w tym czasie nie ma nowych ofert. Wznów ją w „Mojej działalności”.';
+  if (profileOf(biz).industry === 'renovation') return 'Ta działalność jest w branży remontowej: zamiast szablonowych ofert klienci wysyłają zapytania — zobacz Remonty → Zapytania klientów.';
+  return null;
+}
+
 export function BizOrdersScreen() {
   const { game, biz } = useBusiness();
   const accept = useGameStore((s) => s.acceptServiceOffer);
@@ -358,6 +368,16 @@ export function BizOrdersScreen() {
         </div>
       </Card>
 
+      {(() => {
+        const reason = offersBlockedReason(game, biz);
+        const navigate = useGameStore.getState().navigate;
+        return reason ? (
+          <div role="status" data-testid="offers-status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gold/40 bg-gold/10 p-3 text-sm text-gold">
+            <span>{reason}</span>
+            {profileOf(biz).industry === 'renovation' && <Button variant="secondary" onClick={() => navigate('renoEnquiries')}>Przejdź do zapytań</Button>}
+          </div>
+        ) : null;
+      })()}
       <Card title={`Dostępne oferty (${open.length})`}>
         {!started ? <Empty>Oferty pojawią się po starcie działalności ({formatDatePL(biz.startDate)}).</Empty> : open.length === 0 ? <Empty>Brak ofert. Nowe pojawiają się 1. i 16. dnia miesiąca (nie zawsze).</Empty> : (
           <div className="grid gap-3 lg:grid-cols-2" data-testid="offers-list">

@@ -71,6 +71,10 @@ test('remonty: wszystkie ekrany branży i księgowość renderują się; biuro r
     await nav(page, name);
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   }
+  await nav(page, 'Oferty i kontrakty');
+  await expect(page.getByTestId('offers-status')).toContainText('branży remontowej');
+  await page.getByTestId('offers-status').getByRole('button', { name: 'Przejdź do zapytań' }).click();
+  await expect(page.getByRole('heading', { name: 'Zapytania klientów' })).toBeVisible();
   await nav(page, 'Reputacja i reklamacje');
   await expect(page.getByTestId('reno-reputation')).toContainText('3,5★');
   await nav(page, 'Księgowość');
