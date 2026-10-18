@@ -195,6 +195,59 @@ export function checkInvariants(s: GameState): string[] {
     if (o.status === 'completed' && (!o.salesDocumentId || !docIds.has(o.salesDocumentId))) fail(`zlecenie ${o.id}: zakończone bez dokumentu sprzedaży`);
     if (o.status === 'in_progress' && !s.commitments.some((c) => c.id === o.commitmentId)) fail(`zlecenie ${o.id}: brak rezerwacji czasu`);
   }
+  // 11. v0.4: odcinki płacowe, zeznania roczne, straty, roczna składka zdrowotna, zawieszenia, historia formy.
+  const oblById = new Map(s.obligations.map((o) => [o.id, o]));
+  const payslipIds = new Set<string>();
+  const pensionByYear: Record<string, number> = {};
+  const exemptByYear: Record<string, number> = {};
+  for (const p of s.payslips) {
+    if (payslipIds.has(p.id)) fail(`zduplikowany odcinek płacowy ${p.id}`);
+    payslipIds.add(p.id);
+    if (p.emerytalna + p.rentowa + p.chorobowa !== p.socialTotal) fail(`odcinek ${p.id}: składki nie sumują się`);
+    if (!p.legacy && p.gross - p.socialTotal - p.health - p.pitAdvance !== p.net) fail(`odcinek ${p.id}: brutto − składki − zdrowotna − zaliczka ≠ netto`);
+    const ob = oblById.get(`obl:${p.id.replace(/^payslip:/, '')}`);
+    if (!ob) fail(`odcinek ${p.id}: brak zobowiązania wynagrodzenia`);
+    else if (ob.amount !== p.net) fail(`odcinek ${p.id}: netto ${p.net} ≠ zobowiązanie ${ob.amount}`);
+    if (p.pitAdvance % 100 !== 0 || p.pitBase % 100 !== 0) fail(`odcinek ${p.id}: podstawa i zaliczka PIT muszą być w pełnych złotych`);
+    pensionByYear[p.accrualDate.slice(0, 4)] = (pensionByYear[p.accrualDate.slice(0, 4)] ?? 0) + p.pensionBase;
+    exemptByYear[p.payDate.slice(0, 4)] = (exemptByYear[p.payDate.slice(0, 4)] ?? 0) + p.exemptGross;
+  }
+  for (const [y, v] of Object.entries(pensionByYear)) if (v > 28_260_000) fail(`rok ${y}: podstawa emerytalna ${v} przekracza limit 30-krotności`);
+  for (const [y, v] of Object.entries(exemptByYear)) if (v > 8_552_800) fail(`rok ${y}: zwolniony przychód ${v} przekracza limit ulgi dla młodych`);
+  const returnIds = new Set<string>();
+  for (const r of s.taxReturns) {
+    if (returnIds.has(r.id)) fail(`zduplikowane zeznanie ${r.id}`);
+    returnIds.add(r.id);
+    if (r.balance !== r.tax - r.advances) fail(`zeznanie ${r.id}: saldo ≠ podatek − zaliczki`);
+    if (r.base % 100 !== 0 || r.tax % 100 !== 0) fail(`zeznanie ${r.id}: podstawa i podatek w pełnych złotych`);
+    if ((r.balance !== 0) !== (r.obligationId !== null)) fail(`zeznanie ${r.id}: zobowiązanie niezgodne z saldem`);
+    if (r.obligationId && !oblIds.has(r.obligationId)) fail(`zeznanie ${r.id}: brak zobowiązania`);
+  }
+  for (const l of s.taxLosses) {
+    const years = new Set<number>();
+    let used = 0;
+    for (const u of l.usages) {
+      used += u.amount;
+      if (years.has(u.year)) fail(`strata ${l.id}: dwa odliczenia w ${u.year}`);
+      years.add(u.year);
+      if (u.year <= l.year || u.year > l.year + 5) fail(`strata ${l.id}: odliczenie poza 5 latami (${u.year})`);
+      if (u.amount * 2 > l.amount + 1) fail(`strata ${l.id}: odliczenie ${u.amount} przekracza 50% straty`);
+    }
+    if (used > l.amount) fail(`strata ${l.id}: odliczono więcej niż strata`);
+  }
+  for (const h of s.healthSettlements) {
+    if (h.diff !== h.annualContribution - h.monthlyTotal) fail(`rozliczenie zdrowotnej ${h.id}: różnica niezgodna`);
+    if (h.obligationId && !oblIds.has(h.obligationId)) fail(`rozliczenie zdrowotnej ${h.id}: brak zobowiązania`);
+  }
+  for (const b of s.businesses) {
+    let prevTo = '';
+    for (const x of b.suspensions) {
+      if (x.from < prevTo || (x.to !== null && x.to < x.from)) fail(`działalność ${b.id}: nieprawidłowe zawieszenie ${x.from}–${x.to}`);
+      prevTo = x.to ?? '9999-12-31';
+    }
+    if (b.taxFormHistory[0]?.from !== b.startDate) fail(`działalność ${b.id}: historia form nie zaczyna się od startu`);
+    for (let i = 1; i < b.taxFormHistory.length; i++) if (b.taxFormHistory[i]!.from <= b.taxFormHistory[i - 1]!.from) fail(`działalność ${b.id}: historia form nie jest rosnąca`);
+  }
   const periodKeys = new Set<string>();
   for (const p of s.taxPeriods) {
     const k = `${p.businessId}:${p.month}`;

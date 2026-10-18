@@ -12,6 +12,8 @@ import expectV1 from './fixtures/save-v1.expect.json';
 import rawV1 from './fixtures/save-v1.json?raw';
 import expectV2 from './fixtures/save-v2.expect.json';
 import rawV2 from './fixtures/save-v2.json?raw';
+import expectV3 from './fixtures/save-v3.expect.json';
+import rawV3 from './fixtures/save-v3.json?raw';
 import { SAVE_VERSION, parseSave, serializeSave } from './save.ts';
 
 const NOW = '2026-10-18T12:00:00.000Z';
@@ -249,5 +251,90 @@ describe('migracja zapisu v2 → v3 (prawdziwy zapis wygenerowany przez v0.2.1)'
     const raw = JSON.parse(serializeSave(s, NOW));
     raw.state.businesses = [];
     expect(parseSave(JSON.stringify(raw)).ok).toBe(false);
+  });
+});
+
+describe('migracja zapisu v3 → v4 (prawdziwy zapis wygenerowany przez v0.3, z JDG)', () => {
+  const result = parseSave(rawV3);
+  if (!result.ok) throw new Error(`fixture v3 nie wczytał się: ${result.error}`);
+  const migrated = result.state;
+  const old = JSON.parse(rawV3).state;
+
+  it('historia finansowa, salda i rozliczenia JDG zostają nietknięte (bez ponownego księgowania)', () => {
+    expect(JSON.parse(rawV3).version).toBe(3);
+    expect(migrated.clock.today).toBe(expectV3.today);
+    expect(cash(migrated)).toBe(expectV3.cash);
+    expect(netWorth(migrated)).toBe(expectV3.netWorth);
+    expect(migrated.ledger).toHaveLength(expectV3.ledgerCount);
+    expect(migrated.ledger).toEqual(old.ledger);
+    expect(migrated.obligations).toEqual(old.obligations);
+    expect(migrated.documents).toEqual(old.documents);
+    expect(migrated.events).toEqual(old.events);
+    expect(migrated.taxPeriods).toHaveLength(expectV3.taxPeriods);
+    expect(migrated.taxPeriods.map((p) => ({ ...p, form: undefined }))).toEqual(old.taxPeriods.map((p: object) => ({ ...p, form: undefined })));
+    expect(checkInvariants(migrated)).toEqual([]);
+  });
+
+  it('dodaje nowe kolekcje puste i historię formy; odcinki płacowe dopiero od dnia po migracji', () => {
+    expect([migrated.payslips, migrated.taxReturns, migrated.taxLosses, migrated.healthSettlements].every((a) => a.length === 0)).toBe(true);
+    const b = migrated.businesses[0]!;
+    expect(b).toMatchObject({ suspensions: [], taxFormPlan: null });
+    expect(b.taxFormHistory).toEqual([{ form: expectV3.taxForm, from: b.startDate }]);
+    expect(b.zus.malyPlus.active).toBe(false);
+    expect(migrated.taxPeriods.every((p) => p.form === expectV3.taxForm)).toBe(true);
+    expect(migrated.settings.payrollFrom > migrated.clock.today).toBe(true);
+  });
+
+  it('wynagrodzenia sprzed migracji zachowują faktyczną kwotę netto, nowe liczą się kalkulatorem', () => {
+    let s = migrated;
+    const paidBefore = s.ledger.filter((t) => t.category === 'wynagrodzenie').map((t) => t.amount);
+    expect(paidBefore[0]).toBe(expectV3.firstSalaryAmount);
+    s = advanceDays(s, 120);
+    expect(s.ledger.filter((t) => t.category === 'wynagrodzenie').slice(0, paidBefore.length).map((t) => t.amount)).toEqual(paidBefore);
+    expect(s.payslips.length).toBeGreaterThan(0);
+    expect(checkInvariants(s)).toEqual([]);
+    expect(new Set(s.ledger.map((t) => t.id)).size).toBe(s.ledger.length);
+  });
+
+  it('po migracji działają nowe funkcje: zawieszenie, zmiana formy, rozliczenie roczne — bez dubli i zmian historii', () => {
+    let s = ok(commands.planTaxFormChange(migrated, expectV3.taxForm === 'skala' ? 'liniowy' : 'skala'));
+    s = ok(commands.suspendBusiness(s));
+    for (let i = 0; i < 18; i++) {
+      s = advanceToNextMonth(s);
+      expect(checkInvariants(s), s.clock.today).toEqual([]);
+    }
+    expect(s.taxReturns.length).toBeGreaterThan(0);
+    expect(s.ledger.slice(0, expectV3.ledgerCount)).toEqual(migrated.ledger);
+    expect(s.taxPeriods.slice(0, expectV3.taxPeriods)).toEqual(migrated.taxPeriods);
+    expect(new Set(s.obligations.map((o) => o.id)).size).toBe(s.obligations.length);
+  });
+
+  it('zapis v4: round-trip identyczny, ponowne przetworzenie dnia nic nie dubluje', () => {
+    const s = advanceDays(migrated, 200);
+    const json = serializeSave(s, NOW);
+    expect(JSON.parse(json).version).toBe(SAVE_VERSION);
+    const again = parseSave(json);
+    expect(again.ok && again.state).toEqual(s);
+    if (!again.ok) return;
+    const r = structuredClone(again.state);
+    const counts = [r.ledger.length, r.obligations.length, r.payslips.length, r.taxPeriods.length, r.taxReturns.length];
+    processDay(r, r.clock.today);
+    expect([r.ledger.length, r.obligations.length, r.payslips.length, r.taxPeriods.length, r.taxReturns.length]).toEqual(counts);
+  });
+
+  it('łańcuch v1 → v4 i v2 → v4 daje spójne zapisy; zmanipulowany rozliczony PIT jest odrzucany', () => {
+    for (const raw of [rawV1, rawV2]) {
+      const p = parseSave(raw);
+      expect(p.ok).toBe(true);
+      if (p.ok) {
+        expect(p.state.payslips).toEqual([]);
+        expect(checkInvariants(advanceDays(p.state, 400))).toEqual([]);
+      }
+    }
+    const s = advanceDays(migrated, 400);
+    const bad = JSON.parse(serializeSave(s, NOW));
+    expect(bad.state.taxReturns.length).toBeGreaterThan(0);
+    bad.state.taxReturns[0].balance += 100;
+    expect(parseSave(JSON.stringify(bad)).ok).toBe(false);
   });
 });

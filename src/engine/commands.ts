@@ -1,13 +1,14 @@
 import { LIFESTYLE_LABELS } from './config.ts';
 import { CommandError, logEvent, recordHistory } from './core.ts';
-import { acceptServiceOffer, closeBusiness, declineServiceOffer, registerBusiness } from './business.ts';
+import { claimHealthRefund } from './annual.ts';
+import { acceptServiceOffer, closeBusiness, declareMalyZusPlus, declineServiceOffer, planTaxFormChange, registerBusiness, resignMalyZusPlus, resumeBusiness, suspendBusiness } from './business.ts';
 import type { RegisterInput } from './business.ts';
 import { applyForJob, resignFromJob, respondToJobOffer } from './jobs.ts';
 import { resolveLifeEvent } from './lifeEvents.ts';
 import { signLease } from './housing.ts';
 import { transferFunds } from './savings.ts';
 import type { Grosze } from './money.ts';
-import type { GameState, Lifestyle } from './state.ts';
+import type { GameState, Lifestyle, TaxForm } from './state.ts';
 import { LifestyleSchema } from './state.ts';
 import { validatePlan } from './time.ts';
 import type { TimePlan } from './time.ts';
@@ -82,4 +83,10 @@ export const commands = {
   closeBusiness: (state: GameState) => runCommand(state, (d) => closeBusiness(d)),
   acceptServiceOffer: (state: GameState, offerId: string, hoursPerDay: number) => runCommand(state, (d) => acceptServiceOffer(d, offerId, hoursPerDay)),
   declineServiceOffer: (state: GameState, offerId: string) => runCommand(state, (d) => declineServiceOffer(d, offerId)),
+  suspendBusiness: (state: GameState) => runCommand(state, (d) => suspendBusiness(d)),
+  resumeBusiness: (state: GameState, resumeDate: string) => runCommand(state, (d) => resumeBusiness(d, resumeDate)),
+  planTaxFormChange: (state: GameState, form: TaxForm) => runCommand(state, (d) => planTaxFormChange(d, form)),
+  declareMalyZusPlus: (state: GameState) => runCommand(state, (d) => declareMalyZusPlus(d)),
+  resignMalyZusPlus: (state: GameState) => runCommand(state, (d) => resignMalyZusPlus(d)),
+  claimHealthRefund: (state: GameState, settlementId: string) => runCommand(state, (d) => claimHealthRefund(d, settlementId)),
 };
