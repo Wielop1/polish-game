@@ -70,7 +70,7 @@ function NewGameForm() {
         </Field>
 
         <div className="rounded-xl border border-gold/30 bg-gold/5 p-3 text-xs leading-relaxed text-gold/90">
-          Start: etat ({formatPLN(ECONOMY_V01.netSalary, { round: true })} netto/mies.) i wynajem mieszkania ({formatPLN(ECONOMY_V01.monthlyRent, { round: true })}/mies.). {PLACEHOLDER_NOTICE}
+          Start: etat ({formatPLN(ECONOMY_V01.grossSalary, { round: true })} brutto/mies.) i wynajem mieszkania ({formatPLN(ECONOMY_V01.monthlyRent, { round: true })}/mies.). {PLACEHOLDER_NOTICE}
         </div>
 
         <Button type="submit" variant="primary" className="w-full py-3 text-base" data-testid="start-game">Rozpocznij grę</Button>

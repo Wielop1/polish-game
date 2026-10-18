@@ -1,9 +1,8 @@
-import { NET_ESTIMATE_BPS } from './config.ts';
 import { PROFILE_BY_ID } from './businessCatalog.ts';
 import type { BusinessProfile } from './businessCatalog.ts';
 import { CommandError, createObligation, ensureParty, logEvent, nextCounter, partyName } from './core.ts';
 import { currentEmployment, employmentContracts } from './contracts.ts';
-import { addDays, addMonths, daysInMonth, dateInMonth, firstOfNextMonth, formatDatePL, isValidIsoDate, monthKey, monthKeyToYm, parseIso, addMonthsToKey } from './date.ts';
+import { addDays, addMonths, addMonthsToKey, dateInMonth, daysInMonth, diffDays, firstOfNextMonth, formatDatePL, isValidIsoDate, monthKey, monthKeyToYm, parseIso } from './date.ts';
 import type { IsoDate } from './date.ts';
 import { RULES_2026 as R, carriedForward } from './legal.ts';
 import { formatPLN, mulBps, roundDiv, zl } from './money.ts';
@@ -11,7 +10,8 @@ import type { Grosze } from './money.ts';
 import { createRng } from './rng.ts';
 import { periodLabel } from './core.ts';
 import type { Business, BusinessDocument, GameState, ServiceOffer, ServiceOrder, TaxForm, TaxPeriod, ZusStart } from './state.ts';
-import { healthFromIncome, healthRyczalt, monthsBetween, pitCumulative, socialForRegime, vatExemptionLimit, vatOf, zusRegimeFor } from './tax.ts';
+import { grossOf } from './payroll.ts';
+import { healthFromIncome, healthRyczalt, monthsBetween, pitCumulative, socialContributions, socialForRegime, vatExemptionLimit, vatOf, zusRegimeFor } from './tax.ts';
 import type { ZusRegime } from './tax.ts';
 import { firstOverload, performanceBps } from './time.ts';
 
@@ -20,6 +20,7 @@ export const MIN_BUSINESS_START = '2026-02-01';
 const SOCIAL = 'zus_spoleczne';
 const HEALTH = 'zus_zdrowotna';
 export const US_PARTY = 'party:us';
+export const MZP_MIN_BASE = R.zusBasePreferential;
 export const ZUS_PARTY = 'party:zus';
 
 export const BUSINESS_CATEGORIES = {
@@ -43,6 +44,26 @@ export const VAT_PASS_THROUGH: ReadonlySet<string> = new Set(['vat_nalezny', 'va
 
 export function activeBusiness(s: GameState): Business | null {
   return s.businesses.find((b) => b.status === 'active') ?? null;
+}
+
+/** Forma opodatkowania obowiązująca w danym dniu (historia zmian). */
+export function formOn(b: Business, date: IsoDate): TaxForm {
+  let form = b.taxFormHistory[0]?.form ?? b.taxForm;
+  for (const h of b.taxFormHistory) if (h.from <= date) form = h.form;
+  return form;
+}
+
+export function isSuspendedOn(b: Business, date: IsoDate): boolean {
+  return b.suspensions.some((x) => x.from <= date && (x.to === null || date <= x.to));
+}
+
+export type BusinessState = 'pending' | 'active' | 'suspended' | 'closing' | 'closed';
+
+export function businessState(b: Business, date: IsoDate): BusinessState {
+  if (b.status === 'closed') return 'closed';
+  if (date < b.startDate) return 'pending';
+  if (isSuspendedOn(b, date)) return 'suspended';
+  return b.closeOn !== null ? 'closing' : 'active';
 }
 
 export function profileOf(b: Business): BusinessProfile {
@@ -75,8 +96,7 @@ function hasEmploymentInYear(s: GameState, year: number): boolean {
 /** Brutto z etatu (dla zapisów v1 bez brutto — szacunek odwrotny do netto 73%). */
 function employmentGross(s: GameState, date: IsoDate): Grosze {
   const c = currentEmployment(s, date);
-  if (!c) return 0;
-  return c.grossMonthly ?? roundDiv(c.monthlyAmount * 10_000, NET_ESTIMATE_BPS);
+  return c ? grossOf(c) : 0;
 }
 
 /** Czy można skorzystać z ulgi na start i składek preferencyjnych (brak działalności w ostatnich 60 miesiącach). */
@@ -220,7 +240,8 @@ export function registerBusiness(s: GameState, i: RegisterInput): string {
     id, ownerId: s.person.id, name: i.name.trim(), profileId: i.profileId, pkd: profile.pkd, registeredOn: s.clock.today,
     startDate: i.startDate, closeOn: null, status: 'active', taxForm: i.taxForm,
     vat: { status: i.vatStatus, activeFrom: i.vatStatus === 'active' ? i.startDate : null, limitExceededOn: null },
-    zus: { start: i.zusStart, sickness: i.sickness }, accountId,
+    zus: { start: i.zusStart, sickness: i.sickness, malyPlus: { active: false, base: null, since: null, baseYear: null } }, accountId,
+    suspensions: [], taxFormPlan: null, taxFormHistory: [{ form: i.taxForm, from: i.startDate }],
   };
   s.businesses.push(b);
   logEvent(s, {
@@ -281,6 +302,7 @@ export function closeBusiness(s: GameState): string {
   if (s.serviceOrders.some((o) => o.status === 'in_progress')) throw new CommandError('Najpierw zakończ trwające zlecenia.');
   const { year, month } = parseIso(s.clock.today);
   b.closeOn = dateInMonth(year, month, 'last');
+  b.suspensions = b.suspensions.filter((x) => x.from <= s.clock.today); // zaplanowane zawieszenie traci sens
   for (const o of s.serviceOffers) if (o.status === 'open') o.status = 'expired';
   return `Wniosek o zakończenie działalności złożony. Ostatni dzień działalności: ${formatDatePL(b.closeOn)}. Ostatnie zaliczki i składki zapłacisz do 20. dnia następnego miesiąca, zeznanie roczne rozliczy podatek.`;
 }
@@ -296,6 +318,7 @@ export function acceptServiceOffer(s: GameState, offerId: string, hoursPerDay: n
   if (today > offer.expiresOn) throw new CommandError('Oferta wygasła.');
   if (today < b.startDate) throw new CommandError('Działalność jeszcze się nie rozpoczęła.');
   if (b.closeOn !== null) throw new CommandError('Działalność jest w trakcie zamykania.');
+  if (isSuspendedOn(b, today) || b.suspensions.some((x) => x.from > today)) throw new CommandError('Działalność jest zawieszona lub zawieszenie jest zaplanowane — nie można przyjmować nowych zleceń. Wznów działalność.');
   if (!Number.isInteger(hoursPerDay) || hoursPerDay < 1 || hoursPerDay > 8) throw new CommandError('Godziny dziennie: od 1 do 8.');
   // usługi dla (byłego) pracodawcy zagrażają ulgom i formom — blokada zamiast modelowania utraty praw
   const employers = new Set(employmentContracts(s).map((c) => c.partyId));
@@ -394,29 +417,194 @@ function manageOffers(s: GameState, b: Business, date: IsoDate): void {
   s.serviceOffers.push(offer);
 }
 
-/* ---------- Rozliczenia miesięczne i roczne ---------- */
+/* ---------- Zawieszenie i wznowienie ---------- */
 
-function annualSettlement(s: GameState, b: Business, year: number, taxTotal: Grosze, advancesIssued: Grosze, date: IsoDate): void {
-  const key = `biz:annual:${b.id}:${year}`;
-  if (s.processed[key]) return;
-  s.processed[key] = true;
-  const diff = taxTotal - advancesIssued;
-  const due = dateInMonth(year + 1, R.pit.annualDueMonthDay[0], R.pit.annualDueMonthDay[1]);
-  if (diff > 0) {
-    createObligation(s, {
-      occurrenceId: `${key}:payable`, ruleId: `rule:pit-annual`, direction: 'payable', counterpartyId: US_PARTY, accountId: b.accountId, scope: 'business',
-      amount: diff, issueDate: date, dueDate: due, category: BUSINESS_CATEGORIES.pitAnnual, description: `Rozliczenie roczne PIT za ${year}`,
-    });
-  } else if (diff < 0) {
-    // nadpłata: zwrot (tryb demonstracyjny — termin 45 dni od terminu zeznania, niezweryfikowany)
-    createObligation(s, {
-      occurrenceId: `${key}:refund`, ruleId: `rule:pit-annual`, direction: 'receivable', counterpartyId: US_PARTY, accountId: b.accountId, scope: 'business',
-      amount: -diff, issueDate: date, dueDate: addDays(due, 45), category: BUSINESS_CATEGORIES.pitRefund, description: `Zwrot nadpłaty PIT za ${year}`,
-    });
+/** Najwcześniejsze dni wznowienia: 1. dni miesięcy po minimalnym okresie 30 dni (wyjątek: zawieszenie na sam luty). */
+export function allowedResumeDates(s: GameState): IsoDate[] {
+  const b = activeBusiness(s);
+  const susp = b?.suspensions.find((x) => x.to === null);
+  if (!b || !susp) return [];
+  const out: IsoDate[] = [];
+  let d = firstOfNextMonth(s.clock.today);
+  for (let i = 0; i < 24; i++) {
+    const days = diffDays(d, susp.from);
+    const febOnly = susp.from.slice(5, 7) === '02' && susp.from.endsWith('-01') && days >= 28;
+    if (d > s.clock.today && d > susp.from && (days >= 30 || febOnly)) out.push(d);
+    d = firstOfNextMonth(d);
+  }
+  return out.slice(0, 12);
+}
+
+export function suspendBusiness(s: GameState): string {
+  const b = activeBusiness(s);
+  if (!b) throw new CommandError('Nie prowadzisz działalności.');
+  const today = s.clock.today;
+  if (today < b.startDate) throw new CommandError('Działalność jeszcze się nie rozpoczęła.');
+  if (b.closeOn !== null) throw new CommandError('Działalność jest w trakcie zamykania.');
+  if (b.suspensions.some((x) => x.to === null)) throw new CommandError('Działalność jest już zawieszona (lub zawieszenie jest zaplanowane).');
+  if (s.serviceOrders.some((o) => o.status === 'in_progress')) throw new CommandError('Najpierw zakończ trwające zlecenia — w okresie zawieszenia nie wolno prowadzić bieżącej działalności.');
+  const from = firstOfNextMonth(today);
+  b.suspensions.push({ from, to: null });
+  for (const o of s.serviceOffers) if (o.status === 'open') o.status = 'expired';
+  logEvent(s, {
+    id: `business.suspended:${b.id}:${from}`, date: today, type: 'business.suspended', tone: 'warning',
+    title: `Złożono dyspozycję zawieszenia działalności od ${formatDatePL(from)}`,
+    detail: 'W pełnych miesiącach zawieszenia nie płacisz składek ZUS ani zaliczek PIT; nie możesz przyjmować zleceń. Należności i zobowiązania sprzed zawieszenia nadal się rozliczają.', amount: null, category: null,
+  });
+  return `Zawieszenie od ${formatDatePL(from)} (minimum 30 dni). Dotychczasowe zobowiązania i należności pozostają.`;
+}
+
+export function resumeBusiness(s: GameState, resumeDate: IsoDate): string {
+  const b = activeBusiness(s);
+  const susp = b?.suspensions.find((x) => x.to === null);
+  if (!b || !susp) throw new CommandError('Działalność nie jest zawieszona.');
+  const today = s.clock.today;
+  if (susp.from > today) {
+    // zawieszenie jeszcze się nie zaczęło — anulowanie dyspozycji
+    b.suspensions = b.suspensions.filter((x) => x !== susp);
+    return 'Anulowano zaplanowane zawieszenie.';
+  }
+  if (!allowedResumeDates(s).includes(resumeDate)) throw new CommandError('Niedozwolona data wznowienia (1. dzień miesiąca, po minimalnym okresie zawieszenia 30 dni).');
+  susp.to = addDays(resumeDate, -1);
+  logEvent(s, {
+    id: `business.resumed:${b.id}:${resumeDate}`, date: today, type: 'business.resumed', tone: 'positive',
+    title: `Zaplanowano wznowienie działalności od ${formatDatePL(resumeDate)}`, detail: 'Od tego dnia znów naliczane są składki i zaliczki, możesz przyjmować zlecenia.', amount: null, category: null,
+  });
+  return `Działalność zostanie wznowiona ${formatDatePL(resumeDate)}.`;
+}
+
+/* ---------- Zmiana formy opodatkowania ---------- */
+
+export function ryczaltAllowed(s: GameState, b: Business, year: number): { ok: boolean; reason?: string } {
+  const prev = docsOf(s, b, 'sales').filter((d) => d.issueDate.startsWith(`${year - 1}-`)).reduce((a, d) => a + d.net, 0);
+  if (prev > R.ryczaltRevenueLimit) return { ok: false, reason: `Przychód z ${year - 1} r. przekroczył limit ryczałtu (${formatPLN(R.ryczaltRevenueLimit, { round: true })}).` };
+  return { ok: true };
+}
+
+/** Forma, jaka będzie obowiązywać w roku `year` (uwzględnia zaplanowaną zmianę). */
+export function formForYear(b: Business, year: number): TaxForm {
+  if (b.taxFormPlan && b.taxFormPlan.effectiveYear <= year) return b.taxFormPlan.form;
+  return formOn(b, `${year}-12-31`);
+}
+
+export function planTaxFormChange(s: GameState, form: TaxForm): string {
+  const b = activeBusiness(s);
+  if (!b) throw new CommandError('Nie prowadzisz działalności.');
+  if (b.closeOn !== null) throw new CommandError('Działalność jest w trakcie zamykania.');
+  const nextYear = parseIso(s.clock.today).year + 1;
+  if (!['skala', 'liniowy', 'ryczalt'].includes(form)) throw new CommandError('Wybierz formę opodatkowania.');
+  const current = formOn(b, `${nextYear - 1}-12-31`);
+  if (form === current && !b.taxFormPlan) throw new CommandError('To jest już obowiązująca forma opodatkowania.');
+  if (form === 'ryczalt') {
+    const ok = ryczaltAllowed(s, b, nextYear);
+    if (!ok.ok) throw new CommandError(ok.reason ?? 'Ryczałt niedostępny.');
+  }
+  if (form === current) {
+    b.taxFormPlan = null;
+    return `Anulowano zaplanowaną zmianę — od ${nextYear} r. pozostaje forma bieżąca.`;
+  }
+  b.taxFormPlan = { form, effectiveYear: nextYear, declaredOn: s.clock.today };
+  return `Zmiana formy opodatkowania zaplanowana od 1 stycznia ${nextYear} r. Obowiązuje cały rok; w trakcie roku jej nie zmienisz. Dotychczasowe rozliczenia pozostają bez zmian.`;
+}
+
+/* ---------- Mały ZUS Plus ---------- */
+
+export interface MalyZusStatus {
+  eligible: boolean;
+  reasons: string[];
+  base: Grosze | null;
+  baseYear: number;
+  monthsUsedIn60: number;
+  priorRevenue: Grosze;
+  revenueLimit: Grosze;
+  daysOperated: number;
+}
+
+/** Uprawnienie do Małego ZUS Plus na dzień `date` (dane z poprzedniego roku). Gdy nie da się ustalić — nie przyznaje. */
+export function malyZusStatus(s: GameState, b: Business, date: IsoDate): MalyZusStatus {
+  const year = parseIso(date).year;
+  const py = year - 1;
+  const reasons: string[] = [];
+  const yearStart = `${py}-01-01`;
+  const yearEnd = `${py}-12-31`;
+  const from = b.startDate > yearStart ? b.startDate : yearStart;
+  const lastDay = b.closeOn !== null && b.closeOn < yearEnd ? b.closeOn : yearEnd;
+  let days = from <= lastDay ? diffDays(lastDay, from) + 1 : 0;
+  for (const x of b.suspensions) {
+    const a = x.from > from ? x.from : from;
+    const z = (x.to ?? yearEnd) < lastDay ? (x.to ?? yearEnd) : lastDay;
+    if (a <= z) days -= diffDays(z, a) + 1;
+  }
+  days = Math.max(0, days);
+  const daysInYear = diffDays(yearEnd, yearStart) + 1;
+  const revenue = docsOf(s, b, 'sales').filter((d) => d.issueDate.startsWith(`${py}-`)).reduce((a, d) => a + d.taxAmount, 0);
+  const costs = docsOf(s, b, 'cost').filter((d) => d.issueDate.startsWith(`${py}-`)).reduce((a, d) => a + d.taxAmount, 0);
+  const limit = roundDiv(R.malyPlus.revenueLimit * days, daysInYear);
+  if (parseIso(b.startDate).year >= year) reasons.push('Nie można korzystać w pierwszym roku prowadzenia działalności.');
+  if (days < R.malyPlus.minDays) reasons.push(`W poprzednim roku działalność trwała ${days} dni (wymagane co najmniej ${R.malyPlus.minDays}).`);
+  if (revenue > limit) reasons.push(`Przychód z ${py} r. (${formatPLN(revenue, { round: true })}) przekroczył limit ${formatPLN(limit, { round: true })}.`);
+  const idx = monthsBetween(monthKey(b.startDate), monthKey(date));
+  if (zusRegimeFor(b.zus.start, Math.max(0, idx)) !== 'standard') reasons.push('Mały ZUS Plus jest alternatywą dla ulgi na start i składek preferencyjnych — dostępny po ich zakończeniu.');
+  const since = addMonths(date, -60);
+  const used = s.taxPeriods.filter((p) => p.businessId === b.id && p.zusRegime === 'maly_plus' && `${p.month}-01` > since).length;
+  if (used >= R.malyPlus.maxMonthsOf60) reasons.push(`Wykorzystano już ${used} z 36 miesięcy w ostatnich 60 miesiącach.`);
+  if (b.closeOn !== null) reasons.push('Działalność jest w trakcie zamykania.');
+  let base: Grosze | null = null;
+  if (days > 0) {
+    const income = formOn(b, yearEnd) === 'ryczalt' ? mulBps(revenue, 5_000) : revenue - costs;
+    const raw = income > 0 ? roundDiv(income * 30, days) : 0;
+    base = Math.min(R.zusBaseStandard, Math.max(MZP_MIN_BASE, raw));
+  }
+  return { eligible: reasons.length === 0 && base !== null, reasons, base, baseYear: py, monthsUsedIn60: used, priorRevenue: revenue, revenueLimit: limit, daysOperated: days };
+}
+
+export function declareMalyZusPlus(s: GameState): string {
+  const b = activeBusiness(s);
+  if (!b) throw new CommandError('Nie prowadzisz działalności.');
+  if (b.zus.malyPlus.active) throw new CommandError('Korzystasz już z Małego ZUS Plus.');
+  const st = malyZusStatus(s, b, s.clock.today);
+  if (!st.eligible || st.base === null) throw new CommandError(`Brak uprawnień do Małego ZUS Plus: ${st.reasons.join(' ') || 'nie można ustalić podstawy.'}`);
+  const since = firstOfNextMonth(s.clock.today);
+  b.zus.malyPlus = { active: true, base: st.base, since, baseYear: st.baseYear };
+  logEvent(s, {
+    id: `business.zus:${b.id}:${since}`, date: s.clock.today, type: 'business.zus', tone: 'positive',
+    title: 'Mały ZUS Plus: deklaracja', detail: `Od ${formatDatePL(since)} składki społeczne od podstawy ${formatPLN(st.base)} (wyliczonej z ${st.baseYear} r.)`, amount: null, category: null,
+  });
+  return `Mały ZUS Plus od ${formatDatePL(since)}; podstawa ${formatPLN(st.base)}. Uprawnienia będą sprawdzane co roku 1 stycznia.`;
+}
+
+export function resignMalyZusPlus(s: GameState): string {
+  const b = activeBusiness(s);
+  if (!b || !b.zus.malyPlus.active) throw new CommandError('Nie korzystasz z Małego ZUS Plus.');
+  b.zus.malyPlus = { active: false, base: null, since: null, baseYear: null };
+  logEvent(s, { id: `business.zus:${b.id}:end:${s.clock.today}`, date: s.clock.today, type: 'business.zus', tone: 'neutral', title: 'Zakończono korzystanie z Małego ZUS Plus', detail: 'Od następnego rozliczenia — standardowe składki', amount: null, category: null });
+  return 'Zakończono korzystanie z Małego ZUS Plus (od najbliższego rozliczenia standardowe składki).';
+}
+
+/** 1 stycznia: zmiana formy opodatkowania, przegląd uprawnień do Małego ZUS Plus. */
+function newYearReview(s: GameState, b: Business, date: IsoDate): void {
+  const year = parseIso(date).year;
+  if (b.taxFormPlan && b.taxFormPlan.effectiveYear === year) {
+    const from = b.taxForm;
+    b.taxForm = b.taxFormPlan.form;
+    b.taxFormHistory.push({ form: b.taxForm, from: date });
+    b.taxFormPlan = null;
+    logEvent(s, { id: `business.taxform:${b.id}:${year}`, date, type: 'business.taxform', tone: 'neutral', title: `Zmiana formy opodatkowania: ${from} → ${b.taxForm}`, detail: `Obowiązuje cały ${year} r.; wcześniejsze rozliczenia bez zmian`, amount: null, category: null });
+  }
+  if (b.zus.malyPlus.active) {
+    const st = malyZusStatus(s, b, date);
+    if (st.eligible && st.base !== null) {
+      b.zus.malyPlus = { ...b.zus.malyPlus, base: st.base, baseYear: st.baseYear };
+    } else {
+      b.zus.malyPlus = { active: false, base: null, since: null, baseYear: null };
+      logEvent(s, { id: `business.zus:${b.id}:lost:${year}`, date, type: 'business.zus', tone: 'warning', title: 'Utrata prawa do Małego ZUS Plus', detail: st.reasons.join(' ') || 'Warunki nie są już spełnione', amount: null, category: null });
+    }
   }
 }
 
-/** Zamknięcie miesiąca JDG: składki ZUS, składka zdrowotna, zaliczka PIT (+ rozliczenie roczne w grudniu/przy zakończeniu). */
+/* ---------- Rozliczenia miesięczne ---------- */
+
+/** Zamknięcie miesiąca JDG: składki ZUS, składka zdrowotna, zaliczka PIT. Rozliczenie roczne: `annual.ts`. */
 function closeMonth(s: GameState, b: Business, date: IsoDate): void {
   const mk = monthKey(date);
   const key = `biz:month:${b.id}:${mk}`;
@@ -425,44 +613,64 @@ function closeMonth(s: GameState, b: Business, date: IsoDate): void {
   const year = parseIso(date).year;
   const idx = monthsBetween(monthKey(b.startDate), mk);
   const profile = profileOf(b);
+  const form = formOn(b, date);
+  const suspended = isSuspendedOn(b, date);
   const revenue = docsOf(s, b, 'sales').filter((d) => inMonth(d, mk)).reduce((a, d) => a + d.taxAmount, 0);
   const costs = docsOf(s, b, 'cost').filter((d) => inMonth(d, mk)).reduce((a, d) => a + d.taxAmount, 0);
-  const ruleIds = new Set<string>(['ZUS-PAYMENT-DEADLINE', 'PIT-ADVANCE-DEADLINE', 'PIT-REVENUE-DATE']);
+  const cumRevenue = docsOf(s, b, 'sales').filter((d) => inYearUpTo(d, year, date)).reduce((a, d) => a + d.taxAmount, 0);
+  const cumCosts = docsOf(s, b, 'cost').filter((d) => inYearUpTo(d, year, date)).reduce((a, d) => a + d.taxAmount, 0);
+  const ruleIds = new Set<string>(['ZUS-PAYMENT-DEADLINE', 'PIT-ADVANCE-DEADLINE', 'PIT-REVENUE-DATE', 'PIT-ROUNDING']);
 
-  // składki społeczne: zbieg z etatem, ulga na start, preferencje, standard
+  if (suspended) {
+    // pełny miesiąc zawieszenia: brak składek i zaliczek (SUSP-CONTRIBUTIONS); bieg okresów ulgi trwa
+    s.taxPeriods.push({
+      businessId: b.id, month: mk, revenue, costs, zusRegime: 'zawieszenie', form, social: 0, health: 0, healthBasis: 0,
+      cumulativeRevenue: cumRevenue, cumulativeCosts: cumCosts, taxBase: 0, taxCumulative: 0, advance: 0, advanceSkipped: false,
+      ruleIds: ['SUSP-CONTRIBUTIONS', 'SUSP-RULES'], carriedForward: carriedForward(year),
+    });
+    logEvent(s, { id: `business.tax:${b.id}:${mk}`, date, type: 'business.tax', tone: 'neutral', title: `Miesiąc ${mk}: działalność zawieszona`, detail: 'Brak składek ZUS i zaliczek PIT', amount: null, category: null });
+    if (b.closeOn === date) {
+      b.status = 'closed';
+      logEvent(s, { id: `business.closed:${b.id}`, date, type: 'business.closed', tone: 'neutral', title: `Zakończono działalność: ${b.name}`, detail: 'Pozostałe zobowiązania i należności rozliczą się w terminach', amount: null, category: null });
+    }
+    return;
+  }
+
+  // składki społeczne: zbieg z etatem, ulga na start, preferencje, Mały ZUS Plus, standard
   const covered = employmentGross(s, date) >= R.minWage;
   const planned = zusRegimeFor(b.zus.start, idx);
-  const regime: TaxPeriod['zusRegime'] = covered ? 'etat' : planned;
-  const social = covered ? 0 : socialForRegime(planned, b.zus.sickness).total;
-  ruleIds.add(covered ? 'ZUS-ZBIEG-ETAT' : planned === 'ulga' ? 'ZUS-ULGA-START' : planned === 'preferencyjny' ? 'ZUS-PREF-BASE-2026' : 'ZUS-BASE-STANDARD-2026');
+  const mzp = b.zus.malyPlus;
+  const useMzp = !covered && planned === 'standard' && mzp.active && mzp.base !== null && mzp.since !== null && date >= mzp.since;
+  const regime: TaxPeriod['zusRegime'] = covered ? 'etat' : useMzp ? 'maly_plus' : planned;
+  const social = covered ? 0 : useMzp ? socialContributions(mzp.base!, { sickness: b.zus.sickness, fpFs: mzp.base! >= R.minWage }).total : socialForRegime(planned, b.zus.sickness).total;
+  ruleIds.add(covered ? 'ZUS-ZBIEG-ETAT' : useMzp ? 'ZUS-MALY-PLUS' : planned === 'ulga' ? 'ZUS-ULGA-START' : planned === 'preferencyjny' ? 'ZUS-PREF-BASE-2026' : 'ZUS-BASE-STANDARD-2026');
   if (social > 0) ruleIds.add('ZUS-RATES-2026');
 
   // składka zdrowotna
-  const cumRevenue = docsOf(s, b, 'sales').filter((d) => inYearUpTo(d, year, date)).reduce((a, d) => a + d.taxAmount, 0);
-  const cumCosts = docsOf(s, b, 'cost').filter((d) => inYearUpTo(d, year, date)).reduce((a, d) => a + d.taxAmount, 0);
   let health: Grosze;
   let healthBasis: Grosze;
-  if (b.taxForm === 'ryczalt') {
+  if (form === 'ryczalt') {
     health = healthRyczalt(cumRevenue);
     healthBasis = cumRevenue;
     ruleIds.add('HEALTH-RYCZALT-2026');
   } else {
-    const prev = s.taxPeriods.find((p) => p.businessId === b.id && p.month === addMonthsToKey(mk, -1));
+    const prev = s.taxPeriods.find((p) => p.businessId === b.id && p.month === addMonthsToKey(mk, -1) && p.zusRegime !== 'zawieszenie');
     healthBasis = prev ? prev.revenue - prev.costs - prev.social : 0;
-    health = healthFromIncome(b.taxForm, healthBasis);
+    health = healthFromIncome(form, healthBasis);
     ruleIds.add('HEALTH-RATES');
     ruleIds.add('HEALTH-MIN-2026');
   }
 
-  // zaliczka PIT (metoda narastająca; odliczane tylko zapłacone składki)
+  // zaliczka PIT (metoda narastająca; odliczane tylko zapłacone składki; podstawa i podatek do pełnych złotych)
   const socialPaid = paidContributions(s, SOCIAL, year, date);
   const healthPaid = paidContributions(s, HEALTH, year, date);
+  const withEmployment = hasEmploymentInYear(s, year);
   const pit = pitCumulative({
-    form: b.taxForm, revenue: cumRevenue, costs: cumCosts, socialPaid, healthPaid,
-    applyReduction: b.taxForm === 'skala' && !hasEmploymentInYear(s, year), ryczaltRateBps: profile.ryczaltRateBps,
+    form, revenue: cumRevenue, costs: cumCosts, socialPaid, healthPaid,
+    applyReduction: form === 'skala' && !withEmployment, ryczaltRateBps: profile.ryczaltRateBps,
   });
-  ruleIds.add(b.taxForm === 'skala' ? 'PIT-SCALE-2026' : b.taxForm === 'liniowy' ? 'PIT-LINEAR-2026' : 'PIT-RYCZALT-RATES-2026');
-  if (b.taxForm === 'skala' && hasEmploymentInYear(s, year)) ruleIds.add('PIT-SKALA-WITH-EMPLOYMENT');
+  ruleIds.add(form === 'skala' ? 'PIT-SCALE-2026' : form === 'liniowy' ? 'PIT-LINEAR-2026' : 'PIT-RYCZALT-RATES-2026');
+  if (form === 'skala' && withEmployment) ruleIds.add('PIT-SKALA-WITH-EMPLOYMENT');
   const advancesIssued = s.taxPeriods.filter((p) => p.businessId === b.id && p.month.startsWith(`${year}-`)).reduce((a, p) => a + p.advance, 0);
   const dueAdvance = Math.max(0, pit.tax - advancesIssued);
   const skipped = dueAdvance > 0 && dueAdvance <= R.pit.advanceMinimum;
@@ -477,7 +685,7 @@ function closeMonth(s: GameState, b: Business, date: IsoDate): void {
   if (advance > 0) createObligation(s, { ...base, occurrenceId: `${key}:pit`, counterpartyId: US_PARTY, amount: advance, dueDate: pitDue, category: BUSINESS_CATEGORIES.pit, description: periodLabel('Zaliczka PIT', date) });
 
   s.taxPeriods.push({
-    businessId: b.id, month: mk, revenue, costs, zusRegime: regime, social, health, healthBasis, cumulativeRevenue: cumRevenue, cumulativeCosts: cumCosts,
+    businessId: b.id, month: mk, revenue, costs, zusRegime: regime, form, social, health, healthBasis, cumulativeRevenue: cumRevenue, cumulativeCosts: cumCosts,
     taxBase: pit.base, taxCumulative: pit.tax, advance, advanceSkipped: skipped, ruleIds: [...ruleIds].sort(), carriedForward: carriedForward(year),
   });
   logEvent(s, {
@@ -486,7 +694,6 @@ function closeMonth(s: GameState, b: Business, date: IsoDate): void {
     detail: `Składki do ${formatDatePL(dueDate)}${advance > 0 ? `, zaliczka do ${formatDatePL(pitDue)}` : ''}${skipped ? ' · zaliczka ≤ 1 000 zł — niewpłacana' : ''}`, amount: null, category: null,
   });
 
-  if (parseIso(date).month === 12 || b.closeOn === date) annualSettlement(s, b, year, pit.tax, advancesIssued + advance, date);
   if (b.closeOn === date) {
     b.status = 'closed';
     logEvent(s, { id: `business.closed:${b.id}`, date, type: 'business.closed', tone: 'neutral', title: `Zakończono działalność: ${b.name}`, detail: 'Pozostałe zobowiązania i należności rozliczą się w terminach', amount: null, category: null });
@@ -509,11 +716,15 @@ function reviewVatForNewYear(s: GameState, b: Business, date: IsoDate): void {
 export function processBusiness(s: GameState, date: IsoDate): void {
   for (const b of s.businesses) {
     if (b.status !== 'active' || date < b.startDate) continue;
-    if (date.endsWith('-01-01')) reviewVatForNewYear(s, b, date);
-    manageOffers(s, b, date);
-    progressOrders(s, b, date);
+    if (date.endsWith('-01-01')) {
+      reviewVatForNewYear(s, b, date);
+      newYearReview(s, b, date);
+    }
+    if (!isSuspendedOn(b, date)) {
+      manageOffers(s, b, date);
+      progressOrders(s, b, date);
+    }
     const { year, month, day } = parseIso(date);
     if (day === daysInMonth(year, month)) closeMonth(s, b, date);
   }
 }
-

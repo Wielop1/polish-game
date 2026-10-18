@@ -4,13 +4,15 @@ import { accountById, createObligation, logEvent, partyName, periodLabel, postTr
 import { formatPLN, mulBps } from './money.ts';
 import type { Grosze } from './money.ts';
 import { createRng } from './rng.ts';
+import { processAnnual } from './annual.ts';
 import { processBusiness } from './business.ts';
 import { rollLifeEvents } from './lifeEvents.ts';
 import { runPendingActions } from './pending.ts';
 import { applySavingsInterest } from './savings.ts';
 import { computeDueDate, isBirthday, isIssueDay } from './schedule.ts';
 import { clampFatigue, budgetFor, fatigueDelta } from './time.ts';
-import type { GameState, Obligation, ObligationRule } from './state.ts';
+import { buildPayslip, materializeLegacyPayslips } from './payroll.ts';
+import type { EmploymentContract, GameState, Obligation, ObligationRule, Payslip } from './state.ts';
 
 export { postTransaction, logEvent } from './core.ts';
 export type { PostingInput } from './core.ts';
@@ -35,6 +37,11 @@ export function resolveAmount(s: GameState, rule: ObligationRule, occurrenceId: 
       const bps = createRng(s.seed, occurrenceId).int(-spec.spreadBps, spec.spreadBps);
       return base + mulBps(base, bps);
     }
+    case 'payroll': {
+      const contract = s.contracts.find((c) => c.id === spec.contractId);
+      if (!contract) throw new Error(`Brak umowy ${spec.contractId} dla reguły ${rule.id}`);
+      return contract.monthlyAmount; // typowe netto (do projekcji); rzeczywista kwota z odcinka płacowego
+    }
     case 'contract': {
       const contract = s.contracts.find((c) => c.id === spec.contractId);
       if (!contract) throw new Error(`Brak umowy ${spec.contractId} dla reguły ${rule.id}`);
@@ -50,7 +57,19 @@ export function resolveAmount(s: GameState, rule: ObligationRule, occurrenceId: 
 function issueFromRule(s: GameState, rule: ObligationRule, date: IsoDate): void {
   const occurrenceId = `${rule.id}@${date}`;
   if (s.processed[occurrenceId]) return; // wystąpienie już zastosowane — idempotencja
-  const amount = resolveAmount(s, rule, occurrenceId);
+  const dueDate = computeDueDate(date, rule.due);
+  let payslip: Payslip | null = null;
+  let amount: number;
+  if (rule.amount.type === 'payroll' && date >= s.settings.payrollFrom) {
+    materializeLegacyPayslips(s);
+    const contractId = rule.amount.contractId;
+    const contract = s.contracts.find((c): c is EmploymentContract => c.type === 'employment' && c.id === contractId);
+    if (!contract) throw new Error(`Brak umowy ${contractId} dla reguły ${rule.id}`);
+    payslip = buildPayslip(s, contract, rule.id, date, dueDate);
+    amount = payslip.net;
+  } else {
+    amount = resolveAmount(s, rule, occurrenceId);
+  }
   createObligation(s, {
     occurrenceId,
     ruleId: rule.id,
@@ -58,10 +77,11 @@ function issueFromRule(s: GameState, rule: ObligationRule, date: IsoDate): void 
     counterpartyId: rule.counterpartyId,
     amount,
     issueDate: date,
-    dueDate: computeDueDate(date, rule.due),
+    dueDate,
     category: rule.category,
     description: periodLabel(rule.description, date),
   });
+  if (payslip) s.payslips.push(payslip);
 }
 
 function applyBirthday(s: GameState, ruleId: string, startDate: IsoDate, date: IsoDate): void {
@@ -188,6 +208,7 @@ export function processDay(s: GameState, date: IsoDate): void {
   applyScheduledOccurrences(s, date);
   rollLifeEvents(s, date);
   processBusiness(s, date);
+  processAnnual(s, date);
   settleDueObligations(s, date);
   updateFatigue(s, date);
   recordHistory(s, date);

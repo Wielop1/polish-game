@@ -252,6 +252,7 @@ export function businessSummaries(s: GameState): BusinessMonth[] {
     else if (isZus(o.category)) m.zus += o.amount;
     else if (o.category === 'pit_zaliczka' || o.category === 'pit_roczny') m.pit += o.amount;
     else if (o.category === 'pit_zwrot') m.pit -= o.amount;
+    else if (o.category === 'zus_zdrowotna_zwrot') m.zus -= o.amount;
   }
   for (const m of map.values()) {
     m.income = m.revenue - m.costs;

@@ -105,3 +105,35 @@ export function migrateV2ToV3(raw: unknown): unknown {
   s.taxPeriods = [];
   return s;
 }
+
+/**
+ * v3 → v4: kalkulator płac, rozliczenia roczne, straty, zawieszenie, zmiana formy, Mały ZUS Plus.
+ * Historia nietknięta: wynagrodzenia naliczone do dnia migracji zachowują dotychczasową kwotę (`payrollFrom`),
+ * rozliczenia miesięczne dostają pole `form` (forma z działalności), nowe kolekcje są puste.
+ */
+export function migrateV3ToV4(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) throw new Error('Zapis v3 ma nieprawidłową strukturę stanu.');
+  const s = structuredClone(raw) as Json;
+  const [y, m, d] = (s.clock.today as string).split('-').map(Number) as [number, number, number];
+  const next = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+  s.settings = { ...s.settings, payrollFrom: next };
+  for (const r of s.rules as Json[]) {
+    if (r.kind === 'obligation' && r.category === 'wynagrodzenie' && r.amount?.type === 'contract') {
+      r.amount = { type: 'payroll', contractId: r.amount.contractId };
+    }
+  }
+  const formOf = new Map<string, string>();
+  for (const b of s.businesses as Json[]) {
+    b.suspensions = [];
+    b.taxFormPlan = null;
+    b.taxFormHistory = [{ form: b.taxForm, from: b.startDate }];
+    b.zus = { ...b.zus, malyPlus: { active: false, base: null, since: null, baseYear: null } };
+    formOf.set(b.id, b.taxForm);
+  }
+  for (const p of s.taxPeriods as Json[]) p.form = formOf.get(p.businessId) ?? 'skala';
+  s.payslips = [];
+  s.taxReturns = [];
+  s.taxLosses = [];
+  s.healthSettlements = [];
+  return s;
+}

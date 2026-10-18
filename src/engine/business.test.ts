@@ -12,7 +12,7 @@ import { createNewGame } from './newGame.ts';
 import { businessBalance, businessSummaries, monthlySummaries, netWorth } from './selectors.ts';
 import { advanceDays, advanceToNextMonth, processDay } from './simulate.ts';
 import type { GameState, ServiceOffer } from './state.ts';
-import { healthFromIncome, healthRyczalt, pitCumulative, socialContributions, socialForRegime, vatExemptionLimit, zusRegimeFor } from './tax.ts';
+import { healthFromIncome, healthRyczalt, pitCumulative, roundZl, socialContributions, socialForRegime, vatExemptionLimit, zusRegimeFor } from './tax.ts';
 import { budgetFor } from './time.ts';
 
 const game = (seed = 'biz', lifeEvents = false) => createNewGame({ firstName: 'Jan', lastName: 'Kowalski', seed, lifeEvents });
@@ -245,8 +245,8 @@ describe('zaliczki PIT i składki w symulacji (ryczałt 12%, zwolnienie z VAT)',
     expect(obs(s, 'pit_zaliczka')[0]).toMatchObject({ amount: zl(2_400), dueDate: '2026-03-20', counterpartyId: 'party:us' });
     expect(obs(s, 'zus_zdrowotna')[0]).toMatchObject({ amount: zl(498.35), dueDate: '2026-03-20' });
     s = advanceDays(s, 31); // 1 kwietnia: marzec zamknięty
-    const base = zl(20_000) - roundDiv(zl(498.35) * 5_000, 10_000);
-    expect(period(s, '2026-03')).toMatchObject({ taxBase: base, taxCumulative: roundDiv(base * 1_200, 10_000), advance: 0, advanceSkipped: false });
+    const base = roundZl(zl(20_000) - roundDiv(zl(498.35) * 5_000, 10_000)); // podstawa do pełnych złotych (PIT-ROUNDING)
+    expect(period(s, '2026-03')).toMatchObject({ taxBase: base, taxCumulative: roundZl(roundDiv(base * 1_200, 10_000)), advance: 0, advanceSkipped: false });
     expect(obs(s, 'pit_zaliczka')).toHaveLength(1);
     consistent(s);
   });
@@ -479,7 +479,7 @@ describe('rejestr reguł prawnych', () => {
       expect(r.note.length).toBeGreaterThan(5);
     }
     expect(new Set(LEGAL_RULES.map((r) => r.id)).size).toBe(LEGAL_RULES.length);
-    for (const id of ['ZUS-MALY-PLUS', 'VAT-KSEF-ADVANCED', 'PIT-LOSSES-RELIEFS', 'REG-SUSPENSION-CLOSURE']) expect(LEGAL_RULES.find((r) => r.id === id)!.status).toBe('DEFERRED');
+    for (const id of ['VAT-KSEF-ADVANCED', 'PIT-RELIEFS', 'PIT-LOSS-ONETIME', 'ZUS-VACATION']) expect(LEGAL_RULES.find((r) => r.id === id)!.status).toBe('DEFERRED');
   });
 
   it('wszystkie reguły użyte w rozliczeniach istnieją w rejestrze', () => {
@@ -521,7 +521,7 @@ describe('gra przez 24 miesiące z JDG równolegle z etatem', () => {
     expect(s.taxPeriods.every((p) => p.zusRegime === 'etat')).toBe(true); // etat ≥ minimalnego wynagrodzenia
     expect(s.taxPeriods.slice(12).every((p) => p.carriedForward)).toBe(true); // 2027+ : reguły z 2026 przeniesione (oznaczone)
     expect(s.documents.filter((d) => d.kind === 'sales').length).toBeGreaterThan(5);
-    expect(s.obligations.filter((o) => o.category === 'zus_zdrowotna')).toHaveLength(24);
+    expect(s.obligations.filter((o) => o.category === 'zus_zdrowotna' && o.description.startsWith('Składka zdrowotna'))).toHaveLength(24); // + dopłaty roczne za 2026 i 2027 jako osobne zobowiązania
     expect(new Set(s.ledger.map((t) => t.id)).size).toBe(s.ledger.length);
     expect(s.obligations.filter((o) => o.category === 'pit_roczny').length).toBeLessThanOrEqual(2);
     const bySales = s.documents.filter((d) => d.kind === 'sales').map((d) => d.number);

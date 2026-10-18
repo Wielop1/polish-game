@@ -1,4 +1,5 @@
-import { JOB_CATALOG, estimateNet } from './config.ts';
+import { JOB_CATALOG } from './config.ts';
+import { typicalMonthlyNet } from './payroll.ts';
 import type { JobOffer } from './config.ts';
 import { SKILL_LABELS } from './config.ts';
 import { CommandError, ensureParty, logEvent, nextCounter, partyName } from './core.ts';
@@ -211,7 +212,7 @@ export function createEmployment(s: GameState, t: NewEmploymentTerms): Employmen
   s.rules.push({
     kind: 'obligation', id: `rule:salary:${id}`, direction: 'receivable', counterpartyId: t.partyId, category: 'wynagrodzenie',
     description: 'Wynagrodzenie netto', issueDay: 'last', due: { monthOffset: 1, day: 10 },
-    amount: { type: 'contract', contractId: id }, startDate: t.startDate, endDate: null, contractId: id, dataStatus: 'placeholder',
+    amount: { type: 'payroll', contractId: id }, startDate: t.startDate, endDate: null, contractId: id, dataStatus: 'placeholder',
   });
   s.pending.push({ id: `pending:${id}:start`, date: t.startDate, type: 'contract.milestone', contractId: id, milestone: 'start' });
   return contract;
@@ -254,7 +255,7 @@ export function respondToJobOffer(s: GameState, applicationId: string, accept: b
   }
 
   ensureParty(s, { id: offer.employerId, name: offer.employerName, role: 'employer' });
-  const net = estimateNet(offer.grossMonthly);
+  const net = typicalMonthlyNet(offer.grossMonthly, s.person.birthDate, startDate);
   createEmployment(s, {
     partyId: offer.employerId, title: offer.title, startDate, grossMonthly: offer.grossMonthly, netMonthly: net,
     hoursPerMonth: offer.hoursPerMonth, noticeMonths: offer.noticeMonths, location: offer.location, jobOfferId: offer.id,
@@ -277,8 +278,8 @@ export function promoteEmployment(s: GameState, raisePct: number): { newContract
   syncContractRules(s, cur.id);
   s.pending.push({ id: `pending:${cur.id}:end`, date: startDate, type: 'contract.milestone', contractId: cur.id, milestone: 'end' });
   const bps = raisePct * 100;
-  const net = cur.monthlyAmount + mulBps(cur.monthlyAmount, bps);
   const gross = cur.grossMonthly === null ? null : cur.grossMonthly + mulBps(cur.grossMonthly, bps);
+  const net = gross === null ? cur.monthlyAmount + mulBps(cur.monthlyAmount, bps) : typicalMonthlyNet(gross, s.person.birthDate, startDate);
   const title = cur.title.startsWith('Starszy') ? cur.title : `Starszy/a ${cur.title.charAt(0).toLowerCase()}${cur.title.slice(1)}`;
   const newContract = createEmployment(s, {
     partyId: cur.partyId, title, startDate, grossMonthly: gross, netMonthly: net, hoursPerMonth: cur.hoursPerMonth,

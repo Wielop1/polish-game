@@ -52,7 +52,7 @@ export function projectedAmount(s: GameState, rule: ObligationRule): { amount: G
   if (spec.type === 'lifestyle') return { amount: spec.levels[s.life.lifestyle], approximate: spec.spreadBps > 0 };
   const contract = s.contracts.find((c) => c.id === spec.contractId);
   if (!contract) throw new Error(`Brak umowy ${spec.contractId} dla reguły ${rule.id}`);
-  if (spec.field === 'utilitiesMonthly') {
+  if (spec.type === 'contract' && spec.field === 'utilitiesMonthly') {
     if (contract.type !== 'lease') throw new Error(`Reguła ${rule.id}: opłaty eksploatacyjne dotyczą tylko najmu`);
     return { amount: contract.utilitiesMonthly, approximate: false };
   }

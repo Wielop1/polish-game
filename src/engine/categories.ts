@@ -26,6 +26,18 @@ export const CATEGORIES: readonly CategoryInfo[] = [
   { id: 'kaucja', label: 'Kaucja (aktywo)', kind: 'capital', color: '#a8a29e' },
   { id: 'zwrot_kaucji', label: 'Zwrot kaucji', kind: 'capital', color: '#a8a29e' },
   { id: 'przelew_wlasny', label: 'Przelew własny', kind: 'capital', color: '#94a3b8' },
+  { id: 'przychod_dzialalnosci', label: 'Przychód z działalności', kind: 'income', color: '#34d399' },
+  { id: 'koszt_dzialalnosci', label: 'Koszt działalności', kind: 'expense', color: '#fb7185' },
+  { id: 'zus_spoleczne', label: 'Składki społeczne ZUS', kind: 'expense', color: '#a78bfa' },
+  { id: 'zus_zdrowotna', label: 'Składka zdrowotna', kind: 'expense', color: '#c4b5fd' },
+  { id: 'zus_zdrowotna_zwrot', label: 'Zwrot składki zdrowotnej', kind: 'income', color: '#7dd3fc' },
+  { id: 'pit_zaliczka', label: 'Zaliczka PIT', kind: 'expense', color: '#fbbf24' },
+  { id: 'pit_roczny', label: 'Rozliczenie roczne PIT', kind: 'expense', color: '#f59e0b' },
+  { id: 'pit_zwrot', label: 'Zwrot nadpłaty PIT', kind: 'income', color: '#6ee7b7' },
+  { id: 'vat_nalezny', label: 'VAT należny', kind: 'expense', color: '#94a3b8' },
+  { id: 'vat_naliczony', label: 'VAT naliczony', kind: 'income', color: '#94a3b8' },
+  { id: 'vat_od_klienta', label: 'VAT od kontrahenta', kind: 'income', color: '#94a3b8' },
+  { id: 'vat_do_dostawcy', label: 'VAT dla dostawcy', kind: 'expense', color: '#94a3b8' },
 ];
 
 /** Kategorie, które nie są przychodem ani kosztem (ruchy kapitałowe/własne) — pomijane w przepływach miesięcznych. */

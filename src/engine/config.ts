@@ -1,4 +1,4 @@
-import { mulBps, zl } from './money.ts';
+import { zl } from './money.ts';
 import type { Grosze } from './money.ts';
 import type { HousingStandard, Lifestyle, Skill } from './state.ts';
 
@@ -25,27 +25,21 @@ export const CITIES: Record<string, { id: string; name: string; voivodeship: str
 export const PLACEHOLDER_NOTICE =
   'Wartości przykładowe — niezweryfikowane z danymi rzeczywistymi. Docelowo będą konfigurowalne i wersjonowane datami.';
 
-/* ---------- Wynagrodzenia: brutto → szacowane netto ---------- */
+/* ---------- Wynagrodzenia ---------- */
 
 /**
- * Przybliżony współczynnik netto/brutto (73%). To NIE jest kalkulator płac ani wyliczenie
- * zgodne z przepisami 2026 — dopóki nie powstanie zweryfikowany model podatkowo-składkowy
- * (v0.3), UI musi pokazywać tę kwotę jako szacunek.
+ * Współczynnik 73% był szacunkiem netto/brutto do v0.3. Od v0.4 netto liczy kalkulator płac (`payroll.ts`);
+ * stała zostaje wyłącznie do odtworzenia brutto z zapisów v1–v3 bez brutto (netto ≈ 73% brutto).
  */
 export const NET_ESTIMATE_BPS = 7_300;
-export const NET_ESTIMATE_NOTICE =
-  'Netto jest szacunkiem (ok. 73% brutto), nie wyliczeniem według przepisów — zweryfikowany kalkulator płac pojawi się w v0.3.';
-
-export function estimateNet(gross: Grosze): Grosze {
-  return mulBps(gross, NET_ESTIMATE_BPS);
-}
+export const PAYROLL_NOTICE =
+  'Netto liczy kalkulator płac 2026 (składki pracownika, składka zdrowotna, zaliczka PIT z PIT-2, ulga dla młodych) — wynik zależy od narastających kwot w roku.';
 
 /* ---------- Start gry ---------- */
 
 export const ECONOMY_V01 = {
-  /** Brutto etatu startowego; netto = szacunek z `estimateNet`. */
+  /** Brutto etatu startowego; netto wylicza kalkulator płac. */
   grossSalary: zl(6_300),
-  netSalary: estimateNet(zl(6_300)),
   salaryPayDay: 10,
   jobTitle: 'Pracownik biurowy (etat)',
   startHoursPerMonth: 168,

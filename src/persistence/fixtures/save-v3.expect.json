@@ -1,0 +1,16 @@
+{
+  "today": "2026-09-13",
+  "cash": 3039937,
+  "business": 3032589,
+  "savings": 0,
+  "netWorth": 5933648,
+  "ledgerCount": 80,
+  "obligationCount": 78,
+  "documents": 8,
+  "taxPeriods": 7,
+  "orders": 4,
+  "eventCount": 180,
+  "lastTxId": "tx:settle:obl:rule:phone@2026-09-12",
+  "taxForm": "skala",
+  "firstSalaryAmount": 459900
+}

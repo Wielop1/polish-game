@@ -25,9 +25,9 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
   if (!result.ok) throw new Error(`fixture v1 nie wczytał się: ${result.error}`);
   const migrated = result.state;
 
-  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 3', () => {
+  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 4', () => {
     expect(JSON.parse(rawV1).version).toBe(1);
-    expect(SAVE_VERSION).toBe(3);
+    expect(SAVE_VERSION).toBe(4);
   });
 
   it('historia finansowa zostaje nietknięta: salda, majątek netto, rejestr, zobowiązania, zdarzenia', () => {
@@ -104,9 +104,9 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
     expect(cash(s)).toBe(cash(before));
   });
 
-  it('zmigrowany zapis zapisuje się jako v3 i wczytuje identycznie', () => {
+  it('zmigrowany zapis zapisuje się jako v4 i wczytuje identycznie', () => {
     const json = serializeSave(migrated, NOW);
-    expect(JSON.parse(json).version).toBe(3);
+    expect(JSON.parse(json).version).toBe(4);
     const again = parseSave(json);
     expect(again.ok && again.state).toEqual(migrated);
   });
@@ -228,7 +228,7 @@ describe('migracja zapisu v2 → v3 (prawdziwy zapis wygenerowany przez v0.2.1)'
     let s = ok(commands.registerBusiness(migrated, { name: 'Ewa Nowicka — usługi', profileId: 'jezyki', taxForm: 'ryczalt', vatStatus: 'active', startDate: '2026-10-01', zusStart: 'standard', sickness: true }));
     s = advanceDays(s, 80);
     const json = serializeSave(s, NOW);
-    expect(JSON.parse(json).version).toBe(3);
+    expect(JSON.parse(json).version).toBe(4);
     const again = parseSave(json);
     expect(again.ok && again.state).toEqual(s);
     if (!again.ok) return;

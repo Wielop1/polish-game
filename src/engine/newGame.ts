@@ -3,6 +3,7 @@ import { CITIES, ECONOMY_V01, GAME_START, LIFESTYLE, SAVINGS, START_HOME, START_
 import { addDays, addMonths, diffDays } from './date.ts';
 import { createRng } from './rng.ts';
 import { logEvent, postTransaction } from './core.ts';
+import { typicalMonthlyNet } from './payroll.ts';
 import { processDay } from './simulate.ts';
 import type { Contract, GameState, Party, Rule } from './state.ts';
 import { formatPLN } from './money.ts';
@@ -43,7 +44,7 @@ const PARTIES: Party[] = [
   { id: 'party:bank', name: SAVINGS.bankName, role: 'service' },
 ];
 
-function buildContracts(startDate: string): Contract[] {
+function buildContracts(startDate: string, birthDate: string): Contract[] {
   return [
     {
       id: 'contract:employment',
@@ -52,7 +53,7 @@ function buildContracts(startDate: string): Contract[] {
       title: ECONOMY_V01.jobTitle,
       startDate,
       endDate: null,
-      monthlyAmount: ECONOMY_V01.netSalary,
+      monthlyAmount: typicalMonthlyNet(ECONOMY_V01.grossSalary, birthDate, startDate),
       grossMonthly: ECONOMY_V01.grossSalary,
       hoursPerMonth: ECONOMY_V01.startHoursPerMonth,
       employmentForm: 'umowa_o_prace',
@@ -93,7 +94,7 @@ function buildRules(startDate: string): Rule[] {
     {
       ...base, kind: 'obligation', id: 'rule:salary', direction: 'receivable', counterpartyId: 'party:employer', category: 'wynagrodzenie',
       description: 'Wynagrodzenie netto', issueDay: 'last', due: { monthOffset: 1, day: E.salaryPayDay },
-      amount: { type: 'contract', contractId: 'contract:employment' }, contractId: 'contract:employment',
+      amount: { type: 'payroll', contractId: 'contract:employment' }, contractId: 'contract:employment',
     },
     {
       ...base, kind: 'obligation', id: 'rule:rent', direction: 'payable', counterpartyId: 'party:landlord', category: 'czynsz',
@@ -144,6 +145,7 @@ export function createNewGame(input: NewGameInput): GameState {
   const startDate = GAME_START.date;
   if (!CITIES[GAME_START.cityId]) throw new Error(`Nieznane miasto: ${GAME_START.cityId}`);
 
+  const birthDate = pickBirthDate(seed, startDate, GAME_START.age);
   const state: GameState = {
     gameId: `game:${seed}`,
     seed,
@@ -152,7 +154,7 @@ export function createNewGame(input: NewGameInput): GameState {
       id: PLAYER_ID,
       firstName,
       lastName,
-      birthDate: pickBirthDate(seed, startDate, GAME_START.age),
+      birthDate,
       cityId: GAME_START.cityId,
     },
     parties: Object.fromEntries(PARTIES.map((p) => [p.id, p])),
@@ -177,7 +179,7 @@ export function createNewGame(input: NewGameInput): GameState {
       },
     },
     playerAccountId: PLAYER_ACCOUNT_ID,
-    contracts: buildContracts(startDate),
+    contracts: buildContracts(startDate, birthDate),
     rules: buildRules(startDate),
     ledger: [],
     obligations: [],
@@ -192,7 +194,7 @@ export function createNewGame(input: NewGameInput): GameState {
       timePlan: { sleepHours: TIME.defaultSleep, businessHours: 0 },
       lifestyle: 'standardowy',
     },
-    settings: { lifeEvents: lifeEvents ?? true },
+    settings: { lifeEvents: lifeEvents ?? true, payrollFrom: startDate },
     assets: [],
     pending: [],
     applications: [],
@@ -204,6 +206,10 @@ export function createNewGame(input: NewGameInput): GameState {
     serviceOrders: [],
     documents: [],
     taxPeriods: [],
+    payslips: [],
+    taxReturns: [],
+    taxLosses: [],
+    healthSettlements: [],
   };
 
   postTransaction(state, {

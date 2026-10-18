@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ECONOMY_V01, JOB_CATALOG, LIFESTYLE, SAVINGS, estimateNet } from './config.ts';
+import { ECONOMY_V01, JOB_CATALOG, LIFESTYLE, SAVINGS } from './config.ts';
+import { typicalMonthlyNet } from './payroll.ts';
 import { commands } from './commands.ts';
 import type { CommandResult } from './commands.ts';
 import { recordHistory } from './core.ts';
@@ -54,7 +55,8 @@ function withOffer(state: GameState, offerId: string): { state: GameState; appId
 }
 
 const salaryTx = (s: GameState) => s.ledger.filter((t) => t.category === 'wynagrodzenie');
-const OLD_NET = ECONOMY_V01.netSalary;
+const OLD_NET = zl(4_947.01); // netto etatu startowego wg kalkulatora 2026 (ulga dla młodych)
+const estimateNet = (gross: number) => typicalMonthlyNet(gross, '2003-06-15', '2026-03-01');
 
 describe('praca: oferty i aplikacje', () => {
   it('szansa zależy od umiejętności; duże braki = brak szans', () => {
@@ -189,7 +191,7 @@ describe('praca: zmiana zatrudnienia i wypłaty', () => {
   it('wynagrodzenie brutto jest zapisane, a netto to oznaczony szacunek (nie wyliczenie prawne)', () => {
     const c = game().contracts.find((x) => x.type === 'employment')!;
     expect(c.type === 'employment' && c.grossMonthly).toBe(ECONOMY_V01.grossSalary);
-    expect(c.monthlyAmount).toBe(mulBps(ECONOMY_V01.grossSalary, 7_300));
+    expect(c.monthlyAmount).toBe(OLD_NET); // kalkulator płac, nie szacunek 73%
     expect(c.dataStatus).toBe('placeholder');
   });
 });

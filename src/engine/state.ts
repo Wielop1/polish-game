@@ -120,6 +120,8 @@ export const AmountSpecSchema = z.discriminatedUnion('type', [
     contractId: IdSchema,
     field: z.enum(['monthlyAmount', 'utilitiesMonthly']).optional(),
   }),
+  /** Wynagrodzenie z etatu liczone kalkulatorem płac (brutto → netto) w dniu naliczenia; tworzy odcinek płacowy. */
+  z.object({ type: z.literal('payroll'), contractId: IdSchema }),
   /** Kwota zależna od aktualnego stylu życia gracza w dniu naliczenia. */
   z.object({
     type: z.literal('lifestyle'),
@@ -236,6 +238,13 @@ export const EventTypeSchema = z.enum([
   'business.document',
   'business.tax',
   'business.vat',
+  'business.suspended',
+  'business.resumed',
+  'business.taxform',
+  'business.zus',
+  'tax.return',
+  'tax.health',
+  'tax.loss',
 ]);
 
 export const GameEventSchema = z.object({
@@ -398,8 +407,22 @@ export const BusinessSchema = z.object({
     start: ZusStartSchema,
     /** Dobrowolne ubezpieczenie chorobowe. */
     sickness: z.boolean(),
+    /** Mały ZUS Plus (v0.4): deklaracja gracza; podstawa wyliczana co roku z danych roku poprzedniego. */
+    malyPlus: z.object({
+      active: z.boolean(),
+      base: PositiveGroszeSchema.nullable(),
+      since: IsoDateSchema.nullable(),
+      /** Rok, z którego danych wyliczono podstawę. */
+      baseYear: z.number().int().nullable(),
+    }),
   }),
   accountId: IdSchema,
+  /** Zawieszenia działalności (pełne miesiące; `to` = ostatni dzień zawieszenia, null = trwa). */
+  suspensions: z.array(z.object({ from: IsoDateSchema, to: IsoDateSchema.nullable() })),
+  /** Zaplanowana zmiana formy opodatkowania od 1 stycznia roku `effectiveYear`. */
+  taxFormPlan: z.object({ form: TaxFormSchema, effectiveYear: z.number().int(), declaredOn: IsoDateSchema }).nullable(),
+  /** Historia form opodatkowania (od daty). */
+  taxFormHistory: z.array(z.object({ form: TaxFormSchema, from: IsoDateSchema })),
 });
 
 export const ServiceOfferSchema = z.object({
@@ -475,7 +498,9 @@ export const TaxPeriodSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/),
   revenue: GroszeSchema,
   costs: GroszeSchema,
-  zusRegime: z.enum(['ulga', 'preferencyjny', 'standard', 'etat']),
+  zusRegime: z.enum(['ulga', 'preferencyjny', 'standard', 'etat', 'maly_plus', 'zawieszenie']),
+  /** Forma opodatkowania obowiązująca w tym miesiącu. */
+  form: TaxFormSchema,
   /** Składki społeczne (emerytalna, rentowa, chorobowa, wypadkowa, FP/FS) łącznie. */
   social: NonNegGroszeSchema,
   health: NonNegGroszeSchema,
@@ -490,6 +515,93 @@ export const TaxPeriodSchema = z.object({
   advanceSkipped: z.boolean(),
   /** Reguły prawne użyte w obliczeniu (identyfikatory z LEGAL_SOURCES.md). */
   ruleIds: z.array(z.string()),
+  carriedForward: z.boolean(),
+});
+
+/* ---------- v0.4: płace, rozliczenia roczne, straty ---------- */
+
+/** Odcinek płacowy (pasek wynagrodzenia): brutto → składki → zaliczka PIT → netto. */
+export const PayslipSchema = z.object({
+  id: IdSchema,
+  contractId: IdSchema,
+  partyId: IdSchema,
+  /** Miesiąc pracy (YYYY-MM). */
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  accrualDate: IsoDateSchema,
+  /** Dzień wypłaty — od niego liczy się przychód w PIT. */
+  payDate: IsoDateSchema,
+  gross: PositiveGroszeSchema,
+  /** Podstawa składek emerytalnej i rentowej (po uwzględnieniu rocznego limitu 30-krotności). */
+  pensionBase: NonNegGroszeSchema,
+  emerytalna: NonNegGroszeSchema,
+  rentowa: NonNegGroszeSchema,
+  chorobowa: NonNegGroszeSchema,
+  socialTotal: NonNegGroszeSchema,
+  health: NonNegGroszeSchema,
+  /** Część brutto zwolniona z PIT (ulga dla młodych). */
+  exemptGross: NonNegGroszeSchema,
+  /** Składki społeczne przypadające na część opodatkowaną (odliczane w PIT). */
+  taxableSocial: NonNegGroszeSchema,
+  koszty: NonNegGroszeSchema,
+  /** Podstawa zaliczki (zaokrąglona do zł). */
+  pitBase: NonNegGroszeSchema,
+  pitAdvance: NonNegGroszeSchema,
+  net: PositiveGroszeSchema,
+  /** Czy zaliczkę pomniejszono o 1/12 kwoty zmniejszającej (PIT-2). */
+  reductionApplied: NonNegGroszeSchema,
+  /** Odcinek odtworzony dla wynagrodzenia sprzed kalkulatora (kwota wypłacona wg starego szacunku). */
+  legacy: z.boolean(),
+});
+
+export const TaxReturnSchema = z.object({
+  id: IdSchema,
+  year: z.number().int(),
+  /** Zeznanie: PIT-37 (etat), PIT-36 (skala: etat + JDG), PIT-36L (liniowy), PIT-28 (ryczałt). */
+  form: z.enum(['PIT-37', 'PIT-36', 'PIT-36L', 'PIT-28']),
+  income: GroszeSchema,
+  /** Strata z lat ubiegłych odliczona w tym zeznaniu. */
+  lossDeducted: NonNegGroszeSchema,
+  deductions: NonNegGroszeSchema,
+  base: NonNegGroszeSchema,
+  tax: NonNegGroszeSchema,
+  /** Zaliczki (pracodawcy i własne) zaliczone na poczet podatku. */
+  advances: NonNegGroszeSchema,
+  /** Dodatnie = do zapłaty, ujemne = nadpłata. */
+  balance: GroszeSchema,
+  dueDate: IsoDateSchema,
+  obligationId: IdSchema.nullable(),
+  businessId: IdSchema.nullable(),
+  ruleIds: z.array(z.string()),
+  carriedForward: z.boolean(),
+});
+
+export const TaxLossSchema = z.object({
+  id: IdSchema,
+  businessId: IdSchema,
+  /** Rok powstania straty. */
+  year: z.number().int(),
+  /** Forma, w której powstała (skala/liniowy — ryczałt strat nie generuje). */
+  form: z.enum(['skala', 'liniowy']),
+  amount: PositiveGroszeSchema,
+  usages: z.array(z.object({ year: z.number().int(), amount: PositiveGroszeSchema })),
+});
+
+export const HealthSettlementSchema = z.object({
+  id: IdSchema,
+  businessId: IdSchema,
+  year: z.number().int(),
+  form: TaxFormSchema,
+  /** Miesiące działalności (bez zawieszonych), za które naliczano składkę. */
+  months: z.number().int().min(0).max(12),
+  annualBase: GroszeSchema,
+  annualContribution: NonNegGroszeSchema,
+  monthlyTotal: NonNegGroszeSchema,
+  /** Dodatnie = dopłata, ujemne = nadpłata. */
+  diff: GroszeSchema,
+  status: z.enum(['none', 'due', 'refund_available', 'refund_claimed', 'refund_expired']),
+  dueDate: IsoDateSchema.nullable(),
+  claimDeadline: IsoDateSchema.nullable(),
+  obligationId: IdSchema.nullable(),
   carriedForward: z.boolean(),
 });
 
@@ -513,7 +625,11 @@ export const GameStateSchema = z.object({
   history: z.array(HistoryPointSchema),
   openingCash: GroszeSchema,
   life: LifeSchema,
-  settings: z.object({ lifeEvents: z.boolean() }),
+  settings: z.object({
+    lifeEvents: z.boolean(),
+    /** Od tego dnia wynagrodzenia z etatu liczy kalkulator płac (wcześniejsze — dotychczasowa kwota). */
+    payrollFrom: IsoDateSchema,
+  }),
   assets: z.array(AssetSchema),
   pending: z.array(PendingActionSchema),
   applications: z.array(JobApplicationSchema),
@@ -527,6 +643,10 @@ export const GameStateSchema = z.object({
   serviceOrders: z.array(ServiceOrderSchema),
   documents: z.array(DocumentSchema),
   taxPeriods: z.array(TaxPeriodSchema),
+  payslips: z.array(PayslipSchema),
+  taxReturns: z.array(TaxReturnSchema),
+  taxLosses: z.array(TaxLossSchema),
+  healthSettlements: z.array(HealthSettlementSchema),
 });
 
 export type Person = z.infer<typeof PersonSchema>;
@@ -555,6 +675,10 @@ export type ServiceOffer = z.infer<typeof ServiceOfferSchema>;
 export type ServiceOrder = z.infer<typeof ServiceOrderSchema>;
 export type BusinessDocument = z.infer<typeof DocumentSchema>;
 export type TaxPeriod = z.infer<typeof TaxPeriodSchema>;
+export type Payslip = z.infer<typeof PayslipSchema>;
+export type TaxReturn = z.infer<typeof TaxReturnSchema>;
+export type TaxLoss = z.infer<typeof TaxLossSchema>;
+export type HealthSettlement = z.infer<typeof HealthSettlementSchema>;
 export type LedgerEntry = z.infer<typeof LedgerEntrySchema>;
 export type Obligation = z.infer<typeof ObligationSchema>;
 export type GameEvent = z.infer<typeof GameEventSchema>;

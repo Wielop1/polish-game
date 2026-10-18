@@ -98,22 +98,27 @@ export interface PitResult {
 /** Podatek narastająco od początku roku podatkowego (jeden wzór dla zaliczek i rozliczenia rocznego). */
 export function pitCumulative(i: PitInput): PitResult {
   if (i.form === 'ryczalt') {
-    const base = Math.max(0, i.revenue - i.socialPaid - mulBps(i.healthPaid, R.pit.ryczaltHealthDeductionBps));
-    return { base, tax: mulBps(base, i.ryczaltRateBps) };
+    const base = roundZl(Math.max(0, i.revenue - i.socialPaid - mulBps(i.healthPaid, R.pit.ryczaltHealthDeductionBps)));
+    return { base, tax: roundZl(mulBps(base, i.ryczaltRateBps)) };
   }
   if (i.form === 'liniowy') {
     const healthDeduction = Math.min(i.healthPaid, R.pit.linearHealthDeductionLimit);
-    const base = Math.max(0, i.revenue - i.costs - i.socialPaid - healthDeduction);
-    return { base, tax: mulBps(base, R.pit.linearBps) };
+    const base = roundZl(Math.max(0, i.revenue - i.costs - i.socialPaid - healthDeduction));
+    return { base, tax: roundZl(mulBps(base, R.pit.linearBps)) };
   }
-  const base = Math.max(0, i.revenue - i.costs - i.socialPaid);
-  const reduction = i.applyReduction ? R.pit.scaleReduction : 0;
+  const base = roundZl(Math.max(0, i.revenue - i.costs - i.socialPaid));
+  return { base, tax: scaleTax(base, i.applyReduction) };
+}
+
+/** Podatek według skali od podstawy (już zaokrąglonej), z opcjonalną kwotą zmniejszającą; wynik w pełnych złotych. */
+export function scaleTax(base: Grosze, applyReduction: boolean): Grosze {
+  const reduction = applyReduction ? R.pit.scaleReduction : 0;
   const t = R.pit.scaleThreshold;
   const tax =
     base <= t
-      ? Math.max(0, mulBps(base, R.pit.scaleLowBps) - reduction)
+      ? mulBps(base, R.pit.scaleLowBps) - reduction
       : mulBps(t, R.pit.scaleLowBps) - reduction + mulBps(base - t, R.pit.scaleHighBps);
-  return { base, tax: Math.max(0, tax) };
+  return roundZl(Math.max(0, tax));
 }
 
 /* ---------- VAT ---------- */
@@ -125,6 +130,11 @@ export function vatExemptionLimit(startDate: IsoDate, year: number): Grosze {
   if (start.year > year) return 0;
   const months = 12 - (start.month - 1) - (start.day > 1 ? 1 : 0);
   return roundDiv(R.vat.exemptionLimit * months, 12);
+}
+
+/** Zaokrąglenie do pełnych złotych (50 gr i więcej w górę) — podstawy i kwoty podatku (PIT-ROUNDING). */
+export function roundZl(grosze: Grosze): Grosze {
+  return roundDiv(grosze, 100) * 100;
 }
 
 export function vatOf(net: Grosze, rateBps: number): Grosze {

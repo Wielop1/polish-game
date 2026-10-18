@@ -1,4 +1,5 @@
-import { JOB_CATALOG, NET_ESTIMATE_NOTICE, estimateNet } from '../../engine/config.ts';
+import { JOB_CATALOG, PAYROLL_NOTICE } from '../../engine/config.ts';
+import { typicalMonthlyNet } from '../../engine/payroll.ts';
 import type { JobOffer } from '../../engine/config.ts';
 import { companyTenureDays, currentEmployment, employmentStatus, positionTenureDays, upcomingEmployment } from '../../engine/contracts.ts';
 import { CLIMATE_LABEL, layoffRisk } from '../../engine/labor.ts';
@@ -24,7 +25,7 @@ function OfferCard({ offer }: { offer: JobOffer }) {
   const blocker = applicationBlocker(game, offer.id);
   const gaps = skillGaps(game, offer);
   const chance = chanceLabel(applicationChanceBps(game, offer));
-  const net = estimateNet(offer.grossMonthly);
+  const net = typicalMonthlyNet(offer.grossMonthly, game.person.birthDate, game.clock.today);
   const hoursPerDay = workHoursPerWorkday(offer.hoursPerMonth);
   return (
     <div data-testid={`offer-${offer.id}`} className="rounded-xl border border-ink-700 bg-ink-900/50 p-4">
@@ -35,7 +36,7 @@ function OfferCard({ offer }: { offer: JobOffer }) {
         </div>
         <div className="text-right">
           <div className="text-lg font-semibold text-gain"><Money value={offer.grossMonthly} round /> <span className="text-xs font-normal text-slate-400">brutto</span></div>
-          <div className="text-xs text-slate-400">netto ≈ <Money value={net} round /> (szacunek)</div>
+          <div className="text-xs text-slate-400">netto ≈ <Money value={net} round /> (kalkulator)</div>
         </div>
       </div>
       <p className="mt-2 text-sm text-slate-300">{offer.description}</p>
@@ -115,7 +116,7 @@ export function JobsScreen() {
             </div>
             <div className="text-right">
               <div className="text-xl font-semibold text-gain"><Money value={cur.monthlyAmount} /></div>
-              <div className="text-xs text-slate-400">netto/mies. (szacunek){cur.grossMonthly ? <> · brutto <Money value={cur.grossMonthly} round /></> : ' · brutto: brak danych'}</div>
+              <div className="text-xs text-slate-400">netto/mies. (kalkulator){cur.grossMonthly ? <> · brutto <Money value={cur.grossMonthly} round /></> : ' · brutto: brak danych'}</div>
               {cur.endDate === null && !next && <Button variant="danger" className="mt-3" onClick={confirmResign} data-testid="resign">Zrezygnuj z pracy</Button>}
             </div>
           </div>
@@ -124,10 +125,10 @@ export function JobsScreen() {
         )}
         {next && (
           <div data-testid="upcoming-job" className="mt-4 rounded-xl border border-sky/30 bg-sky/5 p-3 text-sm">
-            <strong className="text-sky">Nowa umowa od {formatDatePL(next.startDate)}:</strong> {next.title}, {game.parties[next.partyId]?.name} · netto ≈ <Money value={next.monthlyAmount} /> (szacunek)
+            <strong className="text-sky">Nowa umowa od {formatDatePL(next.startDate)}:</strong> {next.title}, {game.parties[next.partyId]?.name} · netto ≈ <Money value={next.monthlyAmount} /> (kalkulator)
           </div>
         )}
-        <p className="mt-3 text-xs text-slate-500">{NET_ESTIMATE_NOTICE}</p>
+        <p className="mt-3 text-xs text-slate-500">{PAYROLL_NOTICE}</p>
       </Card>
 
       {applications.length > 0 && (
@@ -153,7 +154,7 @@ export function JobsScreen() {
                   {a.status === 'offered' && offer && (
                     <div className="mt-3 space-y-2">
                       <p className="text-sm text-slate-300">
-                        Netto ≈ <Money value={estimateNet(offer.grossMonthly)} /> (szacunek), start <strong>{formatDatePL(startDateForNewJob(game))}</strong>.
+                        Netto ≈ <Money value={typicalMonthlyNet(offer.grossMonthly, game.person.birthDate, today)} /> (kalkulator 2026), start <strong>{formatDatePL(startDateForNewJob(game))}</strong>.
                         {cur && cur.endDate === null && <> Przyjęcie oznacza <strong>wypowiedzenie obecnej umowy</strong> (pracujesz do {formatDatePL(noticeEndDate(today, cur.noticeMonths))}).</>}
                       </p>
                       <div className="flex gap-2">

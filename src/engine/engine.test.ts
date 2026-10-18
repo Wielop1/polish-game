@@ -14,6 +14,8 @@ import type { GameState } from './state.ts';
 /** Gry testów mechaniki bazowej mają wyłączone losowe wydarzenia życiowe (testowane osobno w life.test.ts). */
 const newGame = (seed = 'test-seed') => createNewGame({ firstName: 'Jan', lastName: 'Kowalski', seed, lifeEvents: false });
 const E = ECONOMY_V01;
+/** Netto z etatu startowego wg kalkulatora 2026 (22-latek: ulga dla młodych, PIT 0): 6 300 − 863,73 − 489,26 zł. */
+const NET = zl(4_947.01);
 
 function expectConsistent(s: GameState) {
   expect(checkInvariants(s)).toEqual([]);
@@ -110,7 +112,7 @@ describe('2. wynagrodzenie (przychód ≠ wpływ gotówki)', () => {
   it('pensja za styczeń jest naliczona 31.01, a wpływa dopiero 10.02', () => {
     const s = advanceDays(newGame(), 45); // 15 lutego
     const accrual = s.obligations.find((o) => o.ruleId === 'rule:salary' && o.issueDate === '2026-01-31');
-    expect(accrual).toMatchObject({ amount: E.netSalary, dueDate: '2026-02-10', status: 'settled', settledDate: '2026-02-10' });
+    expect(accrual).toMatchObject({ amount: NET, dueDate: '2026-02-10', status: 'settled', settledDate: '2026-02-10' });
     expect(txOn(s, '2026-02-10', 'wynagrodzenie')).toHaveLength(1);
     expect(s.ledger.filter((t) => t.category === 'wynagrodzenie' && t.date < '2026-02-10')).toHaveLength(0);
     expectConsistent(s);
@@ -118,8 +120,8 @@ describe('2. wynagrodzenie (przychód ≠ wpływ gotówki)', () => {
   it('między naliczeniem a wypłatą należność jest w majątku netto, ale nie w gotówce', () => {
     const s = advanceDays(newGame(), 30); // 31 stycznia (po naliczeniu)
     const b = netWorthBreakdown(s);
-    expect(b.receivables).toBe(E.netSalary);
-    expect(b.netWorth).toBe(b.cash + E.netSalary - b.payables);
+    expect(b.receivables).toBe(NET);
+    expect(b.netWorth).toBe(b.cash + NET - b.payables);
     expect(playerAccount(s).balance).toBe(b.cash);
   });
   it('wynagrodzenie za luty naliczane 28.02 (miesiąc 28-dniowy) i wypłacane 10.03', () => {
@@ -305,7 +307,9 @@ describe('9. symulacja 12 i 120 miesięcy', () => {
       const summaries = monthlySummaries(s);
       expect(summaries).toHaveLength(months + 1);
       for (const m of summaries.filter((x) => x.complete)) {
-        expect(m.income).toBe(E.netSalary);
+        // do 26. urodzin działa ulga dla młodych (PIT 0) — wypłata stała; później pojawia się zaliczka PIT i netto spada
+        if (m.month < '2028-12') expect(m.income).toBe(NET); // wypłata za grudzień 2028 następuje już w 2029 r., po 26. urodzinach (data urodzin zależy od seeda)
+        else expect(m.income).toBeGreaterThan(zl(4_000));
         expect(m.result).toBe(m.income - m.expenses);
       }
     });

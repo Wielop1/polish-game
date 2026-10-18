@@ -68,7 +68,7 @@ function Row({ k, v, tone }: { k: ReactNode; v: ReactNode; tone?: string }) {
 }
 
 const FORM_LABEL: Record<TaxForm, string> = { skala: 'Skala podatkowa (12% / 32%)', liniowy: 'Podatek liniowy 19%', ryczalt: 'Ryczałt od przychodów ewidencjonowanych' };
-const REGIME_LABEL = { ulga: 'ulga na start', preferencyjny: 'składki preferencyjne', standard: 'standardowe składki', etat: 'pokryte etatem' } as const;
+const REGIME_LABEL = { ulga: 'ulga na start', preferencyjny: 'składki preferencyjne', standard: 'standardowe składki', etat: 'pokryte etatem', maly_plus: 'Mały ZUS Plus', zawieszenie: 'zawieszenie' } as const;
 
 /* ---------- 1. Rejestracja JDG ---------- */
 
