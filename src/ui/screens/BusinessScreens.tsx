@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { BUSINESS_PROFILES, PROFILE_BY_ID } from '../../engine/businessCatalog.ts';
+import { SERVICES } from '../../engine/renovationCatalog.ts';
 import { BUSINESS_CATEGORIES, VAT_PASS_THROUGH, activeBusiness, allowedBusinessStarts, isSuspendedOn, docsOf, previewRegistration, profileOf, validateRegistration, zusReliefEligible } from '../../engine/business.ts';
 import type { RegisterInput } from '../../engine/business.ts';
 import { categoryInfo } from '../../engine/categories.ts';
@@ -95,8 +96,9 @@ export function BizRegisterScreen() {
   const [start, setStart] = useState<string>(starts[0] ?? '');
   const [zus, setZus] = useState<ZusStart>('ulga');
   const [sickness, setSickness] = useState(false);
+  const [specialization, setSpecialization] = useState<string>(SERVICES[0]!.id);
 
-  const input: RegisterInput = { name, profileId, taxForm, vatStatus: vat, startDate: start, zusStart: zus, sickness };
+  const input: RegisterInput = { name, profileId, taxForm, vatStatus: vat, startDate: start, zusStart: zus, sickness, specialization: PROFILE_BY_ID.get(profileId)?.industry === 'renovation' ? specialization : undefined };
   const eligible = start ? zusReliefEligible(game, start) : false;
   const effectiveZus: ZusStart = !eligible && zus !== 'standard' ? 'standard' : zus;
   const preview = useMemo(() => (start ? previewRegistration(game, { ...input, zusStart: effectiveZus }) : null), [game, profileId, taxForm, vat, start, effectiveZus, sickness]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -132,9 +134,21 @@ export function BizRegisterScreen() {
               {BUSINESS_PROFILES.map((p) => (
                 <Choice key={p.id} name="profile" checked={profileId === p.id} onChange={() => setProfileId(p.id)} title={p.label}>
                   PKD 2025: <strong>{p.pkd}</strong> — {p.pkdName}
+                  {p.industry && <><br />Moduł branżowy: zapytania, wyceny, materiały, sprzęt, reputacja.</>}
                 </Choice>
               ))}
             </div>
+            {profile.industry === 'renovation' && (
+              <fieldset className="mt-4" data-testid="specialization-picker">
+                <legend className="mb-2 text-sm font-medium text-slate-200">Pierwsza specjalizacja (poziom startowy 2; kolejne dokupisz szkoleniem)</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {SERVICES.map((d) => (
+                    <Choice key={d.id} name="specialization" checked={specialization === d.id} onChange={() => setSpecialization(d.id)} title={d.label}>{d.description}</Choice>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-gold">Ceny, stawki i normy czasu w branży remontowej to parametry symulacyjne — nie oficjalny cennik remontów.</p>
+              </fieldset>
+            )}
           </Card>
 
           <Card title="2. Forma opodatkowania">

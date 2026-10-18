@@ -81,7 +81,7 @@ test('zapis ręczny i autozapis przeżywają przeładowanie strony', async ({ pa
   await expect(page.getByTestId('slot-slot-1')).toContainText('Jan Kowalski');
   await expect(page.getByTestId('slot-slot-1')).toContainText('1 lutego 2026');
 
-  await page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name: 'Pulpit' }).click();
+  await page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name: 'Pulpit', exact: true }).click();
   await page.getByTestId('advance-month').click();
   await expect(page.getByTestId('game-date')).toHaveText('1 marca 2026');
   // autozapis jest asynchroniczny — czekamy, aż slot pokaże zatwierdzony zapis, zanim przeładujemy stronę

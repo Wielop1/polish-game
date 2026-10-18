@@ -1,4 +1,4 @@
-# LEGAL_SOURCES — źródła prawne i status reguł (v0.4)
+# LEGAL_SOURCES — źródła prawne i status reguł (v0.5)
 
 > **To jest symulacja gospodarcza, nie porada prawna ani podatkowa.** Reguły poniżej odwzorowują zasady polskiego systemu (stan na 2026 r.) w zakresie potrzebnym do prowadzenia jednej JDG usługowej. Każda reguła ma status: **VERIFIED** (potwierdzona na stronie urzędowej), **SIMPLIFIED** (uproszczona w symulacji — ograniczenia w kolumnie „Ograniczenia”), **DEFERRED** (niezaimplementowana, bo niezweryfikowana lub poza zakresem; UI tego nie ukrywa).
 >
@@ -145,3 +145,42 @@ Zmienione w miejscu: `PIT-SKALA-WITH-EMPLOYMENT` (łączne rozliczenie), `PIT-AN
 | `REG-CLOSURE` | Zakończenie działalności: ostatnia zaliczka do 20. dnia następnego miesiąca; zeznanie roczne do 30 kwietnia | 2026-01-01 → bezterminowo* | **SIMPLIFIED** | [link](https://biznes.gov.pl/pl/portal/00258) | 2026-10-18 | Zakończenie tylko na koniec miesiąca, bez trwających zleceń; wyrejestrowanie ZUS/VAT-Z nie jest modelowane. |
 
 Podsumowanie rejestru v0.4: **53 reguły — 36 VERIFIED, 13 SIMPLIFIED, 4 DEFERRED.** Parametry zweryfikowano wyłącznie dla 2026 r.; model **nie przełącza się automatycznie na 2027** — lata późniejsze używają tych samych wartości z flagą `carriedForward` i ostrzeżeniem w UI.
+
+## Reguły dodane w v0.5 (branża remontowa i księgowość)
+
+Tylko reguły **nowe** względem v0.4 (reszta bez zmian). **Żadna nie ma statusu VERIFIED**: weryfikacja 2026-10-18 opierała się na stronach MF/biznes.gov.pl, interpretacjach z eureka.mf.gov.pl i opracowaniach cytujących ustawy — pełnych tekstów ustaw nie udało się odczytać, więc stosowane zasady są oznaczone SIMPLIFIED albo DEFERRED. Ceny, stawki i normy czasu w branży remontowej to parametry symulacyjne, a nie przepisy.
+
+### Podatek dochodowy (PIT)
+
+| ID | Zakres i treść reguły | Obowiązuje | Status | Źródło (urzędowe) | Zweryfikowano | Ograniczenia i wyjątki |
+|---|---|---|---|---|---|---|
+| `RENO-RYCZALT-RATE` | Ryczałt 5,5% od przychodów z robót budowlanych (art. 12 ust. 1 pkt 6 lit. a ustawy o ryczałcie) | 2026-01-01 → 2026-12-31 | **SIMPLIFIED** | [link](https://podatki-arch.mf.gov.pl/pit/abc-pit/ryczalt-od-przychodow-ewidencjonowanych/) | 2026-10-18 | Stawka 5,5% dla robót budowlanych potwierdzona w materiałach podatki.gov.pl; ustawa nie definiuje „robót budowlanych” (odwołanie do Prawa budowlanego), a klasyfikacja zależy od rodzaju prac i materiałów (np. materiał powierzony — rozbieżne interpretacje). Gra stosuje 5,5% dla całego profilu remontowego. |
+| `RENO-ADVANCE-PIT` | Zaliczka od klienta jako przychód podatkowy | 2026-01-01 → 2026-12-31 | **SIMPLIFIED** | [link](https://podatki-arch.mf.gov.pl/glos-podatnika-szczegoly-zgloszenia?application=113330) | 2026-10-18 | Zasady art. 14 ust. 1c, 1e i ust. 3 pkt 1 ustawy o PIT (moment powstania przychodu przy zaliczkach) nie zostały odczytane w tekście ustawy. Gra uznaje zaliczkę za przychód w dacie wystawienia jej dokumentu (jak każdą sprzedaż); rozliczenie końcowe = cena − zaliczka − kara umowna. |
+| `RENO-EQUIPMENT-EXPENSING` | Wydatki na sprzęt o wartości do 10 000 zł: koszt w miesiącu oddania do używania (art. 22d ust. 1) | 2026-01-01 → 2026-12-31 | **SIMPLIFIED** | [link](https://eureka.mf.gov.pl/informacje/podglad/479460) | 2026-10-18 | Próg 10 000 zł potwierdzony w interpretacji MF cytującej ustawę. Gra: cały sprzęt (każda pozycja < 10 000 zł) to koszt podatkowy jednorazowo w dacie zakupu, bez amortyzacji i ewidencji środków trwałych; osobno liczona jest wartość księgowa (aktywo ekonomiczne) wg stanu technicznego. Pojazdy i środki trwałe > 10 000 zł — DEFERRED. |
+| `RENO-MATERIALS-TAX-COST` | Koszt podatkowy materiałów w dacie zakupu (bez spisu z natury) | 2026-01-01 → 2026-12-31 | **SIMPLIFIED** | [link](https://www.podatki.gov.pl/twoj-e-pit/pytania-i-odpowiedzi/koszty-uzyskania-przychodow) | 2026-10-18 | Zakup materiałów jest kosztem podatkowym w dacie dokumentu zakupu; gra nie modeluje spisu z natury ani korekty kosztów o zapas końcowy. Zapas materiałów jest osobno aktywem (wartość ekonomiczna), a zużycie nie tworzy drugiego kosztu podatkowego. |
+| `RENO-COMPLAINT-CORRECTION` | Rabat lub zwrot z tytułu reklamacji zamiast faktury korygującej | 2026-01-01 → 2026-12-31 | **SIMPLIFIED** | [link](https://podatki-arch.mf.gov.pl/glos-podatnika-szczegoly-zgloszenia?application=113330) | 2026-10-18 | W rzeczywistości zmniejsza przychód (faktura korygująca); gra ujmuje rabat i zwrot zaliczki po rozwiązaniu umowy jako koszt działalności. Korekty dokumentów — DEFERRED (FE-BIZ-03). |
+
+### VAT
+
+| ID | Zakres i treść reguły | Obowiązuje | Status | Źródło (urzędowe) | Zweryfikowano | Ograniczenia i wyjątki |
+|---|---|---|---|---|---|---|
+| `RENO-VAT-EXEMPTION` | Zwolnienie podmiotowe z VAT w usługach remontowo-wykończeniowych | 2026-01-01 → 2026-12-31 | **SIMPLIFIED** | [link](https://www.podatki.gov.pl/podatki-firmowe/vat/poradniki-i-informatory/zwolnienie-podmiotowe-od-podatku-vat) | 2026-10-18 | Zweryfikowane źródła wskazują wyłączenia m.in. dla dostaw budynków, budowli i terenów budowlanych; usług budowlanych nie wymieniają wprost, ale pełny katalog z art. 113 ust. 13 nie został odczytany w tekście ustawy (por. VAT-EXEMPTION-EXCLUSIONS). Gra dopuszcza zwolnienie i pokazuje to ograniczenie. |
+| `RENO-VAT-REDUCED` | Obniżona stawka VAT 8% dla remontów w budownictwie mieszkaniowym | 2026-01-01 → 2026-12-31 | **DEFERRED** | [link](https://www.podatki.gov.pl/podatki-firmowe/vat/informacje-podstawowe) | 2026-10-18 | Warunki zastosowania (rodzaj obiektu, powierzchnia, zakres usługi z materiałem) nie zostały zweryfikowane — NIE wdrożone. Czynny podatnik stosuje w grze 23%, co bywa mniej korzystne niż w rzeczywistości. |
+| `RENO-VAT-REVERSE-CHARGE` | Odwrotne obciążenie przy usługach budowlanych świadczonych jako podwykonawca | 2026-01-01 → 2026-12-31 | **DEFERRED** | [link](https://www.podatki.gov.pl/podatki-firmowe/vat/informacje-podstawowe) | 2026-10-18 | Dotyczy podwykonawców (załącznik 14 do ustawy o VAT); gra obsługuje wyłącznie klientów indywidualnych, więc mechanizm nie występuje. Podwykonawstwo — przyszłe rozszerzenie. |
+| `RENO-ADVANCE-VAT` | Zaliczka na poczet usługi: obowiązek podatkowy w VAT w dacie otrzymania zaliczki (art. 19a ust. 8) | 2026-01-01 → 2026-12-31 | **SIMPLIFIED** | [link](https://podatki-arch.mf.gov.pl/glos-podatnika-szczegoly-zgloszenia?application=113330) | 2026-10-18 | Wniosek z interpretacji MF/KIS (wyniki wyszukiwania, nie pełny tekst ustawy). Gra: zaliczka to odrębny dokument sprzedaży z VAT (dla czynnego podatnika), rozliczenie końcowe obejmuje resztę ceny; wyjątki z art. 19a ust. 5 pkt 4 nie dotyczą usług remontowych. Faktury zaliczkowe w rozumieniu KSeF nie są modelowane. |
+
+### Rejestracja i zakończenie działalności
+
+| ID | Zakres i treść reguły | Obowiązuje | Status | Źródło (urzędowe) | Zweryfikowano | Ograniczenia i wyjątki |
+|---|---|---|---|---|---|---|
+| `RENO-CONSUMER-RIGHTS` | Prawa konsumenta: rękojmia, reklamacje, spory z klientem indywidualnym | 2026-01-01 → 2026-12-31 | **DEFERRED** | [link](https://www.biznes.gov.pl/pl/portal/092243) | 2026-10-18 | Reklamacje w grze to mechanika ekonomiczna (poprawki / rabat / odmowa) bez terminów i skutków prawnych rękojmi, sporów sądowych ani odpowiedzialności za szkody. Nie przedstawiać jako zgodnych z prawem konsumenckim. |
+| `RENO-PKD` | Kody PKD 2025 branży remontowej | 2026-01-01 → 2026-12-31 | **SIMPLIFIED** | [link](https://www.biznes.gov.pl/pl/portal/092243) | 2026-10-18 | 43.34.Z „Malowanie i szklenie” potwierdzony w PKD 2025 (biznes.gov.pl); 43.31.Z (tynkowanie), 43.33.Z (posadzkarstwo, tapetowanie), 43.39.Z (pozostałe roboty wykończeniowe) — potwierdzone tylko częściowo (nazwy, bez pełnych opisów w PKD 2025). Profil rejestruje główny PKD 43.34.Z. |
+
+### Księgowość i doradztwo
+
+| ID | Zakres i treść reguły | Obowiązuje | Status | Źródło (urzędowe) | Zweryfikowano | Ograniczenia i wyjątki |
+|---|---|---|---|---|---|---|
+| `ACC-ADVISORY` | Usługi księgowe a regulowane doradztwo podatkowe (art. 2 ust. 1 ustawy o doradztwie podatkowym) | 2026-01-01 → 2026-12-31 | **SIMPLIFIED** | [link](https://api.sejm.gov.pl/eli/acts/DU/2005/66/text/U/D20050066Lj.pdf) | 2026-10-18 | Wg opracowań: porady, opinie i wyjaśnienia podatkowe to czynności zastrzeżone, a prowadzenie ksiąg i sporządzanie deklaracji mogą wykonywać także biura rachunkowe. W grze biuro prowadzi ewidencję, pilnuje terminów i zgłasza braki; porównanie form opodatkowania to wynik obliczeń silnika (informacja), nie porada. Indywidualne doradztwo podatkowe — DEFERRED. |
+| `ACC-RESPONSIBILITY` | Odpowiedzialność za rozliczenia przy outsourcingu księgowości | 2026-01-01 → 2026-12-31 | **SIMPLIFIED** | [link](https://api.sejm.gov.pl/eli/acts/DU/2005/66/text/U/D20050066Lj.pdf) | 2026-10-18 | Przedsiębiorca odpowiada za prawidłowość rozliczeń; gra nie symuluje błędów biura, odpowiedzialności odszkodowawczej ani zmiany księgowego (DEFERRED). Biuro nie liczy podatków — liczy je wspólny silnik. |
+
+Rejestr po v0.5: **66 reguł — 36 VERIFIED, 23 SIMPLIFIED, 7 DEFERRED.** Najważniejsze ograniczenia: brak obniżonej stawki VAT 8% dla remontów mieszkań (gra stosuje 23%), brak odwrotnego obciążenia (tylko klienci indywidualni), zaliczka jako odrębny dokument sprzedaży z uproszczonym momentem przychodu, sprzęt i materiały jako koszt podatkowy w dacie zakupu (bez amortyzacji i spisu z natury), rabat/zwrot z reklamacji jako koszt zamiast faktury korygującej, brak prawa konsumenckiego (rękojmia, spory) i brak regulowanego doradztwa podatkowego.

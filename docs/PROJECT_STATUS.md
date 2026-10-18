@@ -4,23 +4,27 @@
 
 ## Wersja
 
-**v0.4.0 — Poprawność rozliczeń i rozwój JDG** (zakończona; v0.5 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 4` (migracje v1 → v2 → v3 → v4). Wcześniej: v0.3 (JDG), v0.2.1, v0.2, v0.1.
+**v0.5.0 — Pierwsza branża biznesowa: remonty i wykończenia** (zakończona; v0.6 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 5` (migracje v1 → v2 → v3 → v4 → v5). Wcześniej: v0.4 (rozliczenia roczne), v0.3 (JDG), v0.2.1, v0.2, v0.1.
 Rejestr rozwoju mechanik: [`FEATURE_EVOLUTION.md`](FEATURE_EVOLUTION.md) · rejestr reguł prawnych: [`LEGAL_SOURCES.md`](LEGAL_SOURCES.md).
 
-## Co działa (v0.4, zweryfikowane testami)
+## Co działa (v0.5, zweryfikowane testami)
 
-Wszystko z v0.1–v0.3 (czas, finanse, praca, mieszkanie, czas i zmęczenie, styl życia, oszczędności, wydarzenia, JDG, ZUS, VAT, zlecenia, dokumenty, zapisy) plus:
+Wszystko z v0.1–v0.4 plus:
 
-- **Kalkulator wynagrodzenia z etatu (2026)**: brutto → netto z składkami pracownika (9,76/1,5/2,45%), limitem 30-krotności, składką zdrowotną 9%, kosztami 250 zł, zaliczką 12%/32% narastająco z kwotą zmniejszającą (PIT-2) i **ulgą PIT-0 dla młodych** (do 26. urodzin, limit 85 528 zł; nie dotyczy JDG). Odcinki płacowe w stanie gry; przychód liczony w roku wypłaty. Przykłady wzorcowe w testach: 4 806 zł → 3 605,85 zł netto (przykład ZUS), 6 300 zł (22-latek) → 4 947,01 zł.
-- **Roczne rozliczenie PIT** (31 grudnia): PIT-37 (etat), **PIT-36 (skala: etat + JDG łącznie, kwota zmniejszająca raz)**, PIT-36L, PIT-28; rozróżnione zaliczki pracodawcy, zaliczki własne i zobowiązanie roczne; dopłata do 30.04, nadpłata jako należność (+45 dni, nie wpływa „od razu”).
-- **Straty podatkowe**: rejestr (rok, forma, kwota, odliczenia); odliczanie do 50% rocznie przez 5 lat; strata podatkowa ≠ strata księgowa ≠ ujemny przepływ gotówki; ryczałt strat nie tworzy.
-- **Roczne rozliczenie składki zdrowotnej**: dopłata do 20 maja; nadpłata **tylko na wniosek gracza** (do 31 maja, inaczej wygasa — bez automatycznej gotówki); miesiące zawieszenia pomijane.
-- **Zawieszenie i wznowienie JDG**: od 1. dnia miesiąca, ≥ 30 dni (wyjątek: pełny luty), bez składek/zaliczek/nowych zleceń, zobowiązania i należności zostają; zakaz przy trwających zleceniach.
-- **Zmiana formy opodatkowania** od 1 stycznia (plan z możliwością anulowania), z historią form i nieruszanymi poprzednimi rozliczeniami; ryczałt blokowany przy przychodzie > 8 517 200 zł.
-- **Mały ZUS Plus** (deklaracja gracza, warunki sprawdzane i wyświetlane, coroczny przegląd 1 stycznia); nigdy nie przyznawany automatycznie.
-- **Ekrany**: „Rozliczenie roczne”, „Podsumowanie roku” (wynik firmy oddzielony od przepływów właściciela), „Planowanie” (prognoza na kopii stanu, 5+ scenariuszy, **nic nie księguje**, oznaczona jako prognoza), karty zawieszenia / formy / Małego ZUS Plus w „Mojej działalności”.
-- **Prawo**: 53 reguły w rejestrze: 36 VERIFIED, 13 SIMPLIFIED, 4 DEFERRED (zmiany v0.4 w `LEGAL_SOURCES.md`). Rozstrzygnięto rozbieżności z v0.3: roczna podstawa zdrowotnej 57 672 zł, limit odliczenia 14 100 zł.
-- **Zapisy**: migracja v3 → v4 na **prawdziwym zapisie z v0.3**; bez ponownego księgowania i bez zmian historii (wynagrodzenia sprzed migracji zachowują wypłaconą kwotę).
+- **Moduł branżowy** (`IndustryModule` + rejestr `industries.ts`): profil „Usługi remontowo-wykończeniowe” (PKD 43.34.Z, ryczałt 5,5%) działa na wspólnym silniku — dokumenty (`issueDocument`), zobowiązania, rachunek firmowy, budżet czasu i podatki są te same co dla innych JDG.
+- **Specjalizacje i umiejętności**: malowanie, gładzie, panele, drobne prace (norma czasu, materiały, wymagany sprzęt, trudność); poziomy 2–5 rosną **wyłącznie od przepracowanych godzin**; dodatkowa specjalizacja = szkolenie.
+- **Sprzęt**: 11 pozycji (ręczne, elektronarzędzia, specjalistyczny, transport) z ceną, stanem technicznym, trwałością, konserwacją i wpływem na wydajność/jakość/transport. Zakup = wydatek + koszt podatkowy (uproszczenie) + aktywo wg stanu technicznego.
+- **Materiały**: 9 materiałów × 3 standardy, miesięczne wahania cen, dostępność dzienna, zakup (z kontrolą gotówki), zapas jako aktywo, zużycie proporcjonalne do postępu bez ponownego wydatku, rejestr ruchów magazynowych.
+- **Zapytania klientów**: deterministyczne; szansa zależy od reputacji, reklamy (3 poziomy, opłata miesięczna), sezonu, dostępności terminów i oferowanych cen; zapytania zawierają lokalizację, zakres, termin, budżet, wymagania jakościowe i termin odpowiedzi.
+- **Wycena**: koszt planowany = materiały + robocizna + transport + pozostałe; narzut ≠ marża; zaliczka, termin płatności, standard, termin realizacji; VAT: netto/brutto jawnie (23% albo zwolnienie).
+- **Negocjacje**: klient akceptuje / odrzuca / prosi o rabat lub zmianę terminu; gracz przyjmuje, odrzuca albo podtrzymuje warunki (jednorazowo).
+- **Kontrakt** = zlecenie wspólnego silnika (`ServiceOrder kind: renovation`) + zaliczka jako odrębny dokument, rozliczenie końcowe po zaliczce, kara za zwłokę 2%/tydzień (max 15%), rozwiązanie umowy.
+- **Realizacja**: etapy (przygotowanie → materiały → realizacja → odbiór → rozliczenie), postęp zależny od czasu, umiejętności, sprzętu, zmęczenia i zapasu; problemy techniczne i organizacyjne; harmonogram z ryzykiem opóźnień; godziny dzielą dobę z etatem (bez nakładania).
+- **Jakość, reputacja i reklamacje**: ocena odbioru, poprawki przy odbiorze, opinie (5 składników), reputacja z wygaszaniem, reklamacje z prawdopodobieństwem zależnym od jakości (poprawki / rabat / odmowa / eskalacja po terminie).
+- **Księgowość**: samodzielnie albo biuro (3 oferty); abonament jako dokument kosztowy; przypomnienia, braki, automatyczny wniosek o zwrot zdrowotnej, coroczne porównanie form z obliczeń silnika; biuro nie liczy podatków.
+- **UI**: sekcja „Remonty” (Pulpit firmy, Zapytania klientów, Wyceny, Kontrakty, Harmonogram, Magazyn i sprzęt, Reputacja i reklamacje), „Księgowość” w sekcji Firma, wybór specjalizacji przy rejestracji, wiersze zapasów i wyniku ekonomicznego w „Podsumowaniu roku”.
+- **Prawo**: 66 reguł: 36 VERIFIED, 23 SIMPLIFIED, 7 DEFERRED (13 nowych — wszystkie SIMPLIFIED/DEFERRED, patrz `LEGAL_SOURCES.md`).
+- **Zapisy**: migracja v4 → v5 na **prawdziwym zapisie z v0.4**; niezmienniki pilnują zapasów, ruchów magazynowych, zaliczek, rozliczeń, reklamacji i opinii.
 
 ## Zweryfikowane i niezweryfikowane przepisy
 
@@ -35,12 +39,12 @@ Spółki i wspólnicy, zatrudnianie pracowników, branża remontowa, giełda, ni
 | Polecenie | Wynik |
 |---|---|
 | `npm run typecheck` | ✅ bez błędów |
-| `npm test` (Vitest) | ✅ **231/231**, w tym 41 testów v0.4 (`v04.test.ts`: kalkulator płac, zaokrąglenia, PIT roczny etat i etat+JDG, straty, zdrowotna roczna, zawieszenie, zmiana formy, Mały ZUS Plus, planowanie, raport roczny, scenariusz wieloletni) oraz 6 testów migracji v3 → v4 |
-| `npm run build` | ✅ JS 633 kB / 188 kB gzip, CSS 44 kB / 7,6 kB gzip |
-| `npm run test:e2e` (Chromium) | ✅ **19/19** (15 wcześniejszych + 4 z v0.4: zawieszenie i zmiana formy, planowanie, rozliczenie roczne i podsumowanie, menu mobilne) |
+| `npm test` (Vitest) | ✅ **293/293**, w tym 56 testów v0.5 (`renovation.test.ts`: start działalności, sprzęt, wyceny i marże, negocjacje, zaliczki, zakupy i zapasy, realizacja, konflikty czasu, jakość i reklamacje, reputacja, księgowość, scenariusz 12 miesięcy, deterministyczność) oraz 6 testów migracji v4 → v5 |
+| `npm run build` | ✅ JS 752 kB / 224 kB gzip, CSS 44 kB / 7,7 kB gzip |
+| `npm run test:e2e` (Chromium) | ✅ **23/23** (19 wcześniejszych + 4 z v0.5: rejestracja ze specjalizacją i wycena, wszystkie ekrany + księgowość, zapis/wczytanie, menu mobilne) |
 
-Test wieloletni (ponad 3 lata): etat + JDG, strata w 2026, zmiana formy skala → liniowy od 2027, zawieszenie sierpień–październik 2027, Mały ZUS Plus w 2028; niezmienniki co miesiąc, brak dubli w rejestrze/zobowiązaniach, deterministyczność.
-Usterka ujawniona podczas pracy: zmiana asercji e2e v0.2 (tekst „szacunek” → „kalkulator”) — zmiana zamierzona, nie regresja silnika.
+Scenariusz 12 miesięcy: polityka gracza (sprzęt, wycena wszystkich zapytań, negocjacje, podpisy, zakupy materiałów, poprawki reklamacji, konserwacja, biuro, reklama); niezmienniki co miesiąc; ≥ 8 zakończonych kontraktów, opinie, reputacja, dokumenty i zobowiązania bez dubli, zapas = suma ruchów, deterministyczność i wznowienie po zapisie.
+Usterka ujawniona przez testy: odwrócona kolejność argumentów `diffDays(późniejsza, wcześniejsza)` w pięciu miejscach modułu (wygaszanie opinii, terminowość, czas odpowiedzi, termin klienta, prognoza) — naprawiona. Zmiany w testach starszych wersji: asercje wersji zapisu (4 → 5), pole `part` w dokumentach, selektor nawigacji „Pulpit” (exact), lista dopuszczalnych domen źródeł urzędowych (MF, Sejm).
 
 ## Znane problemy i uproszczenia
 
@@ -54,6 +58,6 @@ Pełna lista w `FEATURE_EVOLUTION.md` §14. Najważniejsze:
 
 ## Następne zadanie (propozycja — wymaga zatwierdzenia)
 
-**v0.5 — kandydaci** (kolejność do decyzji właściciela): uzupełnienie ulg i wyjątków podatkowych (ulga internetowa, IP Box, składka zdrowotna a zbieg), parametry prawne 2027 po weryfikacji źródeł, podstawowe zatrudnianie pracownika (składki pracodawcy, PPK) lub rozbudowa rynku zleceń (reputacja, windykacja). Bez spółek i branży remontowej do osobnej decyzji.
+**v0.6 — kandydaci** (kolejność do decyzji właściciela): pierwszy pracownik / podwykonawca w branży remontowej (składki pracodawcy, PPK, kierownik ekipy) razem z równoległymi kontraktami i pojazdem; albo weryfikacja źródeł i wdrożenie obniżonego VAT 8% oraz zaliczek (faktury zaliczkowe) w VAT; albo parametry prawne 2027. Bez spółek, giełdy i kredytów do osobnej decyzji.
 
-Nie rozpoczynać v0.5 bez zatwierdzenia.
+Nie rozpoczynać v0.6 bez zatwierdzenia.

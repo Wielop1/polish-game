@@ -169,3 +169,26 @@ Statusy: *Zaakceptowana* · *Proponowana* (czeka na zatwierdzenie) · *Zastąpio
 
 ## ADR-039 · SAVE_VERSION 4 i migracja v3 → v4 — *Zaakceptowana*
 **Decyzja:** `migrateV3ToV4` dodaje puste kolekcje (payslips, taxReturns, taxLosses, healthSettlements), historię formy, pola zawieszeń/MZP oraz `payrollFrom`; test na prawdziwym zapisie z v0.3 (fixture `save-v3.json`).
+
+## ADR-040 · Moduły branżowe: prosty interfejs i rejestr, bez frameworka pluginów — *Zaakceptowana* (polecenie właściciela, v0.5)
+**Decyzja:** `IndustryModule` (`onRegister`, `processDay`, `gaps`) rejestrowany w `industries.ts`; profil działalności wskazuje moduł. Moduł dostarcza treści i mechanikę branży, a podatki, księgowanie, rachunki, czas, należności i zobowiązania zostają we wspólnym silniku (`issueDocument`, `createObligation`, `commitments`). Rejestr wypełnia import `industries.ts` w `simulate.ts` (unika cyklu importów).
+**Konsekwencje:** kolejne branże dopisuje się w `industries.ts`; stan modułu żyje w `GameState.reno` (analogicznie można dodać kolejne klucze).
+
+## ADR-041 · Kontrakt remontowy = `ServiceOrder` + `RenoJob` — *Zaakceptowana*
+**Decyzja:** kontrakt jest zwykłym zleceniem (`kind: 'renovation'`), więc widać go w istniejących widokach i blokuje zamknięcie/zawieszenie działalności; `RenoJob` przechowuje specyfikę (etapy, materiały, jakość). Szablonowe zlecenia v0.3 pomijają zlecenia typu renovation. Sprzedaż, zaliczka i koszty to dokumenty `issueDocument` — moduł nie tworzy równoległych należności.
+
+## ADR-042 · Zaliczka jako odrębny dokument sprzedaży — *Zaakceptowana*
+**Decyzja:** zaliczka to dokument `part: 'advance'` (płatny w 2 dni, bez losowego opóźnienia), a rozliczenie końcowe `part: 'final'` obejmuje cenę − zaliczka − kara umowna. Suma = cena − kara; invariant pilnuje jednej zaliczki i jednego rozliczenia na kontrakt. Uproszczenia podatkowe (moment przychodu, faktury zaliczkowe, korekty) → RENO-ADVANCE-VAT/PIT, FE-BIZ-03.
+
+## ADR-043 · Zapas i sprzęt jako aktywa; koszt podatkowy ≠ koszt ekonomiczny — *Zaakceptowana*
+**Decyzja:** zakup materiałów i sprzętu to dokument kosztowy (gotówka przez zobowiązanie, koszt podatkowy w dacie zakupu) i jednocześnie aktywo w majątku netto (`inventory`, `equipment`). Zużycie materiałów przenosi wartość zapasu do kosztu kontraktu bez nowego wydatku; zużycie sprzętu obniża wartość księgową wg stanu technicznego. Rejestr ruchów magazynowych pozwala sprawdzić zapas niezmiennikiem; tożsamość majątku netto uwzględnia aktywa.
+
+## ADR-044 · Doświadczenie wyłącznie z przepracowanych godzin; jakość i reklamacje z przyczyn — *Zaakceptowana*
+**Decyzja:** poziom umiejętności zależy od efektywnie przepracowanych godzin (wydajność × czas), a nie od kliknięć. Jakość pracy = umiejętności + standard materiałów + sprzęt − zmęczenie ± niewielka losowość; prawdopodobieństwo reklamacji zależy od jakości, problemów, poprawek, opóźnienia i dopasowania standardu (nie jest stałe). Reputacja to średnia ocen z wygaszaniem i zakotwiczeniem 3,5★.
+
+## ADR-045 · Biuro rachunkowe bez drugiego kalkulatora; porównanie form jako informacja — *Zaakceptowana*
+**Decyzja:** biuro pobiera abonament (zwykły dokument kosztowy), wysyła powiadomienia, zgłasza braki i składa wniosek o zwrot nadpłaty (istniejąca komenda); porównanie form używa funkcji z `tax.ts` na danych roku i jest oznaczone jako informacja, nie doradztwo podatkowe (ACC-ADVISORY). Odpowiedzialność pozostaje po stronie przedsiębiorcy (ACC-RESPONSIBILITY).
+
+## ADR-046 · SAVE_VERSION 5 i migracja v4 → v5 — *Zaakceptowana*
+**Decyzja:** `migrateV4ToV5` dodaje `part: 'full'` do dokumentów, `kind: 'service'` do zleceń oraz puste `reno` i `accounting`; historia nietknięta. Test na prawdziwym zapisie z v0.4 (`save-v4.json`). Błąd znaleziony przez testy podczas prac: odwrócona kolejność argumentów `diffDays(późniejsza, wcześniejsza)` w pięciu miejscach modułu — naprawiony, objęty testami (wygaszanie opinii, terminowość, czas odpowiedzi).
+

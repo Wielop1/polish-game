@@ -42,7 +42,11 @@
 
 Weryfikacja źródeł i wdrożenie pozycji z `FEATURE_EVOLUTION.md` oznaczonych v0.4: zmiana formy opodatkowania w kolejnym roku, zawieszenie/wznowienie, Mały ZUS Plus, roczne rozliczenie składki zdrowotnej, straty z lat ubiegłych, łączne rozliczenie etat+JDG, zweryfikowany kalkulator netto z etatu, planowanie i podsumowanie roku. **Wykonane.** Zestaw wartości 2027 — nadal do weryfikacji źródeł (bez automatycznego przełączania). Bez zatrudniania pracowników.
 
-## v0.5+ — Kredyty, leasing, odsetki (dawniej v0.4)
+## v0.5 — Pierwsza branża biznesowa: remonty i wykończenia ✅ (zakończona, patrz `PROJECT_STATUS.md`)
+
+Moduł branżowy (interfejs `IndustryModule`) z usługami malowania, gładzi, paneli i drobnych prac: sprzęt, umiejętności, zapytania klientów, wyceny, negocjacje, kontrakty, materiały i zapas, realizacja z etapami, jakość, reklamacje, reputacja; księgowość i biuro rachunkowe; zapis v5. Bez pracowników, spółek, kredytów i nowego backendu.
+
+## v0.6+ — Kredyty, leasing, odsetki (dawniej v0.4/v0.5)
 
 Harmonogramy rat (kapitał + odsetki, w groszach, bez dryfu zaokrągleń), zdolność kredytowa (uproszczona), odsetki za zwłokę, windykacja (poziom 1). Banki jako strony z własną logiką.
 

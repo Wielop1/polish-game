@@ -264,6 +264,8 @@ export function BizReportScreen() {
               <Row k="Składki ZUS (społeczne + zdrowotna)" v={<Money value={-r.zus} signed />} />
               <Row k="Podatek dochodowy (zaliczki i rozliczenie)" v={<Money value={-r.pit} signed />} />
               <Row k="Wynik netto firmy" v={<Money value={r.result} signed />} tone={moneyTone(r.result)} />
+              {(r.inventoryChange !== 0 || game.reno.jobs.length > 0) && <Row k="Zmiana wartości zapasów materiałów" v={<Money value={r.inventoryChange} signed />} />}
+              {(r.inventoryChange !== 0 || game.reno.jobs.length > 0) && <Row k="Wynik ekonomiczny (z zapasami)" v={<Money value={r.economicResult} signed />} tone={moneyTone(r.economicResult)} />}
               {r.taxLossCreated > 0 && <Row k="Powstała strata podatkowa" v={<Money value={r.taxLossCreated} />} tone="text-gold" />}
             </dl>
           )}

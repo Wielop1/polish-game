@@ -36,17 +36,6 @@ export interface BusinessProfile {
 
 export const BUSINESS_PROFILES: readonly BusinessProfile[] = [
   {
-    id: 'remonty',
-    label: 'Usługi remontowo-wykończeniowe',
-    description: 'Malowanie, gładzie, montaż paneli i drobne prace wykończeniowe dla klientów indywidualnych. Moduł branżowy: zapytania, wyceny, negocjacje, kontrakty, materiały, sprzęt, reputacja.',
-    pkd: '43.34.Z',
-    pkdName: 'Malowanie i szklenie',
-    ryczaltRateBps: 550,
-    ryczaltCategory: 'roboty budowlane',
-    industry: 'renovation',
-    templates: [],
-  },
-  {
     id: 'it-programowanie',
     label: 'Programowanie i tworzenie oprogramowania',
     description: 'Drobne projekty programistyczne, strony i automatyzacje dla małych firm.',
@@ -98,6 +87,17 @@ export const BUSINESS_PROFILES: readonly BusinessProfile[] = [
       { id: 'sp-biuro', title: 'Generalne sprzątanie biura po remoncie', clientName: 'Agencja Nieruchomości Kormoran (fikcyjna)', description: 'Jednorazowe sprzątanie powierzchni ok. 120 m².', netMin: zl(2_000), netMax: zl(3_200), hours: 20, costMin: zl(100), costMax: zl(250), termDays: 14, deadlineDays: 14, latePenaltyBps: 1_000 },
       { id: 'sp-umowa', title: 'Miesięczne sprzątanie gabinetu', clientName: 'Gabinet Fizjoterapii Dajtki (fikcyjny)', description: 'Regularne sprzątanie przez miesiąc (zlecenie jednorazowe).', netMin: zl(1_500), netMax: zl(2_400), hours: 18, costMin: zl(50), costMax: zl(150), termDays: 14, deadlineDays: 30, latePenaltyBps: 500 },
     ],
+  },
+  {
+    id: 'remonty',
+    label: 'Usługi remontowo-wykończeniowe',
+    description: 'Malowanie, gładzie, montaż paneli i drobne prace wykończeniowe dla klientów indywidualnych. Moduł branżowy: zapytania, wyceny, negocjacje, kontrakty, materiały, sprzęt, reputacja.',
+    pkd: '43.34.Z',
+    pkdName: 'Malowanie i szklenie',
+    ryczaltRateBps: 550,
+    ryczaltCategory: 'roboty budowlane',
+    industry: 'renovation',
+    templates: [],
   },
 ];
 

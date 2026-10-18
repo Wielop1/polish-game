@@ -4,6 +4,7 @@ import type { RegisterInput } from '../engine/business.ts';
 import { commands } from '../engine/commands.ts';
 import type { CommandResult } from '../engine/commands.ts';
 import type { Grosze } from '../engine/money.ts';
+import type { QuoteInput } from '../engine/renovation.ts';
 import { createNewGame, NewGameInputSchema } from '../engine/newGame.ts';
 import type { NewGameInput } from '../engine/newGame.ts';
 import { advanceOneDay, advanceToNextMonth } from '../engine/simulate.ts';
@@ -17,7 +18,8 @@ export type Screen =
   | 'dashboard' | 'character' | 'finances' | 'calendar' | 'events'
   | 'jobs' | 'housing' | 'lifestyle' | 'time' | 'savings' | 'decisions'
   | 'bizRegister' | 'bizOverview' | 'bizOrders' | 'bizFinance' | 'bizTax' | 'bizDocs' | 'bizCalendar'
-  | 'bizSettlement' | 'bizReport' | 'planning'
+  | 'bizSettlement' | 'bizReport' | 'planning' | 'bizAccounting'
+  | 'renoDashboard' | 'renoEnquiries' | 'renoQuotes' | 'renoContracts' | 'renoSchedule' | 'renoStock' | 'renoReputation'
   | 'game';
 
 export interface Notice {
@@ -76,6 +78,23 @@ interface GameStore {
   declareMalyZusPlus: () => boolean;
   resignMalyZusPlus: () => boolean;
   claimHealthRefund: (settlementId: string) => boolean;
+  /** Zapytanie wybrane do wyceny (ekran „Wyceny”). */
+  selectedEnquiryId: string | null;
+  selectEnquiry: (id: string | null) => void;
+  buyEquipment: (catalogId: string) => boolean;
+  maintainEquipment: (itemId: string) => boolean;
+  buyMaterial: (key: string, qty: number) => boolean;
+  buyMissingForJob: (jobId: string) => boolean;
+  setAdvertising: (level: 'none' | 'local' | 'intensive') => boolean;
+  addSpecialization: (serviceId: string) => boolean;
+  declineEnquiry: (enquiryId: string) => boolean;
+  sendQuote: (enquiryId: string, input: QuoteInput) => boolean;
+  respondToCounter: (quoteId: string, action: 'accept' | 'decline' | 'hold') => boolean;
+  signContract: (quoteId: string) => boolean;
+  terminateJob: (jobId: string) => boolean;
+  resolveComplaint: (complaintId: string, action: 'repair' | 'discount' | 'reject') => boolean;
+  hireAccountingOffice: (planId: string) => boolean;
+  terminateAccountingOffice: () => boolean;
   acceptServiceOffer: (offerId: string, hoursPerDay: number) => boolean;
   declineServiceOffer: (offerId: string) => boolean;
   saveToSlot: (slot: string) => Promise<void>;
@@ -178,6 +197,30 @@ export const useGameStore = create<GameStore>((set, get) => {
     declareMalyZusPlus: () => exec((g) => commands.declareMalyZusPlus(g)),
     resignMalyZusPlus: () => exec((g) => commands.resignMalyZusPlus(g)),
     claimHealthRefund: (id) => exec((g) => commands.claimHealthRefund(g, id)),
+    selectedEnquiryId: null,
+    selectEnquiry: (id) => set({ selectedEnquiryId: id }),
+    buyEquipment: (id) => exec((g) => commands.buyEquipment(g, id)),
+    maintainEquipment: (id) => exec((g) => commands.maintainEquipment(g, id)),
+    buyMaterial: (key, qty) => exec((g) => commands.buyMaterial(g, key, qty)),
+    buyMissingForJob: (id) => exec((g) => commands.buyMissingForJob(g, id)),
+    setAdvertising: (level) => exec((g) => commands.setAdvertising(g, level)),
+    addSpecialization: (id) => exec((g) => commands.addSpecialization(g, id)),
+    declineEnquiry: (id) => exec((g) => commands.declineEnquiry(g, id)),
+    sendQuote: (enquiryId, input) => {
+      const done = exec((g) => commands.sendQuote(g, enquiryId, input));
+      if (done) set({ selectedEnquiryId: null });
+      return done;
+    },
+    respondToCounter: (id, action) => exec((g) => commands.respondToCounter(g, id, action)),
+    signContract: (id) => {
+      const done = exec((g) => commands.signContract(g, id));
+      if (done) set({ screen: 'renoContracts' });
+      return done;
+    },
+    terminateJob: (id) => exec((g) => commands.terminateJob(g, id)),
+    resolveComplaint: (id, action) => exec((g) => commands.resolveComplaint(g, id, action)),
+    hireAccountingOffice: (id) => exec((g) => commands.hireAccountingOffice(g, id)),
+    terminateAccountingOffice: () => exec((g) => commands.terminateAccountingOffice(g)),
     acceptServiceOffer: (offerId, hoursPerDay) => exec((g) => commands.acceptServiceOffer(g, offerId, hoursPerDay)),
     declineServiceOffer: (offerId) => exec((g) => commands.declineServiceOffer(g, offerId)),
 

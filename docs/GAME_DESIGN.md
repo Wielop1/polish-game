@@ -66,3 +66,7 @@ Brak narzuconych. Przykładowe cele własne: stabilność finansowa, pierwsza w�
 ## 10. Zasady realizmu danych
 
 Wszystkie liczby (płace, czynsze, stawki podatkowe, ceny) muszą mieć status **zweryfikowane** (ze źródłem i datą obowiązywania) albo **przykładowe** — i być tak oznaczone w UI. Do czasu weryfikacji gra używa wartości przykładowych (patrz `ECONOMY_ENGINE.md`, „Dane i wersjonowanie prawa”).
+
+## Branże biznesowe (v0.5)
+
+Działalność gospodarczą można prowadzić w profilu branżowym — pierwszy to **usługi remontowo-wykończeniowe**: gracz wybiera specjalizację, kupuje sprzęt, pozyskuje klientów (zapytania zależą od reputacji, reklamy, sezonu i dostępności), wycenia, negocjuje, podpisuje umowy, kupuje materiały, realizuje prace własnymi godzinami (dzielonymi z etatem), rozlicza klientów, obsługuje reklamacje i buduje reputację. Rachunki, podatki, czas i należności pozostają we wspólnym silniku. Ceny i normy branży są parametrami symulacyjnymi.

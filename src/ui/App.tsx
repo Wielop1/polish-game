@@ -14,6 +14,8 @@ import { SavingsScreen } from './screens/SavingsScreen.tsx';
 import { TimeScreen } from './screens/TimeScreen.tsx';
 import { BizCalendarScreen, BizDocsScreen, BizFinanceScreen, BizOrdersScreen, BizOverviewScreen, BizRegisterScreen, BizTaxScreen } from './screens/BusinessScreens.tsx';
 import { BizReportScreen, BizSettlementScreen, PlanningScreen } from './screens/AnnualScreens.tsx';
+import { BizAccountingScreen } from './screens/AccountingScreen.tsx';
+import { RenoContractsScreen, RenoDashboardScreen, RenoEnquiriesScreen, RenoQuotesScreen, RenoReputationScreen, RenoScheduleScreen, RenoStockScreen } from './screens/RenovationScreens.tsx';
 import { CharacterScreen } from './screens/CharacterScreen.tsx';
 import { DashboardScreen } from './screens/DashboardScreen.tsx';
 import { EventsScreen } from './screens/EventsScreen.tsx';
@@ -61,7 +63,20 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { id: 'bizSettlement', label: 'Rozliczenie roczne', icon: 'receipt' },
       { id: 'bizReport', label: 'Podsumowanie roku', icon: 'list' },
       { id: 'planning', label: 'Planowanie', icon: 'trend' },
+      { id: 'bizAccounting', label: 'Księgowość', icon: 'file' },
       { id: 'bizCalendar', label: 'Kalendarz obowiązków', icon: 'calendar' },
+    ],
+  },
+  {
+    title: 'Remonty',
+    items: [
+      { id: 'renoDashboard', label: 'Pulpit firmy', icon: 'dashboard' },
+      { id: 'renoEnquiries', label: 'Zapytania klientów', icon: 'bell' },
+      { id: 'renoQuotes', label: 'Wyceny', icon: 'receipt' },
+      { id: 'renoContracts', label: 'Kontrakty', icon: 'briefcase' },
+      { id: 'renoSchedule', label: 'Harmonogram', icon: 'calendar' },
+      { id: 'renoStock', label: 'Magazyn i sprzęt', icon: 'coins' },
+      { id: 'renoReputation', label: 'Reputacja i reklamacje', icon: 'heart' },
     ],
   },
   { title: 'System', items: [{ id: 'game', label: 'Nowa gra / Wczytaj', icon: 'save' }] },
@@ -105,6 +120,14 @@ function renderScreen(screen: Screen) {
     case 'bizSettlement': return <BizSettlementScreen />;
     case 'bizReport': return <BizReportScreen />;
     case 'planning': return <PlanningScreen />;
+    case 'bizAccounting': return <BizAccountingScreen />;
+    case 'renoDashboard': return <RenoDashboardScreen />;
+    case 'renoEnquiries': return <RenoEnquiriesScreen />;
+    case 'renoQuotes': return <RenoQuotesScreen />;
+    case 'renoContracts': return <RenoContractsScreen />;
+    case 'renoSchedule': return <RenoScheduleScreen />;
+    case 'renoStock': return <RenoStockScreen />;
+    case 'renoReputation': return <RenoReputationScreen />;
     case 'game': return <GameScreen />;
   }
 }
@@ -160,7 +183,7 @@ export function App() {
             </div>
           ))}
         </nav>
-        <p className="text-[11px] leading-relaxed text-slate-500">v0.4 · rozliczenia roczne i rozwój JDG. Symulacja — nie porada prawna ani podatkowa.</p>
+        <p className="text-[11px] leading-relaxed text-slate-500">v0.5 · branża remontowa i księgowość. Symulacja — nie porada prawna ani podatkowa.</p>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
