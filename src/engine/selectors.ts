@@ -1,6 +1,11 @@
+import { LIFESTYLE_QOL, STANDARD_QOL } from './config.ts';
+import { activeLeases, currentLease, employmentStatus } from './contracts.ts';
 import { addMonthsToKey, ageOn, monthKey } from './date.ts';
 import type { IsoDate } from './date.ts';
 import type { Grosze } from './money.ts';
+import { NON_FLOW_CATEGORIES } from './categories.ts';
+import { projectedAmount } from './schedule.ts';
+import { weeklyHours } from './time.ts';
 import type { Account, GameState, Obligation } from './state.ts';
 
 export function playerAccount(s: GameState): Account {
@@ -13,8 +18,30 @@ export function cash(s: GameState): Grosze {
   return playerAccount(s).balance;
 }
 
+export function savingsAccount(s: GameState): Account | null {
+  return Object.values(s.accounts).find((a) => a.type === 'savings') ?? null;
+}
+
+export function savingsBalance(s: GameState): Grosze {
+  return savingsAccount(s)?.balance ?? 0;
+}
+
+/** Suma sald wszystkich rachunków gracza. */
+export function totalBalance(s: GameState): Grosze {
+  return Object.values(s.accounts).reduce((a, acc) => a + acc.balance, 0);
+}
+
+export function heldDeposits(s: GameState): Grosze {
+  return s.assets.filter((a) => a.status === 'held').reduce((a, x) => a + x.amount, 0);
+}
+
 export interface NetWorthBreakdown {
+  /** Saldo rachunku bieżącego. */
   cash: Grosze;
+  /** Saldo rachunku oszczędnościowego. */
+  savings: Grosze;
+  /** Kaucje zwrotne (aktywa) przechowywane przez wynajmujących. */
+  deposits: Grosze;
   /** Otwarte należności gracza (np. naliczona, niewypłacona pensja). */
   receivables: Grosze;
   /** Otwarte zobowiązania gracza (np. naliczony, nieopłacony czynsz). */
@@ -26,7 +53,7 @@ export function openObligations(s: GameState, direction?: Obligation['direction'
   return s.obligations.filter((o) => o.status === 'open' && (!direction || o.direction === direction));
 }
 
-/** Majątek netto = gotówka + otwarte należności − otwarte zobowiązania (v0.1: brak innych aktywów). */
+/** Majątek netto = rachunki + kaucje (aktywa) + otwarte należności − otwarte zobowiązania. */
 export function netWorthBreakdown(s: GameState): NetWorthBreakdown {
   let receivables = 0;
   let payables = 0;
@@ -36,7 +63,9 @@ export function netWorthBreakdown(s: GameState): NetWorthBreakdown {
     else payables += o.amount;
   }
   const c = cash(s);
-  return { cash: c, receivables, payables, netWorth: c + receivables - payables };
+  const sv = savingsBalance(s);
+  const dep = heldDeposits(s);
+  return { cash: c, savings: sv, deposits: dep, receivables, payables, netWorth: c + sv + dep + receivables - payables };
 }
 
 export function netWorth(s: GameState): Grosze {
@@ -58,7 +87,7 @@ export interface MonthSummary {
   /** Koszty memoriałowo (naliczone w miesiącu). */
   expenses: Grosze;
   result: Grosze;
-  /** Przepływy pieniężne (zaksięgowane na rachunku), bez kapitału początkowego. */
+  /** Przepływy pieniężne na rachunkach, bez kapitału początkowego, przelewów własnych i kaucji. */
   cashIn: Grosze;
   cashOut: Grosze;
   closingCash: Grosze | null;
@@ -97,7 +126,7 @@ export function monthlySummaries(s: GameState): MonthSummary[] {
     }
   }
   for (const tx of s.ledger) {
-    if (tx.category === 'kapital_poczatkowy') continue;
+    if (NON_FLOW_CATEGORIES.has(tx.category)) continue;
     const m = map.get(monthKey(tx.date));
     if (!m) continue;
     if (tx.amount > 0) m.cashIn += tx.amount;
@@ -106,7 +135,7 @@ export function monthlySummaries(s: GameState): MonthSummary[] {
   for (const p of s.history) {
     const m = map.get(monthKey(p.date));
     if (!m) continue;
-    m.closingCash = p.cash;
+    m.closingCash = p.cash + p.savings;
     m.closingNetWorth = p.netWorth;
   }
   const lastDay = s.clock.today;
@@ -116,3 +145,66 @@ export function monthlySummaries(s: GameState): MonthSummary[] {
   }
   return [...map.values()];
 }
+
+/** Szacunek miesięcznych kosztów stałych i stylu życia (do oceny bufora finansowego). */
+export function monthlyCostEstimate(s: GameState): Grosze {
+  let total = 0;
+  for (const r of s.rules) {
+    if (r.kind !== 'obligation' || r.direction !== 'payable') continue;
+    if (r.endDate !== null && r.endDate < s.clock.today) continue;
+    if (r.startDate > s.clock.today) continue;
+    total += projectedAmount(s, r).amount;
+  }
+  return total;
+}
+
+export interface QolComponent {
+  id: 'lifestyle' | 'housing' | 'rest' | 'fatigue' | 'security';
+  label: string;
+  weight: number;
+  /** 0–100. */
+  score: number;
+  detail: string;
+}
+
+export interface QualityOfLife {
+  score: number;
+  components: QolComponent[];
+}
+
+const clamp100 = (v: number) => Math.min(100, Math.max(0, Math.round(v)));
+
+/**
+ * Wskaźnik jakości życia (0–100). NIE jest funkcją majątku: składa się ze stylu życia, standardu
+ * mieszkania, czasu na odpoczynek, zmęczenia i bezpieczeństwa finansowego. To ostatnie to tylko
+ * 15% wagi i ma sufit (bufor ≥ 3 miesięcy kosztów = 100), więc dodatkowe pieniądze nie podnoszą go bez końca.
+ */
+export function qualityOfLife(s: GameState): QualityOfLife {
+  const today = s.clock.today;
+  const lease = currentLease(s, today);
+  const w = weeklyHours(s, today);
+  const avgFree = w.free / 7;
+  const monthly = monthlyCostEstimate(s);
+  const bufferMonths = monthly > 0 ? totalBalance(s) / monthly : 0;
+  const overdue = overdueObligations(s).length > 0;
+  const unemployed = employmentStatus(s, today) === 'unemployed';
+  let security = clamp100((bufferMonths / 3) * 100);
+  if (overdue) security = clamp100(security - 50);
+  if (unemployed) security = clamp100(security - 20);
+
+  const components: QolComponent[] = [
+    { id: 'lifestyle', label: 'Styl życia', weight: 25, score: LIFESTYLE_QOL[s.life.lifestyle], detail: 'poziom wydatków na codzienność' },
+    { id: 'housing', label: 'Mieszkanie', weight: 20, score: lease?.standard ? STANDARD_QOL[lease.standard] : 60, detail: lease?.standard ? `standard: ${lease.standard}` : 'brak danych o standardzie' },
+    { id: 'rest', label: 'Czas wolny', weight: 20, score: clamp100((avgFree - 1) * 14), detail: `średnio ${avgFree.toFixed(1)} godz. wolnych dziennie` },
+    { id: 'fatigue', label: 'Kondycja', weight: 20, score: 100 - s.life.fatigue, detail: `zmęczenie ${s.life.fatigue}/100` },
+    { id: 'security', label: 'Bezpieczeństwo finansowe', weight: 15, score: security, detail: `bufor ≈ ${bufferMonths.toFixed(1)} mies. kosztów${overdue ? ', zaległości' : ''}${unemployed ? ', brak pracy' : ''}` },
+  ];
+  const score = clamp100(components.reduce((a, c) => a + c.score * c.weight, 0) / 100);
+  return { score, components };
+}
+
+/** Pomocnicze: ile umów najmu obowiązuje dziś (>1 = nakładanie się okresów, płacisz za oba). */
+export function overlappingLeases(s: GameState): number {
+  return activeLeases(s, s.clock.today).length;
+}
+

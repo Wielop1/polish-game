@@ -44,12 +44,18 @@ export interface ScheduledItem {
   category: string | null;
 }
 
-function projectedAmount(s: GameState, rule: ObligationRule): { amount: Grosze; approximate: boolean } {
+/** Kwota reguły „na dziś” (do projekcji i szacunków): losowe — wartość bazowa; styl życia — aktualny poziom. */
+export function projectedAmount(s: GameState, rule: ObligationRule): { amount: Grosze; approximate: boolean } {
   const spec = rule.amount;
   if (spec.type === 'fixed') return { amount: spec.amount, approximate: false };
   if (spec.type === 'variable') return { amount: spec.base, approximate: spec.spreadBps > 0 };
+  if (spec.type === 'lifestyle') return { amount: spec.levels[s.life.lifestyle], approximate: spec.spreadBps > 0 };
   const contract = s.contracts.find((c) => c.id === spec.contractId);
   if (!contract) throw new Error(`Brak umowy ${spec.contractId} dla reguły ${rule.id}`);
+  if (spec.field === 'utilitiesMonthly') {
+    if (contract.type !== 'lease') throw new Error(`Reguła ${rule.id}: opłaty eksploatacyjne dotyczą tylko najmu`);
+    return { amount: contract.utilitiesMonthly, approximate: false };
+  }
   return { amount: contract.monthlyAmount, approximate: false };
 }
 
@@ -98,7 +104,7 @@ export function scheduledItems(s: GameState, from: IsoDate, to: IsoDate): Schedu
           items.push({ date: dueDate, kind: 'due', ruleId: rule.id, title: rule.description, amount: sign * amount, approximate, category: rule.category });
         }
       }
-    } else {
+    } else if (rule.kind === 'birthday') {
       const b = parseIso(s.person.birthDate);
       const y0 = parseIso(start).year;
       const y1 = parseIso(to).year;

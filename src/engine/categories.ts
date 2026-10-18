@@ -15,7 +15,21 @@ export const CATEGORIES: readonly CategoryInfo[] = [
   { id: 'zywnosc', label: 'Żywność', kind: 'expense', color: '#fb923c' },
   { id: 'transport', label: 'Transport', kind: 'expense', color: '#a78bfa' },
   { id: 'rozrywka', label: 'Rozrywka i drobne wydatki', kind: 'expense', color: '#2dd4bf' },
+  { id: 'przeprowadzka', label: 'Przeprowadzka', kind: 'expense', color: '#f9a8d4' },
+  { id: 'awaria', label: 'Awarie i naprawy', kind: 'expense', color: '#fca5a5' },
+  { id: 'nieprzewidziane', label: 'Nieprzewidziane wydatki', kind: 'expense', color: '#fdba74' },
+  { id: 'szkolenie', label: 'Szkolenia', kind: 'expense', color: '#c4b5fd' },
+  { id: 'podatek_odsetki', label: 'Podatek od odsetek', kind: 'expense', color: '#94a3b8' },
+  { id: 'premia', label: 'Premie', kind: 'income', color: '#6ee7b7' },
+  { id: 'dodatkowy_zarobek', label: 'Dodatkowy zarobek', kind: 'income', color: '#86efac' },
+  { id: 'odsetki', label: 'Odsetki od oszczędności', kind: 'income', color: '#7dd3fc' },
+  { id: 'kaucja', label: 'Kaucja (aktywo)', kind: 'capital', color: '#a8a29e' },
+  { id: 'zwrot_kaucji', label: 'Zwrot kaucji', kind: 'capital', color: '#a8a29e' },
+  { id: 'przelew_wlasny', label: 'Przelew własny', kind: 'capital', color: '#94a3b8' },
 ];
+
+/** Kategorie, które nie są przychodem ani kosztem (ruchy kapitałowe/własne) — pomijane w przepływach miesięcznych. */
+export const NON_FLOW_CATEGORIES: ReadonlySet<string> = new Set(['kapital_poczatkowy', 'przelew_wlasny', 'kaucja', 'zwrot_kaucji']);
 
 const BY_ID = new Map(CATEGORIES.map((c) => [c.id, c]));
 

@@ -1,0 +1,13 @@
+{
+  "seed": "fixture-v1",
+  "today": "2026-04-11",
+  "cash": 527339,
+  "netWorth": 497339,
+  "ledgerCount": 25,
+  "obligationCount": 25,
+  "eventCount": 50,
+  "historyCount": 101,
+  "birthDate": "2003-10-16",
+  "overdue": 0,
+  "lastTxId": "tx:settle:obl:rule:rent@2026-04-01"
+}

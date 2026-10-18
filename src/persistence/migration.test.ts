@@ -1,0 +1,179 @@
+import { describe, expect, it } from 'vitest';
+import { commands } from '../engine/commands.ts';
+import type { CommandResult } from '../engine/commands.ts';
+import { checkInvariants } from '../engine/invariants.ts';
+import { createNewGame } from '../engine/newGame.ts';
+import { zl } from '../engine/money.ts';
+import { cash, netWorth, savingsBalance } from '../engine/selectors.ts';
+import { advanceDays, advanceToNextMonth, processDay } from '../engine/simulate.ts';
+import type { GameState } from '../engine/state.ts';
+import { LIFESTYLE } from '../engine/config.ts';
+import expectV1 from './fixtures/save-v1.expect.json';
+import rawV1 from './fixtures/save-v1.json?raw';
+import { SAVE_VERSION, parseSave, serializeSave } from './save.ts';
+
+const NOW = '2026-10-18T12:00:00.000Z';
+const ok = (r: CommandResult): GameState => {
+  if (!r.ok) throw new Error(r.error);
+  return r.state;
+};
+
+describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', () => {
+  const result = parseSave(rawV1);
+  if (!result.ok) throw new Error(`fixture v1 nie wczytał się: ${result.error}`);
+  const migrated = result.state;
+
+  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 2', () => {
+    expect(JSON.parse(rawV1).version).toBe(1);
+    expect(SAVE_VERSION).toBe(2);
+  });
+
+  it('historia finansowa zostaje nietknięta: salda, majątek netto, rejestr, zobowiązania, zdarzenia', () => {
+    expect(migrated.seed).toBe(expectV1.seed);
+    expect(migrated.clock.today).toBe(expectV1.today);
+    expect(cash(migrated)).toBe(expectV1.cash);
+    expect(netWorth(migrated)).toBe(expectV1.netWorth);
+    expect(migrated.ledger).toHaveLength(expectV1.ledgerCount);
+    expect(migrated.obligations).toHaveLength(expectV1.obligationCount);
+    expect(migrated.events).toHaveLength(expectV1.eventCount);
+    expect(migrated.history).toHaveLength(expectV1.historyCount);
+    expect(migrated.ledger.at(-1)!.id).toBe(expectV1.lastTxId);
+    expect(migrated.person.birthDate).toBe(expectV1.birthDate);
+    // wpisy v1 są identyczne co do pól z v1 (poza nowym `transferId: null`)
+    const v1 = JSON.parse(rawV1).state;
+    expect(migrated.ledger.map(({ transferId, ...rest }) => (transferId === null ? rest : null))).toEqual(v1.ledger);
+    expect(migrated.history.map((h) => [h.date, h.cash, h.netWorth])).toEqual(v1.history.map((h: { date: string; cash: number; netWorth: number }) => [h.date, h.cash, h.netWorth]));
+    expect(checkInvariants(migrated)).toEqual([]);
+  });
+
+  it('dodaje nowe elementy z bezpiecznymi wartościami domyślnymi, niczego nie zmyślając', () => {
+    expect(Object.values(migrated.accounts).map((a) => a.type).sort()).toEqual(['checking', 'savings']);
+    expect(savingsBalance(migrated)).toBe(0);
+    expect(migrated.life.lifestyle).toBe('standardowy');
+    expect(migrated.life.timePlan).toEqual({ sleepHours: 8, businessHours: 0 });
+    expect(migrated.assets).toEqual([]);
+    expect(migrated.settings.lifeEvents).toBe(true);
+    const emp = migrated.contracts.find((c) => c.type === 'employment')!;
+    const lease = migrated.contracts.find((c) => c.type === 'lease')!;
+    expect(emp.type === 'employment' && emp.grossMonthly).toBeNull(); // v1 nie znało brutto — brak danych, nie zgadywanie
+    expect(emp.type === 'employment' && emp.hoursPerMonth).toBe(168);
+    expect(lease.type === 'lease' && lease.utilitiesMonthly).toBe(zl(300)); // z reguły „media” z v1
+    expect(lease.type === 'lease' && lease.depositAmount).toBe(0);
+    expect(lease.type === 'lease' && lease.standard).toBeNull();
+    // styl „standardowy” zachowuje kwoty z v1
+    const groceries = migrated.rules.find((r) => r.id === 'rule:groceries')!;
+    expect(groceries.kind === 'obligation' && groceries.amount).toMatchObject({ type: 'lifestyle', levels: { standardowy: LIFESTYLE.groceries.standardowy } });
+    expect(migrated.rules.some((r) => r.kind === 'savings_interest')).toBe(true);
+  });
+
+  it('gra po migracji toczy się dalej: pensje wpływają, czynsz jest naliczany raz, niezmienniki trzymają', () => {
+    let s = migrated;
+    for (let i = 0; i < 6; i++) {
+      s = advanceToNextMonth(s);
+      expect(checkInvariants(s), s.clock.today).toEqual([]);
+    }
+    expect(s.ledger.filter((t) => t.category === 'wynagrodzenie').length).toBeGreaterThanOrEqual(5);
+    const rentMonths = s.obligations.filter((o) => o.category === 'czynsz').map((o) => o.issueDate.slice(0, 7));
+    expect(s.clock.today).toBe('2026-10-01');
+    expect(rentMonths).toHaveLength(10); // styczeń–październik, po jednym naliczeniu na miesiąc
+    expect(new Set(rentMonths).size).toBe(10);
+    expect(new Set(s.ledger.map((t) => t.id)).size).toBe(s.ledger.length);
+    // dawne wpisy nadal są na początku rejestru, w tej samej kolejności
+    expect(s.ledger.slice(0, expectV1.ledgerCount)).toEqual(migrated.ledger);
+  });
+
+  it('nowe mechaniki działają na zmigrowanym zapisie (przeprowadzka, przelew, zmiana stylu życia)', () => {
+    let s = migrated;
+    s = ok(commands.transferFunds(s, s.playerAccountId, 'acc:player:savings', zl(1_000)));
+    s = ok(commands.setLifestyle(s, 'oszczedny'));
+    s = ok(commands.signLease(s, 'flat:kawalerka-nagorki', '2026-06-01'));
+    s = advanceDays(s, 60);
+    expect(checkInvariants(s)).toEqual([]);
+    expect(netWorth(s)).toBeGreaterThan(0);
+  });
+
+  it('wczytanie nie duplikuje operacji: ponowne przetworzenie dnia z zapisu nie zmienia stanu', () => {
+    const s = structuredClone(migrated);
+    const before = structuredClone(s);
+    processDay(s, s.clock.today);
+    expect(s.ledger).toEqual(before.ledger);
+    expect(s.obligations).toEqual(before.obligations);
+    expect(s.events).toEqual(before.events);
+    expect(cash(s)).toBe(cash(before));
+  });
+
+  it('zmigrowany zapis zapisuje się jako v2 i wczytuje identycznie', () => {
+    const json = serializeSave(migrated, NOW);
+    expect(JSON.parse(json).version).toBe(2);
+    const again = parseSave(json);
+    expect(again.ok && again.state).toEqual(migrated);
+  });
+
+  it('uszkodzony zapis v1 jest odrzucany z komunikatem (migracja nie maskuje błędów)', () => {
+    const raw = JSON.parse(rawV1);
+    raw.state.accounts[raw.state.playerAccountId].balance += 5_00;
+    expect(parseSave(JSON.stringify(raw))).toMatchObject({ ok: false, error: expect.stringContaining('niespójny finansowo') });
+    const raw2 = JSON.parse(rawV1);
+    delete raw2.state.person;
+    expect(parseSave(JSON.stringify(raw2)).ok).toBe(false);
+  });
+});
+
+describe('zapis i odczyt stanu v2: salda po wczytaniu', () => {
+  function richState(): GameState {
+    let s = createNewGame({ firstName: 'Ewa', lastName: 'Lis', seed: 'v2-save' }); // wydarzenia włączone
+    s = advanceDays(s, 20);
+    s.accounts[s.playerAccountId]!.balance += zl(9_000);
+    s.openingCash += zl(9_000);
+    s.ledger.push({ id: 'tx:t-fund', date: s.clock.today, accountId: s.playerAccountId, amount: zl(9_000), category: 'kapital_poczatkowy', description: 'test', counterpartyId: null, obligationId: null, transferId: null, eventId: 't-fund' });
+    s.processed['tx:t-fund'] = true;
+    s.history[s.history.length - 1]!.cash += zl(9_000);
+    s.history[s.history.length - 1]!.netWorth += zl(9_000);
+    s = ok(commands.transferFunds(s, s.playerAccountId, 'acc:player:savings', zl(3_000)));
+    s = ok(commands.signLease(s, 'flat:2pok-jaroty', '2026-03-01'));
+    s = ok(commands.setLifestyle(s, 'komfortowy'));
+    s = ok(commands.setTimePlan(s, { sleepHours: 7, businessHours: 2 }));
+    return advanceDays(s, 25);
+  }
+
+  it('round-trip zachowuje salda, kaucje, plan czasu, wydarzenia i akcje zaplanowane', () => {
+    const s = richState();
+    const parsed = parseSave(serializeSave(s, NOW));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.state).toEqual(s);
+    expect(cash(parsed.state)).toBe(cash(s));
+    expect(savingsBalance(parsed.state)).toBe(savingsBalance(s));
+    expect(parsed.state.assets).toEqual(s.assets);
+    expect(parsed.state.pending).toEqual(s.pending);
+    expect(parsed.meta.netWorth).toBe(netWorth(s));
+  });
+
+  it('po wczytaniu gra toczy się identycznie jak bez zapisu, bez dubli operacji', () => {
+    const s = richState();
+    const parsed = parseSave(serializeSave(s, NOW));
+    if (!parsed.ok) throw new Error(parsed.error);
+    let a = s;
+    let b = parsed.state;
+    for (let i = 0; i < 8; i++) {
+      a = advanceToNextMonth(a);
+      b = advanceToNextMonth(b);
+    }
+    expect(b).toEqual(a);
+    expect(new Set(b.ledger.map((t) => t.id)).size).toBe(b.ledger.length);
+    expect(checkInvariants(b)).toEqual([]);
+  });
+
+  it('odrzuca zmanipulowane salda i niespójne kaucje', () => {
+    const json = serializeSave(richState(), NOW);
+    const savingsTampered = JSON.parse(json);
+    savingsTampered.state.accounts['acc:player:savings'].balance += 100;
+    expect(parseSave(JSON.stringify(savingsTampered))).toMatchObject({ ok: false });
+    const depositTampered = JSON.parse(json);
+    depositTampered.state.assets[0].amount += 100;
+    expect(parseSave(JSON.stringify(depositTampered))).toMatchObject({ ok: false });
+    const dupTransfer = JSON.parse(json);
+    dupTransfer.state.ledger.find((t: { transferId: string | null }) => t.transferId).amount += 1;
+    expect(parseSave(JSON.stringify(dupTransfer)).ok).toBe(false);
+  });
+});

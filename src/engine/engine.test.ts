@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ECONOMY_V01, GAME_START } from './config.ts';
+import { ECONOMY_V01, GAME_START, LIFESTYLE } from './config.ts';
 import { addDays, ageOn, diffDays, monthKey } from './date.ts';
 import { checkInvariants } from './invariants.ts';
 import { zl } from './money.ts';
@@ -11,7 +11,8 @@ import {
 } from './simulate.ts';
 import type { GameState } from './state.ts';
 
-const newGame = (seed = 'test-seed') => createNewGame({ firstName: 'Jan', lastName: 'Kowalski', seed });
+/** Gry testów mechaniki bazowej mają wyłączone losowe wydarzenia życiowe (testowane osobno w life.test.ts). */
+const newGame = (seed = 'test-seed') => createNewGame({ firstName: 'Jan', lastName: 'Kowalski', seed, lifeEvents: false });
 const E = ECONOMY_V01;
 
 function expectConsistent(s: GameState) {
@@ -136,15 +137,15 @@ describe('3. koszty utrzymania', () => {
       expect(tx, `${cat} ${date}`).toHaveLength(1);
       expect(tx[0]!.amount).toBe(-amount);
     };
-    paid('2026-01-03', 'zywnosc', E.groceries.amount);
-    paid('2026-01-05', 'transport', E.transport.amount);
+    paid('2026-01-03', 'zywnosc', LIFESTYLE.groceries.standardowy);
+    paid('2026-01-05', 'transport', LIFESTYLE.transport.standardowy);
     paid('2026-01-10', 'czynsz', E.monthlyRent); // naliczony 1.01, zapłacony 10.01
     paid('2026-01-12', 'lacznosc', E.phoneInternet.amount);
-    paid('2026-01-15', 'media', E.utilities.amount); // naliczone 5.01, zapłacone 15.01
+    paid('2026-01-15', 'media', E.startUtilities); // naliczone 5.01, zapłacone 15.01
     const leisure = txOn(s, '2026-01-20', 'rozrywka');
     expect(leisure).toHaveLength(1);
-    expect(-leisure[0]!.amount).toBeGreaterThanOrEqual(E.leisure.base * 0.85);
-    expect(-leisure[0]!.amount).toBeLessThanOrEqual(E.leisure.base * 1.15);
+    expect(-leisure[0]!.amount).toBeGreaterThanOrEqual(LIFESTYLE.leisure.standardowy * 0.85);
+    expect(-leisure[0]!.amount).toBeLessThanOrEqual(LIFESTYLE.leisure.standardowy * 1.15);
     expect(txOn(s, '2026-01-10', 'czynsz')[0]!.obligationId).toBe('obl:rule:rent@2026-01-01');
     expectConsistent(s);
   });
@@ -160,7 +161,7 @@ describe('4. saldo', () => {
   it('saldo po styczniu = kapitał − koszty zapłacone w styczniu', () => {
     const s = advanceToNextMonth(newGame());
     const leisure = -txOn(s, '2026-01-20', 'rozrywka')[0]!.amount;
-    const fixed = E.groceries.amount + E.transport.amount + E.monthlyRent + E.phoneInternet.amount + E.utilities.amount;
+    const fixed = LIFESTYLE.groceries.standardowy + LIFESTYLE.transport.standardowy + E.monthlyRent + E.phoneInternet.amount + E.startUtilities;
     expect(playerAccount(s).balance).toBe(GAME_START.cash - fixed - leisure);
   });
   it('saldo zawsze równe sumie rejestru i nigdy ujemne (po każdym dniu 2 lat)', () => {
@@ -243,7 +244,7 @@ describe('zaległości (brak środków)', () => {
     base.rules.push({
       kind: 'obligation', id: 'rule:test-big', direction: 'payable', counterpartyId: 'party:utilities', category: 'media',
       description: 'Duży rachunek (test)', issueDay: 15, due: { monthOffset: 0, day: 15 },
-      amount: { type: 'fixed', amount: zl(3_000) }, startDate: '2026-01-15', endDate: '2026-01-31', dataStatus: 'placeholder',
+      amount: { type: 'fixed', amount: zl(3_000) }, startDate: '2026-01-15', endDate: '2026-01-31', contractId: null, dataStatus: 'placeholder',
     });
     const jan16 = advanceDays(base, 15);
     const big = jan16.obligations.find((o) => o.ruleId === 'rule:test-big')!;
@@ -325,7 +326,7 @@ describe('harmonogram (projekcja)', () => {
   it('koszt płatny w dniu naliczenia jest jedną pozycją „termin płatności”', () => {
     const items = scheduledItems(newGame(), '2026-01-02', '2026-01-31').filter((i) => i.category === 'zywnosc');
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ date: '2026-01-03', kind: 'due', amount: -E.groceries.amount });
+    expect(items[0]).toMatchObject({ date: '2026-01-03', kind: 'due', amount: -LIFESTYLE.groceries.standardowy });
   });
   it('projekcja zgadza się z tym, co faktycznie się wydarzy', () => {
     const s = newGame();
