@@ -60,3 +60,47 @@ Statusy: *Zaakceptowana* · *Proponowana* (czeka na zatwierdzenie) · *Zastąpio
 
 ## ADR-014 · Wersja i zakres wzorców UI v0.1 — *Zaakceptowana*
 **Decyzja:** ciemny interfejs „HUD”: pasek daty/gotówki/majątku + sterowanie czasem zawsze widoczne; nawigacja boczna (desktop) i dolna (telefon); karty wskaźników, wykresy, kalendarz miesięczny z projekcją przyszłych zdarzeń. **Konsekwencje:** UI nie zawiera logiki gospodarczej; wszystkie liczby pochodzą z silnika/selektorów.
+
+---
+
+# v0.2 — decyzje gracza i życie prywatne
+
+## ADR-015 · Komendy gracza: czyste funkcje na kopii stanu, błąd walidacji bez efektów ubocznych — *Zaakceptowana*
+**Decyzja:** wszystkie decyzje gracza przechodzą przez `commands.*` (`src/engine/commands.ts`). `runCommand` klonuje stan, wykonuje logikę, odświeża migawkę historii dnia i zwraca `{ok, state, message}` albo `{ok:false, error}` (`CommandError`). Stan wejściowy nigdy nie jest mutowany, a odrzucona komenda nie zostawia śladów.
+**Konsekwencje:** UI nie liczy niczego sam; testy komend są proste (stan wejściowy vs wyjściowy). Komendy działają „dziś” — dzień jest już zamknięty, więc nowe zobowiązania rozliczą się najwcześniej następnego dnia.
+
+## ADR-016 · Akcje zaplanowane (`pending`) zamiast zdarzeń w przyszłości — *Zaakceptowana*
+**Decyzja:** skutki w przyszłości (decyzja pracodawcy, wygaśnięcie propozycji, zwrot kaucji, koszt przeprowadzki, wypłata za zlecenie, +1 umiejętność, termin decyzji) są jednorazowymi akcjami w `state.pending`, wykonywanymi na początku `processDay` w kolejności (data, id), idempotentnie (`processed`). Dziennik zdarzeń zawiera wyłącznie to, co już się stało.
+**Konsekwencje:** brak „przyszłych” wpisów w dzienniku; zapis zawiera kolejkę, więc wczytanie nie gubi ani nie dubluje skutków.
+
+## ADR-017 · Kaucja jest aktywem, nie kosztem — *Zaakceptowana*
+**Decyzja:** wpłata kaucji = transakcja gotówkowa + `Asset` (`held`); zwrot po wyprowadzce (14 dni po końcu umowy) = transakcja + status `refunded`. Aktywo wlicza się do majątku netto. Tożsamość księgowa pozostaje: majątek netto (rachunki + kaucje + należności − zobowiązania) = kapitał początkowy + przychody − koszty, bo kaucje nie są zobowiązaniami P&L. Kategorie `kaucja`, `zwrot_kaucji`, `przelew_wlasny` są poza przepływami miesięcznymi.
+**Konsekwencje:** pełny zwrot (bez potrąceń za szkody) — uproszczenie v0.2. Mieszkanie startowe jest bez kaucji (parametr przykładowy), więc nie ma zwrotu przy pierwszej przeprowadzce.
+
+## ADR-018 · Zmiana mieszkania: przyszłe naliczenia z reguł wiązanych z umową; nakładanie świadome, bezdomność niemożliwa — *Zaakceptowana*
+**Decyzja:** każda umowa najmu ma własne reguły czynszu i opłat (`rule.contractId`); koniec umowy ustawia `endDate` reguł (niezmiennik: reguła kończy się razem z umową). Przeprowadzka tylko na 1. dzień miesiąca, od najbliższego do dnia po wygaśnięciu obecnej umowy (wypowiedzenie = ostatni dzień miesiąca po okresie wypowiedzenia). Wcześniejsza data = nakładanie się umów (podwójny czynsz, pokazany w podglądzie); późniejszej nie ma. Umowy o pracę nie mogą się nakładać (jedna praca naraz).
+**Konsekwencje:** brak naliczania dwóch czynszów poza jawnym nakładaniem; brak proporcjonalnych czynszów za część miesiąca.
+
+## ADR-019 · Jedna mechanika wynagrodzeń; netto to oznaczony szacunek — *Zaakceptowana*
+**Decyzja:** zmiana pracy, awans i utrata pracy działają przez `Contract(employment)` + `rule:salary:<contractId>` — ta sama reguła naliczenia ostatniego dnia miesiąca i wypłaty 10. następnego co w v0.1; brak drugiego systemu pensji. Oferta ma brutto; netto = `estimateNet` (73% brutto, `NET_ESTIMATE_BPS`, placeholder) i jest tak opisane w UI. Zapisy v1 mają `grossMonthly: null` (brak danych nie jest zgadywany).
+**Konsekwencje:** do v0.3 (zweryfikowany kalkulator płac) żadna liczba netto nie jest wyliczeniem prawnym.
+
+## ADR-020 · Budżet czasu, zmęczenie i wydajność — *Zaakceptowana*
+**Decyzja:** doba = praca + sen + obowiązki + działalność (rezerwa) + zobowiązania czasowe + czas wolny (reszta). Każda zmiana (plan dnia, nowa praca, kurs, zlecenie) jest walidowana na rok do przodu, uwzględniając podpisane przyszłe umowy — nie można przeznaczyć tych samych godzin na dwie rzeczy. Zmęczenie (0–100) zmienia się o całkowitą deltę dzienną z budżetu godzin (wzory w `ECONOMY_ENGINE.md`); wydajność = 100% − 0,7 p.p. za każdy punkt zmęczenia powyżej 30. Wydajność wpływa na premię, awans, ryzyko utraty pracy i szansę w rekrutacji — nie na pensję bezpośrednio.
+**Konsekwencje:** brak rozbudowanego systemu zdrowia; święta i urlopy nieuwzględnione (dzień roboczy = pon–pt).
+
+## ADR-021 · Jakość życia nie jest funkcją majątku — *Zaakceptowana*
+**Decyzja:** wskaźnik 0–100 = styl życia 25% + standard mieszkania 20% + czas na odpoczynek 20% + kondycja (100 − zmęczenie) 20% + bezpieczeństwo finansowe 15%. Bezpieczeństwo ma sufit (bufor ≥ 3 miesiące kosztów = 100) i kary za zaległości i bezrobocie.
+**Konsekwencje:** pieniądze pomagają tylko pośrednio (wybór stylu życia/mieszkania, bufor); wagi i progi są parametrami do kalibracji.
+
+## ADR-022 · Oszczędności: odsetki z sumy sald dziennych, jedno zaokrąglenie, odrębne operacje — *Zaakceptowana*
+**Decyzja:** codziennie saldo na początek dnia jest dodawane do akumulatora (grosze·dni); ostatniego dnia miesiąca odsetki = `round(akumulator × stawka_bps / (10 000 × 365))` (jedno zaokrąglenie, brak dryfu), księgowane jako należność na rachunku oszczędnościowym; podatek od odsetek to osobne zobowiązanie (`taxBps`, 0 = brak). Stawki to konfigurowalne parametry (`dataStatus: placeholder`), nie fakty prawne. Przelew własny to dwa wpisy o sumie zero z wspólnym `transferId`, poza przepływami miesięcznymi i bez wpływu na majątek netto.
+**Konsekwencje:** zobowiązania i należności mają teraz `accountId` (rozliczenie z właściwego rachunku); invariants sprawdzają saldo każdego rachunku i pary przelewów.
+
+## ADR-023 · Wydarzenia życiowe: katalog z losowaniem miesięcznym, decyzje z domyślnym wygaśnięciem — *Zaakceptowana*
+**Decyzja:** 7 szablonów (awaria sprzętu, niespodziewany wydatek, premia, awans, utrata pracy, dorywcze zlecenie, kurs). W `rollDay` każdego miesiąca losowane jest wystąpienie z prawdopodobieństwem zależnym od stanu (umowa, staż, wydajność, czas wolny, gotówka). Losowanie i wynik mają osobne strumienie z (seed, id wydarzenia[, opcja]), więc wynik decyzji nie zależy od momentu jej podjęcia. Decyzje mają termin; po jego upływie stosowana jest opcja domyślna. Skutki liczy ten sam silnik zobowiązań/umów; status wydarzenia i `processed` chronią przed podwójnym zastosowaniem. Opcja `settings.lifeEvents` (domyślnie włączona) pozwala testom mechaniki bazowej wyłączyć losowość.
+**Konsekwencje:** zmiana id szablonu/strumienia zmienia historię seedów; kalibracja częstości wymaga danych z rozgrywek.
+
+## ADR-024 · Migracja zapisu v1 → v2 z zamrożonymi wartościami domyślnymi — *Zaakceptowana*
+**Decyzja:** `migrateV1ToV2` (`src/persistence/migrations.ts`) nie zmienia historii finansowej, dodaje nowe struktury z zamrożonymi stałymi (nie importuje `config.ts`), nie zgaduje nieznanych danych (`grossMonthly`, standard i powierzchnia lokalu → `null`), przenosi opłaty z reguły „media” do umowy najmu, a wydatki stylu życia mapuje tak, że „standardowy” = kwoty z v1. Test używa **prawdziwego zapisu wygenerowanego przez v0.1** (`fixtures/save-v1.json`).
+**Konsekwencje:** zapisy v1 działają dalej bez resetu; kolejne migracje dopisujemy w `MIGRATIONS`, fixture’ów nie usuwamy.

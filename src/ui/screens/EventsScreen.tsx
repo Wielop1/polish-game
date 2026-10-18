@@ -15,7 +15,7 @@ const matches = (e: GameEvent, f: Filter): boolean => {
     case 'out': return e.type === 'obligation.settled' && (e.amount ?? 0) < 0;
     case 'accrual': return e.type === 'obligation.issued';
     case 'warning': return e.type === 'obligation.overdue';
-    case 'life': return e.type === 'life.birthday' || e.type === 'game.started';
+    case 'life': return !e.type.startsWith('obligation.');
   }
 };
 
@@ -45,7 +45,7 @@ export function EventsScreen() {
           label="Filtr zdarzeń"
           value={filter}
           onChange={(f) => { setFilter(f); setLimit(PAGE); }}
-          options={[{ value: 'all', label: 'Wszystkie' }, { value: 'in', label: 'Wpływy' }, { value: 'out', label: 'Wydatki' }, { value: 'accrual', label: 'Naliczenia' }, { value: 'warning', label: 'Ostrzeżenia' }, { value: 'life', label: 'Życie' }]}
+          options={[{ value: 'all', label: 'Wszystkie' }, { value: 'in', label: 'Wpływy' }, { value: 'out', label: 'Wydatki' }, { value: 'accrual', label: 'Naliczenia' }, { value: 'warning', label: 'Ostrzeżenia' }, { value: 'life', label: 'Życie i decyzje' }]}
         />
       </ScreenHeader>
 

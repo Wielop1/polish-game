@@ -50,8 +50,14 @@ Brak backendu, bazy zewnętrznej, logowania, płatnych API, generatywnego AI. Pa
 | `rng.ts` | `createRng(seed, streamId)`, `randomSeed` (tylko UI) |
 | `config.ts` | Parametry startowe v0.1 (**przykładowe**), miasta |
 | `categories.ts` | Kategorie transakcji (etykiety, kolory) |
-| `newGame.ts` | `createNewGame`, walidacja postaci, umowy i reguły startowe |
-| `simulate.ts` | `postTransaction`, naliczenia, rozliczenia, `processDay`, `advanceDays`, `advanceToNextMonth` |
+| `newGame.ts` | `createNewGame`, walidacja postaci, umowy i reguły startowe, rachunek oszczędnościowy |
+| `core.ts` | Wspólne prymitywy: `postTransaction` (dowolny rachunek), `createObligation`, `recordHistory`, `CommandError` |
+| `commands.ts` | **Komendy gracza** (`commands.*`, `runCommand`) — jedyne wejście decyzji do silnika |
+| `jobs.ts` · `housing.ts` · `savings.ts` | Kariera (aplikacje, umowy, rezygnacja, awans), najem (podgląd, umowa, kaucja), przelewy i odsetki |
+| `time.ts` | Budżet czasu, zmęczenie, wydajność, walidacja planu |
+| `lifeEvents.ts` · `pending.ts` | Katalog wydarzeń życiowych (losowanie, decyzje, wygaśnięcie); wykonywanie akcji zaplanowanych |
+| `contracts.ts` | Pomocnicze zapytania o umowy (aktualna praca/najem, status zatrudnienia) |
+| `simulate.ts` | naliczenia z reguł, rozliczenia, zmęczenie, `processDay`, `advanceDays`, `advanceToNextMonth` |
 | `schedule.ts` | Reguły dnia, termin płatności, urodziny, **projekcja** przyszłych zdarzeń (kalendarz, „najbliższe płatności”) |
 | `selectors.ts` | `netWorthBreakdown`, `monthlySummaries`, zaległości, wiek |
 | `invariants.ts` | `checkInvariants(state)` |
@@ -60,11 +66,13 @@ Brak backendu, bazy zewnętrznej, logowania, płatnych API, generatywnego AI. Pa
 
 ```ts
 // Silnik (czysty)
-createNewGame({ firstName, lastName, seed }): GameState          // rzuca ZodError przy złych danych
+createNewGame({ firstName, lastName, seed, lifeEvents? }): GameState  // rzuca ZodError przy złych danych
 advanceDays(state, n): GameState                                  // nowy stan; wejście nietknięte
 advanceToNextMonth(state): GameState
 checkInvariants(state): string[]                                  // [] = spójny
 scheduledItems(state, from, to): ScheduledItem[]                  // projekcja, nic nie księguje
+commands.applyForJob | respondToJobOffer | resignFromJob | signLease | setLifestyle
+        | setTimePlan | transferFunds | resolveLifeEvent  (state, …) → { ok, state, message } | { ok:false, error }
 
 // Zapis
 serializeSave(state, savedAt): string                             // odmawia niespójnego stanu
@@ -83,7 +91,7 @@ interface SaveRepository { list(); get(slot); put(slot, json, savedAt, meta); re
 
 - **Magazyn:** IndexedDB (baza `polski-tycoon`, store `saves`, klucz `slot`). Rekord: `{slot, savedAt, meta, json}`. Sloty: `autosave`, `slot-1`, `slot-2`, `slot-3`. Gdy IndexedDB jest niedostępne, store przełącza się na magazyn w pamięci i UI pokazuje ostrzeżenie.
 - **Koperta zapisu (JSON):** `{ format: "polski-tycoon-save", version, savedAt, meta, state }`.
-- **Wersjonowanie:** `SAVE_VERSION = 1`. Zmiana kształtu `GameState` ⇒ `SAVE_VERSION + 1` + `MIGRATIONS[n]` (stan v n → n+1). Zapis z nowszej wersji jest odrzucany z czytelnym komunikatem.
+- **Wersjonowanie:** `SAVE_VERSION = 2` (migracja v1 → v2 w `src/persistence/migrations.ts`, ADR-024). Zmiana kształtu `GameState` ⇒ `SAVE_VERSION + 1` + `MIGRATIONS[n]` (stan v n → n+1). Zapis z nowszej wersji jest odrzucany z czytelnym komunikatem.
 - **Walidacja przy wczytaniu** (`parseSave`): poprawny JSON → koperta → migracje → **schemat Zod całego stanu** → **`checkInvariants`**. Dopiero wtedy stan trafia do gry. Błąd = komunikat w UI, bieżąca gra nietknięta.
 - **Walidacja przy zapisie** (`serializeSave`): odmowa zapisu stanu naruszającego niezmienniki.
 - **Autozapis:** po każdym przesunięciu czasu i po starcie nowej gry (asynchroniczny, bez blokowania UI; błąd → komunikat).
@@ -92,7 +100,7 @@ interface SaveRepository { list(); get(slot); put(slot, json, savedAt, meta); re
 ## 6. UI
 
 - Brak routera: aktualny ekran to pole `screen` w store (SPA bez adresów podstron). `vercel.json` ma mimo to fallback na `index.html` pod przyszły routing.
-- Ekrany: Pulpit, Postać, Finanse, Kalendarz, Historia zdarzeń, Nowa gra/Wczytaj. Pasek HUD (data, gotówka, majątek, sterowanie czasem) nad każdym ekranem gry; nawigacja boczna (desktop) / dolna (telefon).
+- Ekrany: Pulpit, Postać, Finanse, Kalendarz, Historia zdarzeń; od v0.2 grupa „Życie”: Oferty pracy, Mieszkanie, Styl życia, Budżet czasu, Oszczędności, Decyzje i wydarzenia (plakietka z liczbą oczekujących); Nowa gra/Wczytaj. Na telefonie dolny pasek ma 3 skróty + „Więcej”. Komunikaty to toasty (prawy dolny róg). Pasek HUD (data, gotówka, majątek, sterowanie czasem) nad każdym ekranem gry; nawigacja boczna (desktop) / dolna (telefon).
 - Wykresy: własne komponenty SVG (`LineChart`, `BarChart`, `Donut`, `ProgressBar`) — bez biblioteki wykresów.
 - Wartości przykładowe oznaczone badge „przykładowe”.
 - Dostępność: role/aria dla grup przycisków, wykresów (`role="img"` + `aria-label`), komunikatów (`role="alert"`), `prefers-reduced-motion`.
@@ -109,6 +117,6 @@ interface SaveRepository { list(); get(slot); put(slot, json, savedAt, meta); re
 |---|---|---|
 | Silnik | Vitest | czas, pieniądze, wynagrodzenia, koszty, saldo, majątek netto, brak podwójnego księgowania, seed, 12/120 miesięcy, zaległości, projekcja |
 | Zapis | Vitest + fake-indexeddb | round-trip, odporność na uszkodzenia/manipulacje, wersje, repozytoria |
-| UI/e2e | Playwright (Chromium) | walidacja formularza, nowa gra, upływ czasu, spójność kwot na ekranach, nawigacja, kalendarz, zapis/wczytanie/autozapis po przeładowaniu |
+| UI/e2e | Playwright (Chromium) | walidacja formularza, nowa gra, upływ czasu, spójność kwot, nawigacja, kalendarz, zapis/wczytanie; v0.2: aplikacja o pracę, kaucja i umowa najmu, styl życia, walidacja 24 h, przelew, decyzja z wydarzenia, zapis stanu v2 |
 
 Szczegóły i mapa testów silnika: `ECONOMY_ENGINE.md` §9. Wymagane komendy: `AGENTS.md` §4.

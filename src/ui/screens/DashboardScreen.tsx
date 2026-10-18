@@ -6,10 +6,11 @@ import { monthlySummaries, netWorthBreakdown, overdueObligations } from '../../e
 import { useGameStore } from '../../store/gameStore.ts';
 import { BarChart, LineChart, ProgressBar, downsample } from '../components/charts.tsx';
 import { Icon } from '../components/icons.tsx';
-import { Badge, Card, Empty, Money, Segmented, StatCard, ScreenHeader, moneyTone } from '../components/ui.tsx';
+import { pendingLifeEvents } from '../../engine/lifeEvents.ts';
+import { Badge, Button, Card, Empty, Money, Segmented, StatCard, ScreenHeader, moneyTone } from '../components/ui.tsx';
 
 type Range = '30' | '90' | '365' | 'all';
-type Series = 'netWorth' | 'cash';
+type Series = 'netWorth' | 'cash' | 'savings';
 
 export function DashboardScreen() {
   const game = useGameStore((s) => s.game)!;
@@ -22,6 +23,7 @@ export function DashboardScreen() {
   const current = summaries[summaries.length - 1]!;
   const completed = summaries.filter((m) => m.complete).slice(-12);
   const overdue = overdueObligations(game);
+  const decisions = pendingLifeEvents(game).length + game.applications.filter((a) => a.status === 'offered').length;
   const upcoming = useMemo(
     () => scheduledItems(game, addDays(game.clock.today, 1), addDays(game.clock.today, 21)).filter((i) => i.kind !== 'issue').slice(0, 7),
     [game],
@@ -31,7 +33,7 @@ export function DashboardScreen() {
   const points = useMemo(() => {
     const n = range === 'all' ? game.history.length : Number(range);
     const slice = game.history.slice(-n);
-    return downsample(slice, 120).map((p) => ({ label: formatDateShortPL(p.date), value: series === 'netWorth' ? p.netWorth : p.cash }));
+    return downsample(slice, 120).map((p) => ({ label: formatDateShortPL(p.date), value: series === 'netWorth' ? p.netWorth : series === 'cash' ? p.cash : p.savings }));
   }, [game.history, range, series]);
 
   const sinceStart = nw.netWorth - game.openingCash;
@@ -50,15 +52,23 @@ export function DashboardScreen() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard testId="stat-cash" label="Gotówka" icon="wallet" accent="gain" value={<Money value={nw.cash} />} hint="rachunek osobisty" />
+      {decisions > 0 && (
+        <div role="status" data-testid="decisions-alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-sky/40 bg-sky/10 p-4 text-sm text-sky">
+          <span>Czekają na Ciebie decyzje i propozycje: <strong>{decisions}</strong>.</span>
+          <Button variant="secondary" onClick={() => navigate('decisions')}>Zobacz decyzje</Button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <StatCard testId="stat-cash" label="Gotówka" icon="wallet" accent="gain" value={<Money value={nw.cash} />} hint="rachunek bieżący" />
+        <StatCard testId="stat-savings" label="Oszczędności" icon="coins" accent="violet" value={<Money value={nw.savings} />} hint="konto oszczędnościowe" />
         <StatCard
           testId="stat-networth"
           label="Majątek netto"
           icon="trend"
           accent="sky"
           value={<Money value={nw.netWorth} />}
-          hint={<span className={moneyTone(sinceStart)}>{sinceStart >= 0 ? '▲' : '▼'} <Money value={Math.abs(sinceStart)} /> od startu</span>}
+          hint={<span className={moneyTone(sinceStart)}>{sinceStart >= 0 ? '▲' : '▼'} <Money value={Math.abs(sinceStart)} /> od startu{nw.deposits > 0 && <span className="text-slate-500"> · w tym kaucje <Money value={nw.deposits} round /></span>}</span>}
         />
         <StatCard testId="stat-receivables" label="Należności" icon="briefcase" accent="gold" value={<Money value={nw.receivables} />} hint="naliczone, jeszcze niewypłacone" />
         <StatCard testId="stat-payables" label="Zobowiązania" icon="home" accent="loss" value={<Money value={nw.payables} />} hint="naliczone, jeszcze nieopłacone" />
@@ -70,12 +80,12 @@ export function DashboardScreen() {
             title="Majątek w czasie"
             action={
               <div className="flex flex-wrap gap-2">
-                <Segmented label="Seria" value={series} onChange={setSeries} options={[{ value: 'netWorth', label: 'Majątek netto' }, { value: 'cash', label: 'Gotówka' }]} />
+                <Segmented label="Seria" value={series} onChange={setSeries} options={[{ value: 'netWorth', label: 'Majątek netto' }, { value: 'cash', label: 'Gotówka' }, { value: 'savings', label: 'Oszczędności' }]} />
                 <Segmented label="Zakres" value={range} onChange={setRange} options={[{ value: '30', label: '30 dni' }, { value: '90', label: '90 dni' }, { value: '365', label: 'Rok' }, { value: 'all', label: 'Całość' }]} />
               </div>
             }
           >
-            <LineChart points={points} color={series === 'netWorth' ? '#38bdf8' : '#34d399'} ariaLabel={series === 'netWorth' ? 'Wykres majątku netto' : 'Wykres gotówki'} />
+            <LineChart points={points} color={series === 'netWorth' ? '#38bdf8' : series === 'cash' ? '#34d399' : '#a78bfa'} ariaLabel={series === 'netWorth' ? 'Wykres majątku netto' : series === 'cash' ? 'Wykres gotówki' : 'Wykres oszczędności'} />
           </Card>
 
           <Card title={`Bieżący miesiąc — ${formatMonthPL(current.month)}`}>

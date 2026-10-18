@@ -4,60 +4,56 @@
 
 ## Wersja
 
-**v0.1.0 — Fundament ekonomii** (zakończona; kolejna wersja czeka na zatwierdzenie).
+**v0.2.0 — Życie prywatne, decyzje, czas i oszczędności** (zakończona; v0.3 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 2` (migracja z v1).
 
-## Co działa (zweryfikowane)
+## Co działa (zweryfikowane testami)
 
-- **Nowa gra:** imię i nazwisko (walidowane), seed (domyślnie losowy, można wpisać własny), wiek startowy 22 lata, Olsztyn, 1 stycznia 2026, 5 000 zł.
-- **Czas:** „Następny dzień” i „Do następnego miesiąca” (zawsze na 1. dzień kolejnego miesiąca); każdy dzień jest przetwarzany po kolei; poprawne lata przestępne i granice miesięcy/lat.
-- **Życie prywatne i finanse:** etat (należność naliczana ostatniego dnia miesiąca, wpływ 10. następnego), wynajem (czynsz naliczany 1., płatny 10.), koszty życia (media, telefon/internet, żywność, transport, rozrywka ±15% losowo z seeda), urodziny.
-- **Księgowanie:** rejestr transakcji, zobowiązania i należności z terminami, automatyczne płatności bez debetu, zaległości (ostrzeżenie + ponawianie), majątek netto, miesięczne podsumowania (memoriałowo i gotówkowo), struktura kosztów.
-- **Niezmienniki** finansowe sprawdzane w testach co miesiąc symulacji i przy każdym wczytaniu zapisu.
-- **Interfejs (6 ekranów):** Pulpit (karty wskaźników, wykres majątku/gotówki z zakresami, bieżący miesiąc, słupki przychody/koszty, najbliższe płatności, ostatnie zdarzenia, alert o zaległościach), Postać, Finanse (podsumowanie miesiąca + donut, zobowiązania, rejestr z saldem po transakcji), Kalendarz (przeszłość z dziennika + projekcja przyszłości), Historia zdarzeń (filtry), Nowa gra / Wczytaj. Pasek HUD z datą, gotówką, majątkiem i sterowaniem czasem. Układ desktop + telefon (bez poziomego przewijania).
-- **Zapis:** 3 sloty ręczne + autozapis (IndexedDB), wczytanie, usuwanie, wersjonowanie formatu (`SAVE_VERSION = 1`), walidacja Zod + niezmienniki; odrzuca uszkodzone, zmanipulowane i nowsze zapisy; fallback do pamięci przy niedostępnym IndexedDB (z ostrzeżeniem).
-- **Dokumentacja:** `AGENTS.md`, `README.md`, `docs/` (GAME_DESIGN, WORLD_MODEL, ECONOMY_ENGINE, IMPLEMENTATION_PLAN, ARCHITECTURE, DECISIONS, PROJECT_STATUS).
+Wszystko z v0.1 (nowa gra, czas, rejestr, zobowiązania, majątek netto, kalendarz, dziennik, zapisy, 6 ekranów) plus:
 
-## Czego NIE ma (świadomie poza zakresem v0.1)
+- **Praca i kariera.** 8 fikcyjnych ofert (tylko umowa o pracę; inne formy są w modelu jako `employmentForm`, ale nieobsługiwane): stanowisko, pracodawca, brutto i *szacowane* netto, wymiar godzin, wymagane umiejętności, lokalizacja, okres wypowiedzenia. Aplikacja → decyzja pracodawcy po 5–12 dniach (deterministyczna, zależna od umiejętności i zmęczenia) → propozycja ważna 7 dni → przyjęcie z automatycznym wypowiedzeniem obecnej umowy i startem od 1. dnia miesiąca po jej końcu. Rezygnacja z pracy. Jedna praca naraz. Pensja nadal przez tę samą mechanikę (naliczenie ostatniego dnia miesiąca, wypłata 10. następnego) — jedno naliczenie na miesiąc przy zmianie pracy.
+- **Mieszkanie.** 5 fikcyjnych ofert najmu w Olsztynie (czynsz, opłaty eksploatacyjne, kaucja, koszt przeprowadzki, standard, powierzchnia, dzielnica). Podgląd warunków przed podpisaniem (kaucja, przeprowadzka, nakładanie umów, zwrot starej kaucji). Zmiana mieszkania aktualizuje przyszłe naliczenia (reguły wiązane z umową); podwójny czynsz tylko przy świadomym nakładaniu okresów. **Kaucja = aktywo** (majątek netto bez zmian), zwrot 14 dni po końcu umowy.
+- **Budżet czasu.** Doba 24 h: praca, sen, obowiązki, rezerwa na działalność (v0.5+), kursy/zlecenia, czas wolny jako reszta; walidacja planu na rok do przodu (także przyszłe umowy). Zmęczenie 0–100 i wydajność w pracy.
+- **Styl życia.** Oszczędny / standardowy / komfortowy zmieniają kwoty żywności, transportu i rozrywki (przez zobowiązania). **Wskaźnik jakości życia** (nie funkcja majątku; bezpieczeństwo finansowe 15% z sufitem).
+- **Oszczędności.** Rachunek oszczędnościowy, przelewy własne (neutralne dla majątku netto i przepływów), odsetki nominalne kapitalizowane miesięcznie (jedno zaokrąglenie), podatek od odsetek jako osobna operacja (parametr przykładowy), historia operacji.
+- **Wydarzenia życiowe (7).** Awaria sprzętu (3 opcje), niespodziewany wydatek, premia, propozycja awansu, utrata pracy, dorywcze zlecenie, kurs (+1 umiejętność). Zależne od stanu gry, deterministyczne, z identyfikatorami, historią, terminem decyzji i opcją domyślną; skutki nie wykonują się dwa razy; część wyników jest nieznana z góry.
+- **UI:** nowa grupa „Życie” (Oferty pracy, Mieszkanie, Styl życia, Budżet czasu, Oszczędności, Decyzje i wydarzenia) z plakietką oczekujących decyzji, alert na pulpicie, oszczędności w HUD, komunikaty jako toasty, menu „Więcej” na telefonie.
+- **Zapisy:** migracja v1 → v2 sprawdzona na **prawdziwym zapisie wygenerowanym przez v0.1** (`src/persistence/fixtures/`): historia finansowa nietknięta, brak zgadywania nieznanych danych, gra toczy się dalej bez dubli; zapis/odczyt zachowuje salda, kaucje, plan czasu, wydarzenia i kolejkę akcji.
 
-- **Brak decyzji gracza** — gracz może tylko przesuwać czas i oglądać skutki. To fundament ekonomii, **nie jeszcze pełna gra**.
-- Podatki, składki ZUS, PIT (kwoty są netto), JDG, spółki, pracownicy, kredyty, leasing, odsetki, giełda, nieruchomości, branża remontowa, gospodarstwo domowe wieloosobowe, rynki regionalne i konkurenci.
-- Backend, konta użytkowników, synchronizacja zapisów między urządzeniami.
-- **Wszystkie parametry ekonomiczne są przykładowe** (pensja 4 600 zł netto, czynsz 1 700 zł, koszty życia…) — niezweryfikowane z danymi rzeczywistymi; w UI oznaczone „przykładowe”.
+## Czego NIE ma (poza zakresem lub niedokończone)
+
+- Zweryfikowany kalkulator płac, podatki, ZUS (netto = **szacunek 73% brutto**, oznaczony w UI), JDG, spółki, branża remontowa, giełda, nieruchomości inwestycyjne, kredyty, backend, logowanie. **Wdrożenie na Vercel odłożone** zgodnie z poleceniem (repo nadal nie jest podpięte do żadnego projektu Vercel; kod jest na `main`).
+- **Wszystkie parametry są przykładowe**: płace, czynsze, kaucje, koszty stylu życia, stopa i podatek od odsetek, prawdopodobieństwa i kwoty wydarzeń, wagi jakości życia.
+- Katalogi ofert pracy i mieszkań są **stałe** (brak odświeżania, rynku, negocjacji). Inne formy zatrudnienia, wypowiedzenie umowy najmu bez nowej umowy, wycofanie aplikacji i anulowanie podpisanej umowy — niezaimplementowane.
 
 ## Wykonane testy (2026-10-18)
 
 | Polecenie | Wynik |
 |---|---|
 | `npm run typecheck` | ✅ bez błędów |
-| `npm test` (Vitest) | ✅ **64/64**: kalendarz 8, pieniądze/RNG/formatowanie 8, silnik 34, zapis i repozytoria 14 |
-| `npm run build` | ✅ `dist/` ≈ 440 kB (JS 391 kB / 117 kB gzip, CSS 39 kB / 7 kB gzip) |
-| `npm run test:e2e` (Playwright, Chromium) | ✅ **4/4**: walidacja formularza; nowa gra + upływ czasu + spójność kwot; wszystkie ekrany + kalendarz; zapis ręczny i autozapis po przeładowaniu |
-| `npm run dev` | ✅ serwer startuje i serwuje aplikację |
+| `npm test` (Vitest) | ✅ **126/126**: kalendarz 8, pieniądze/RNG/formatowanie 8, silnik bazowy 34, **mechaniki v0.2 51**, zapis i repozytoria 14, **migracja i zapis v2 11** |
+| `npm run build` | ✅ JS 486 kB / 144 kB gzip, CSS 42 kB / 7 kB gzip |
+| `npm run test:e2e` (Chromium) | ✅ **10/10** (4 z v0.1 + 6 nowych: praca, mieszkanie z kaucją, styl życia i budżet czasu, oszczędności, decyzja z wydarzenia, zapis stanu v2) |
 
-Pokrycie wymagań z specyfikacji (§7): upływ czasu, wynagrodzenia, koszty utrzymania, saldo, brak podwójnego księgowania, majątek netto, powtarzalność seeda, zapis/odczyt, symulacje 12 i 120 miesięcy (niezmienniki co miesiąc) — wszystko pokryte testami zachowania (mapa w `ECONOMY_ENGINE.md` §9).
+Pomiary (Node 22, gra z włączonymi wydarzeniami): symulacja 120 miesięcy ≈ 0,85 s, jeden miesiąc na stanie po 10 latach ≈ 13 ms; zapis po 10 latach ≈ 1,2 MB, serializacja ≈ 10 ms, wczytanie z walidacją ≈ 50 ms.
+Wygląd nowych ekranów sprawdzony ręcznie na zrzutach (desktop 1360 px; menu mobilne 390 px); układ mobilny większości nowych ekranów nie ma testu automatycznego.
 
-Pomiary: symulacja 120 miesięcy ≈ 0,9 s; zapis po 10 latach ≈ 1,4 MB, serializacja ≈ 50 ms, wczytanie z walidacją ≈ 70 ms.
-Wygląd ekranów sprawdzony ręcznie na zrzutach (desktop 1360 px, telefon 390 px); układ mobilny nie ma testu automatycznego.
-
-## Wdrożenie (Vercel)
-
-- Kod jest wypchnięty na `main` repozytorium `Wielop1/polish-game`. Konfiguracja: `vercel.json` (framework vite, `dist`, fallback SPA); brak sekretów i zmiennych środowiskowych.
-- Lokalnie: `npm run build` ✅, `vite preview` obsługuje e2e ✅, `npm run dev` ✅. Aplikacja jest **gotowa do wdrożenia jako statyczny frontend**.
-- **Połączenie z Vercel NIE zostało potwierdzone.** Sprawdzenie (2026-10-18) przez Vercel MCP: konto ma tylko projekty `fizjo-radar`, `x1gold`, `x1factory`, `busik-warmia` — **żaden nie jest podpięty do `Wielop1/polish-game`**, więc po pushu nie powstało wdrożenie. Zgodnie ze specyfikacją nie utworzono nowego projektu Vercel. Wymagana akcja właściciela: zaimportować repo w Vercel (Framework: Vite, bez zmiennych środowiskowych) albo wskazać istniejący projekt do podpięcia.
-- Po podpięciu: sprawdzić pierwszy build i otworzyć wdrożony adres (nowa gra → miesiąc → zapis → przeładowanie).
+**Kryterium ukończenia v0.2** (12 miesięcy aktywnego zarządzania pracą, mieszkaniem, czasem i oszczędnościami z poprawnym śladem w stanie i finansach) jest pokryte testem `ciągłość 12 miesięcy aktywnego zarządzania` (niezmienniki sprawdzane co miesiąc; w tym scenariuszu wystąpiła m.in. utrata pracy, przeprowadzka, 12 przelewów i 11 księgowań odsetek) oraz testami poszczególnych komend.
 
 ## Znane problemy i uproszczenia
 
-1. **Wykres majątku netto ma „piłę”** — pensja jest uznawana jako przychód ostatniego dnia miesiąca (ADR-006/007), więc majątek skacze o pensję 31. i spada przez miesiąc wraz z naliczaniem kosztów. To wynik przyjętego modelu, nie błąd; do rewizji (naliczanie dzienne) w v0.2+.
-2. **Autozapis jest asynchroniczny** — zamknięcie karty tuż po przesunięciu czasu może zgubić ostatni autozapis (poprzedni pozostaje).
-3. Zobowiązania opłacane „od najstarszego terminu, każde niezależnie” — mniejsze późniejsze może być opłacone przed większym starszym (ADR-008).
-4. Rozmiar zapisu rośnie liniowo (dzienna historia majątku ≈ 3,6 tys. punktów / 10 lat); kompaktowanie historii — przyszła decyzja.
-5. Potwierdzenia (nowa gra / nadpisanie / wczytanie) używają `window.confirm` — tymczasowe, do zastąpienia własnym oknem dialogowym.
-6. Brak routera i głębokich linków (ADR-012). Brak ESLint/formatera i testów komponentów (jest typecheck + e2e).
-7. Testy e2e wymagają bibliotek systemowych Chromium; w środowisku bez roota patrz `AGENTS.md` §5 i ADR-013.
+1. **Bierna gra jest karana.** Z włączonymi wydarzeniami samo przewijanie czasu przez lata kończy się utratą pracy (prawdopodobna już po ok. 90 dniach stażu) i zaległościami — brak zasiłku, odprawy i pomocy w poszukiwaniu pracy. Prawdopodobieństwa nie były kalibrowane na danych z rozgrywek.
+2. **Staż liczony od początku bieżącej umowy** — awans tworzy nową umowę, więc zeruje staż (wpływa na kwalifikowanie do premii i awansu).
+3. Pierwsza przeprowadzka nie zwraca kaucji (mieszkanie startowe jest bez kaucji — parametr przykładowy); zwrot kaucji zawsze pełny, bez potrąceń.
+4. Przeprowadzki tylko na 1. dzień miesiąca, bez proporcjonalnych czynszów i kar za wcześniejsze rozwiązanie.
+5. Dzień roboczy = pon–pt, bez świąt i urlopów; „działalność” w budżecie czasu tylko zajmuje godziny (nie ma jeszcze działalności).
+6. Umiejętności rosną wyłącznie przez kursy (brak nauki w pracy).
+7. Odsetki liczone od salda na początek dnia: przelew wykonany dziś liczy się od jutra.
+8. Autozapis jest asynchroniczny (zamknięcie karty tuż po akcji może zgubić ostatni zapis); zapis rośnie ≈ 0,12 MB/rok (dzienna historia majątku) — kompaktowanie historii to przyszła decyzja.
+9. Potwierdzenia (nowa gra, nadpisanie, wczytanie, rezygnacja, umowa najmu) używają `window.confirm`; brak routera i głębokich linków (ADR-012).
+10. Testy e2e wymagają bibliotek systemowych Chromium (`AGENTS.md` §5, ADR-013).
 
 ## Następne zadanie (propozycja — wymaga zatwierdzenia)
 
-**v0.2 — Decyzje gracza i życie prywatne:** warstwa komend gracza w silniku (zmiana mieszkania, zmiana pracy, styl życia), zdarzenia losowe życia na seedowanym RNG, drugi rachunek (oszczędności) z przelewami własnymi, migracja zapisu v1 → v2. Szczegóły i kryteria: `IMPLEMENTATION_PLAN.md`.
+**v0.3 — Model podatkowy i ZUS (wersjonowany datami):** zamiana szacunku 73% na zweryfikowany kalkulator brutto → netto, tabele przepisów z datami obowiązywania i źródłami, roczne rozliczenie. **Warunek wejścia:** zatwierdzony, zweryfikowany zestaw źródeł prawnych na 2026 (do tego czasu placeholdery). Szczegóły: `IMPLEMENTATION_PLAN.md`.
 
-Nie rozpoczynać v0.2 bez zatwierdzenia.
+Nie rozpoczynać v0.3 bez zatwierdzenia.

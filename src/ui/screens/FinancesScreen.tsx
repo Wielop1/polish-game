@@ -30,10 +30,10 @@ export function FinancesScreen() {
     .map(([id, value]) => ({ label: categoryInfo(id).label, value, color: categoryInfo(id).color }));
 
   const ledger = useMemo(() => {
-    let running = 0;
+    const running: Record<string, number> = {};
     const rows = game.ledger.map((tx) => {
-      running += tx.amount;
-      return { tx, balance: running };
+      running[tx.accountId] = (running[tx.accountId] ?? 0) + tx.amount;
+      return { tx, balance: running[tx.accountId]! };
     });
     return rows.reverse();
   }, [game.ledger]);
@@ -53,10 +53,10 @@ export function FinancesScreen() {
       <ScreenHeader title="Finanse" subtitle="Rachunek, zobowiązania, rejestr transakcji i podsumowania miesięczne." />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Saldo rachunku" icon="wallet" accent="gain" value={<Money value={nw.cash} />} hint="Rachunek osobisty" />
+        <StatCard label="Rachunki" icon="wallet" accent="gain" value={<Money value={nw.cash + nw.savings} />} hint={<span>bieżący <Money value={nw.cash} round /> · oszczędności <Money value={nw.savings} round /></span>} />
         <StatCard label="Należności" icon="briefcase" accent="gold" value={<Money value={nw.receivables} />} hint="+ do otrzymania" />
         <StatCard label="Zobowiązania" icon="home" accent="loss" value={<Money value={nw.payables} />} hint="− do zapłaty" />
-        <StatCard label="Majątek netto" icon="trend" accent="sky" value={<Money value={nw.netWorth} />} hint="gotówka + należności − zobowiązania" />
+        <StatCard label="Majątek netto" icon="trend" accent="sky" value={<Money value={nw.netWorth} />} hint={nw.deposits > 0 ? 'rachunki + kaucje + należności − zobowiązania' : 'rachunki + należności − zobowiązania'} />
       </div>
 
       <Card
@@ -127,9 +127,9 @@ export function FinancesScreen() {
         action={<Segmented label="Filtr transakcji" value={txFilter} onChange={(v) => { setTxFilter(v); setTxLimit(PAGE); }} options={[{ value: 'all', label: 'Wszystkie' }, { value: 'in', label: 'Wpływy' }, { value: 'out', label: 'Wydatki' }]} />}
       >
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[620px] text-sm" data-testid="ledger">
+          <table className="w-full min-w-[760px] text-sm" data-testid="ledger">
             <thead className="text-left text-xs tracking-wide text-slate-500 uppercase">
-              <tr><th className="pb-2 font-medium">Data</th><th className="pb-2 font-medium">Opis</th><th className="pb-2 font-medium">Kategoria</th><th className="pb-2 text-right font-medium">Kwota</th><th className="pb-2 text-right font-medium">Saldo po</th></tr>
+              <tr><th className="pb-2 font-medium">Data</th><th className="pb-2 font-medium">Opis</th><th className="pb-2 font-medium">Kategoria</th><th className="pb-2 font-medium">Rachunek</th><th className="pb-2 text-right font-medium">Kwota</th><th className="pb-2 text-right font-medium">Saldo rachunku po</th></tr>
             </thead>
             <tbody className="divide-y divide-ink-700/60">
               {filteredTx.slice(0, txLimit).map(({ tx, balance }) => (
@@ -137,6 +137,7 @@ export function FinancesScreen() {
                   <td className="py-2 pr-3 whitespace-nowrap text-slate-400">{formatDatePL(tx.date)}</td>
                   <td className="py-2 pr-3 text-slate-100">{tx.description}</td>
                   <td className="py-2 pr-3"><span className="inline-flex items-center gap-1.5 text-slate-300"><i className="size-2 rounded-full" style={{ background: categoryInfo(tx.category).color }} />{categoryInfo(tx.category).label}</span></td>
+                  <td className="py-2 pr-3 text-slate-400">{game.accounts[tx.accountId]?.type === 'savings' ? 'oszczędnościowy' : 'bieżący'}</td>
                   <td className={`py-2 pr-3 text-right font-medium ${moneyTone(tx.amount)}`}><Money value={tx.amount} signed /></td>
                   <td className="py-2 text-right text-slate-400"><Money value={balance} /></td>
                 </tr>

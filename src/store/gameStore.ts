@@ -1,14 +1,18 @@
 import { create } from 'zustand';
 import { ZodError } from 'zod';
+import { commands } from '../engine/commands.ts';
+import type { CommandResult } from '../engine/commands.ts';
+import type { Grosze } from '../engine/money.ts';
 import { createNewGame, NewGameInputSchema } from '../engine/newGame.ts';
 import type { NewGameInput } from '../engine/newGame.ts';
 import { advanceOneDay, advanceToNextMonth } from '../engine/simulate.ts';
-import type { GameState } from '../engine/state.ts';
+import type { GameState, Lifestyle } from '../engine/state.ts';
+import type { TimePlan } from '../engine/time.ts';
 import { createIndexedDbRepository, createMemoryRepository, createResilientRepository } from '../persistence/repository.ts';
 import type { SaveListItem, SaveRepository } from '../persistence/repository.ts';
 import { loadGame, saveGame } from '../persistence/service.ts';
 
-export type Screen = 'dashboard' | 'character' | 'finances' | 'calendar' | 'events' | 'game';
+export type Screen = 'dashboard' | 'character' | 'finances' | 'calendar' | 'events' | 'jobs' | 'housing' | 'lifestyle' | 'time' | 'savings' | 'decisions' | 'game';
 
 export interface Notice {
   kind: 'info' | 'success' | 'error';
@@ -49,6 +53,15 @@ interface GameStore {
   startNewGame: (input: NewGameInput) => FieldErrors | null;
   advanceDay: () => void;
   advanceMonth: () => void;
+  /** Komendy gracza: zwracają wynik, a store pokazuje komunikat i autozapisuje stan po sukcesie. */
+  applyForJob: (offerId: string) => boolean;
+  respondToJobOffer: (applicationId: string, accept: boolean) => boolean;
+  resignFromJob: () => boolean;
+  signLease: (listingId: string, startDate: string) => boolean;
+  setLifestyle: (level: Lifestyle) => boolean;
+  setTimePlan: (plan: TimePlan) => boolean;
+  transferFunds: (fromId: string, toId: string, amount: Grosze) => boolean;
+  resolveLifeEvent: (eventId: string, optionId: string) => boolean;
   saveToSlot: (slot: string) => Promise<void>;
   loadFromSlot: (slot: string) => Promise<void>;
   deleteSlot: (slot: string) => Promise<void>;
@@ -86,6 +99,19 @@ export const useGameStore = create<GameStore>((set, get) => {
     }
   };
 
+  const exec = (fn: (g: GameState) => CommandResult): boolean => {
+    const game = get().game;
+    if (!game) return false;
+    const result = fn(game);
+    if (!result.ok) {
+      set({ notice: { kind: 'error', text: result.error } });
+      return false;
+    }
+    set({ game: result.state, notice: { kind: 'success', text: result.message } });
+    void autosave(result.state);
+    return true;
+  };
+
   return {
     game: null,
     screen: 'game',
@@ -115,6 +141,15 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     advanceDay: () => applyAdvance(advanceOneDay),
     advanceMonth: () => applyAdvance(advanceToNextMonth),
+
+    applyForJob: (offerId) => exec((g) => commands.applyForJob(g, offerId)),
+    respondToJobOffer: (applicationId, accept) => exec((g) => commands.respondToJobOffer(g, applicationId, accept)),
+    resignFromJob: () => exec((g) => commands.resignFromJob(g)),
+    signLease: (listingId, startDate) => exec((g) => commands.signLease(g, listingId, startDate)),
+    setLifestyle: (level) => exec((g) => commands.setLifestyle(g, level)),
+    setTimePlan: (plan) => exec((g) => commands.setTimePlan(g, plan)),
+    transferFunds: (fromId, toId, amount) => exec((g) => commands.transferFunds(g, fromId, toId, amount)),
+    resolveLifeEvent: (eventId, optionId) => exec((g) => commands.resolveLifeEvent(g, eventId, optionId)),
 
     saveToSlot: async (slot) => {
       const game = get().game;

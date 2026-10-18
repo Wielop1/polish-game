@@ -18,3 +18,12 @@ export const SLOT_LABELS: Record<string, string> = {
   'slot-2': 'Slot 2',
   'slot-3': 'Slot 3',
 };
+
+/** Parsuje kwotę w złotych wpisaną przez użytkownika („1 234,56”, „1234.5”) do groszy; null gdy nieprawidłowa. */
+export function parseZloty(input: string): number | null {
+  const cleaned = input.replace(/\s|\u00a0/g, '').replace(',', '.');
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+  const [whole, frac = ''] = cleaned.split('.');
+  const grosze = Number(whole) * 100 + Number(frac.padEnd(2, '0'));
+  return Number.isSafeInteger(grosze) ? grosze : null;
+}

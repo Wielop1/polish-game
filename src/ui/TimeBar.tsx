@@ -24,10 +24,14 @@ export function TimeBar() {
           <div data-testid="game-date" className="text-lg font-bold text-white sm:text-xl">{formatDatePL(today)}</div>
         </div>
 
-        <dl className="order-3 flex w-full items-center gap-6 sm:order-none sm:w-auto">
+        <dl className="order-3 flex w-full flex-wrap items-center gap-x-6 gap-y-1 sm:order-none sm:w-auto">
           <div>
             <dt className="text-[11px] tracking-wider text-slate-400 uppercase">Gotówka</dt>
             <dd data-testid="hud-cash" className="text-base font-semibold text-gain"><Money value={nw.cash} /></dd>
+          </div>
+          <div>
+            <dt className="text-[11px] tracking-wider text-slate-400 uppercase">Oszczędności</dt>
+            <dd data-testid="hud-savings" className="text-base font-semibold text-violet"><Money value={nw.savings} /></dd>
           </div>
           <div>
             <dt className="text-[11px] tracking-wider text-slate-400 uppercase">Majątek netto</dt>

@@ -1,4 +1,9 @@
-import { CITIES, PLACEHOLDER_NOTICE } from '../../engine/config.ts';
+import { CITIES, PLACEHOLDER_NOTICE, SKILL_LABELS, LIFESTYLE_LABELS } from '../../engine/config.ts';
+import { currentEmployment, currentLease, employmentContracts, leaseContracts } from '../../engine/contracts.ts';
+import { qualityOfLife } from '../../engine/selectors.ts';
+import { fatigueLabel } from '../../engine/time.ts';
+import type { Skill } from '../../engine/state.ts';
+import { ProgressBar } from '../components/charts.tsx';
 import { diffDays, formatDatePL } from '../../engine/date.ts';
 import { playerAge } from '../../engine/selectors.ts';
 import { useGameStore } from '../../store/gameStore.ts';
@@ -9,8 +14,9 @@ export function CharacterScreen() {
   const { person } = game;
   const age = playerAge(game);
   const city = CITIES[person.cityId]?.name ?? person.cityId;
-  const employment = game.contracts.find((c) => c.type === 'employment');
-  const lease = game.contracts.find((c) => c.type === 'lease');
+  const employment = currentEmployment(game) ?? employmentContracts(game).sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  const lease = currentLease(game) ?? leaseContracts(game).sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  const qol = qualityOfLife(game);
   const employer = employment && game.parties[employment.partyId];
   const landlord = lease && game.parties[lease.partyId];
   const dayLabel = (d: number | 'last') => (d === 'last' ? 'ostatniego dnia miesiąca' : `${d}. dnia miesiąca`);
@@ -32,7 +38,7 @@ export function CharacterScreen() {
             </div>
             <div className="flex flex-wrap justify-center gap-2">
               <Badge tone="sky">osoba fizyczna</Badge>
-              <Badge tone="gain">zatrudniony na etacie</Badge>
+              <Badge tone={currentEmployment(game) ? 'gain' : 'loss'}>{currentEmployment(game) ? 'zatrudniony na etacie' : 'bez pracy'}</Badge>
             </div>
           </div>
           <dl className="mt-6 space-y-3 border-t border-ink-700 pt-4 text-sm">
@@ -45,16 +51,40 @@ export function CharacterScreen() {
         </Card>
 
         <div className="space-y-5 lg:col-span-2">
+          <Card title="Kondycja i umiejętności">
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-1 flex justify-between text-sm"><span className="text-slate-300">Zmęczenie</span><span className="tabular text-slate-100">{game.life.fatigue}/100 · {fatigueLabel(game.life.fatigue)}</span></div>
+                  <ProgressBar value={game.life.fatigue} max={100} tone={game.life.fatigue < 30 ? 'gain' : game.life.fatigue < 60 ? 'gold' : 'loss'} />
+                </div>
+                <div>
+                  <div className="mb-1 flex justify-between text-sm"><span className="text-slate-300">Jakość życia</span><span className="tabular text-slate-100">{qol.score}/100</span></div>
+                  <ProgressBar value={qol.score} max={100} tone={qol.score < 35 ? 'loss' : qol.score < 60 ? 'gold' : 'gain'} />
+                </div>
+                <div className="text-sm text-slate-400">Styl życia: <strong className="text-slate-200">{LIFESTYLE_LABELS[game.life.lifestyle]}</strong></div>
+              </div>
+              <ul className="space-y-2.5" data-testid="skills">
+                {(Object.keys(SKILL_LABELS) as Skill[]).map((k) => (
+                  <li key={k}>
+                    <div className="mb-1 flex justify-between text-sm"><span className="text-slate-300">{SKILL_LABELS[k]}</span><span className="tabular text-slate-100">{game.life.skills[k] ?? 0}/5</span></div>
+                    <ProgressBar value={game.life.skills[k] ?? 0} max={5} tone="gain" />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </Card>
+
           {employment && (
             <Card title="Praca" action={<PlaceholderBadge />}>
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <div className="text-lg font-semibold text-slate-50">{employment.title}</div>
-                  <div className="text-sm text-slate-400">{employer?.name} · od {formatDatePL(employment.startDate)}</div>
+                  <div className="text-sm text-slate-400">{employer?.name} · od {formatDatePL(employment.startDate)}{employment.endDate ? ` · do ${formatDatePL(employment.endDate)}` : ''}</div>
                 </div>
                 <div className="text-right">
                   <div className="text-xl font-semibold text-gain"><Money value={employment.monthlyAmount} /></div>
-                  <div className="text-xs text-slate-400">netto / miesiąc</div>
+                  <div className="text-xs text-slate-400">netto / mies. (szacunek){employment.grossMonthly ? <> · brutto <Money value={employment.grossMonthly} round /></> : ''}</div>
                 </div>
               </div>
               <p className="mt-3 text-sm text-slate-400">
@@ -71,11 +101,11 @@ export function CharacterScreen() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <div className="text-lg font-semibold text-slate-50">{lease.title}</div>
-                  <div className="text-sm text-slate-400">{landlord?.name} · umowa od {formatDatePL(lease.startDate)}</div>
+                  <div className="text-sm text-slate-400">{landlord?.name} · umowa od {formatDatePL(lease.startDate)}{lease.endDate ? ` do ${formatDatePL(lease.endDate)}` : ''}</div>
                 </div>
                 <div className="text-right">
                   <div className="text-xl font-semibold text-loss"><Money value={lease.monthlyAmount} /></div>
-                  <div className="text-xs text-slate-400">czynsz / miesiąc</div>
+                  <div className="text-xs text-slate-400">czynsz / miesiąc{lease.utilitiesMonthly > 0 && <> + opłaty <Money value={lease.utilitiesMonthly} round /></>}</div>
                 </div>
               </div>
               <p className="mt-3 text-sm text-slate-400">

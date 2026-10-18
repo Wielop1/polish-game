@@ -14,7 +14,7 @@
 
 **Poza zakresem (świadomie):** decyzje gracza, podatki/ZUS, JDG, spółki, kredyty, giełda, nieruchomości, pracownicy, branża remontowa, backend.
 
-## v0.2 — Decyzje gracza i życie prywatne  ← *proponowane następne zadanie*
+## v0.2 — Decyzje gracza i życie prywatne ✅ (zakończona, patrz `PROJECT_STATUS.md`)
 
 **Cel:** pierwsza prawdziwa pętla „decyzja → czas → skutek”.
 **Zakres:**
@@ -22,9 +22,11 @@
 - **Zdarzenia losowe życia** (awaria, nieplanowany wydatek, okazja) na seedowanym RNG per-zdarzenie.
 - Oszczędności: drugi rachunek (oszczędnościowy) i przelewy między rachunkami własnymi (przelew nie zmienia majątku netto — nowy niezmiennik).
 - Migracja zapisu v1 → v2.
-**Zależności:** v0.1. **Kryteria ukończenia:** każda komenda ma testy (w tym determinizm i niezmienniki); UI do wydawania komend; e2e „zmień pracę → pensja zmienia się od właściwego miesiąca”; zapisy v1 wczytują się po migracji.
+**Zależności:** v0.1. **Kryteria ukończenia:** każda komenda ma testy (w tym determinizm i niezmienniki); UI do wydawania komend; zapisy v1 wczytują się po migracji.
 
-## v0.3 — Model podatkowy i ZUS (wersjonowany datami)
+**Zrealizowano w v0.2** (zakres rozszerzony względem pierwotnego szkicu): oferty pracy i aplikacje (tylko umowa o pracę), zmiana/rezygnacja z pracy, oferty najmu z kaucją i przeprowadzką, budżet czasu z zarządzaniem zmęczeniem, 3 style życia, rachunek oszczędnościowy z odsetkami, 7 wydarzeń życiowych, migracja v1 → v2. **Nie zrealizowano z pierwotnego szkicu:** wydatki jednorazowe jako komenda gracza (są tylko jako skutki wydarzeń).
+
+## v0.3 — Model podatkowy i ZUS (wersjonowany datami)  ← *proponowane następne zadanie*
 
 **Cel:** przejście z kwot netto na brutto → netto, fundament pod JDG.
 **Zakres:** tabele przepisów z datami obowiązywania (`valueAt`), źródła i status weryfikacji; umowa o pracę brutto/netto, składki, PIT; roczne rozliczenie; deklaracje jako zobowiązania wobec urzędu.
