@@ -4,7 +4,7 @@
 
 ## Wersja
 
-**v0.2.0 — Życie prywatne, decyzje, czas i oszczędności** (zakończona; v0.3 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 2` (migracja z v1).
+**v0.2.1** — v0.2 (życie prywatne, decyzje, czas, oszczędności) z korektą zatrudnienia (ADR-025). v0.3 czeka na zatwierdzenie. Zapisy: `SAVE_VERSION = 2` (migracja z v1; korekta nie zmieniła schematu).
 
 ## Co działa (zweryfikowane testami)
 
@@ -25,14 +25,19 @@ Wszystko z v0.1 (nowa gra, czas, rejestr, zobowiązania, majątek netto, kalenda
 - **Wszystkie parametry są przykładowe**: płace, czynsze, kaucje, koszty stylu życia, stopa i podatek od odsetek, prawdopodobieństwa i kwoty wydarzeń, wagi jakości życia.
 - Katalogi ofert pracy i mieszkań są **stałe** (brak odświeżania, rynku, negocjacji). Inne formy zatrudnienia, wypowiedzenie umowy najmu bez nowej umowy, wycofanie aplikacji i anulowanie podpisanej umowy — niezaimplementowane.
 
+## Korekta v0.2.1 (zatrudnienie)
+
+- **Utrata pracy** nie wynika już z samego upływu czasu: ryzyko to suma czynników (wydajność/absencje z wyczerpania, trudna sytuacja pracodawcy, recesja), a bez czynników wynosi 0. Klimat i kondycja pracodawcy są deterministyczne (seed + rok). Zwolnienie podaje przyczynę; ekran „Oferty pracy” pokazuje ryzyko i czynniki. Pomiar (60 seedów × 5 lat): bierna gra → ok. 8% zwolnień (było ok. 50%), wyczerpujący plan dnia → ok. 53%.
+- **Staż** rozdzielony na staż w firmie (ciągłość zatrudnienia, nie zeruje się przy awansie) i staż na stanowisku (od bieżącej umowy). Historia zatrudnienia, naliczenia i terminy wypłat bez zmian; bez migracji.
+
 ## Wykonane testy (2026-10-18)
 
 | Polecenie | Wynik |
 |---|---|
 | `npm run typecheck` | ✅ bez błędów |
-| `npm test` (Vitest) | ✅ **126/126**: kalendarz 8, pieniądze/RNG/formatowanie 8, silnik bazowy 34, **mechaniki v0.2 51**, zapis i repozytoria 14, **migracja i zapis v2 11** |
+| `npm test` (Vitest) | ✅ **135/135**: kalendarz 8, pieniądze/RNG/formatowanie 8, silnik bazowy 34, mechaniki v0.2 **60** (w tym 9 z korekty v0.2.1), zapis i repozytoria 14, migracja i zapis v2 11 |
 | `npm run build` | ✅ JS 486 kB / 144 kB gzip, CSS 42 kB / 7 kB gzip |
-| `npm run test:e2e` (Chromium) | ✅ **10/10** (4 z v0.1 + 6 nowych: praca, mieszkanie z kaucją, styl życia i budżet czasu, oszczędności, decyzja z wydarzenia, zapis stanu v2) |
+| `npm run test:e2e` (Chromium) | ✅ **10/10** (4 z v0.1 + 6 z v0.2: praca, mieszkanie z kaucją, styl życia i budżet czasu, oszczędności, decyzja z wydarzenia, zapis stanu v2) |
 
 Pomiary (Node 22, gra z włączonymi wydarzeniami): symulacja 120 miesięcy ≈ 0,85 s, jeden miesiąc na stanie po 10 latach ≈ 13 ms; zapis po 10 latach ≈ 1,2 MB, serializacja ≈ 10 ms, wczytanie z walidacją ≈ 50 ms.
 Wygląd nowych ekranów sprawdzony ręcznie na zrzutach (desktop 1360 px; menu mobilne 390 px); układ mobilny większości nowych ekranów nie ma testu automatycznego.
@@ -41,8 +46,8 @@ Wygląd nowych ekranów sprawdzony ręcznie na zrzutach (desktop 1360 px; menu m
 
 ## Znane problemy i uproszczenia
 
-1. **Bierna gra jest karana.** Z włączonymi wydarzeniami samo przewijanie czasu przez lata kończy się utratą pracy (prawdopodobna już po ok. 90 dniach stażu) i zaległościami — brak zasiłku, odprawy i pomocy w poszukiwaniu pracy. Prawdopodobieństwa nie były kalibrowane na danych z rozgrywek.
-2. **Staż liczony od początku bieżącej umowy** — awans tworzy nową umowę, więc zeruje staż (wpływa na kwalifikowanie do premii i awansu).
+1. **Zwolnienia** mają przyczyny zewnętrzne i wynikające z kondycji gracza (ADR-025), ale brak zasiłku, odprawy i pomocy w poszukiwaniu pracy; prawdopodobieństwa i progi nie były kalibrowane na danych z rozgrywek. „Absencje” to tylko opis niskiej wydajności z wyczerpania (brak osobnej mechaniki).
+2. Staż w firmie przerywa wypowiedzenie, przerwa w zatrudnieniu i zmiana pracodawcy; ponowne zatrudnienie u dawnego pracodawcy zaczyna staż od nowa.
 3. Pierwsza przeprowadzka nie zwraca kaucji (mieszkanie startowe jest bez kaucji — parametr przykładowy); zwrot kaucji zawsze pełny, bez potrąceń.
 4. Przeprowadzki tylko na 1. dzień miesiąca, bez proporcjonalnych czynszów i kar za wcześniejsze rozwiązanie.
 5. Dzień roboczy = pon–pt, bez świąt i urlopów; „działalność” w budżecie czasu tylko zajmuje godziny (nie ma jeszcze działalności).

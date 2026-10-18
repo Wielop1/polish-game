@@ -1,3 +1,4 @@
+import { addDays, diffDays } from './date.ts';
 import type { IsoDate } from './date.ts';
 import type { Contract, EmploymentContract, GameState, LeaseContract } from './state.ts';
 
@@ -47,4 +48,30 @@ export function employmentStatus(s: GameState, date: IsoDate = s.clock.today): E
   const c = currentEmployment(s, date);
   if (!c) return 'unemployed';
   return c.endDate !== null ? 'notice' : 'employed';
+}
+
+/**
+ * Początek ciągłości zatrudnienia u danego pracodawcy: cofamy się po umowach tego samego pracodawcy,
+ * które następują bezpośrednio po sobie (kolejna zaczyna się dzień po końcu poprzedniej) i kończą się
+ * zmianą warunków (awans — `terminatedBy: null`), a nie wypowiedzeniem. Przerwa albo wypowiedzenie
+ * zeruje ciągłość; zmiana pracodawcy zaczyna ją od nowa.
+ */
+export function companyTenureStart(s: GameState, contract: EmploymentContract): IsoDate {
+  let start = contract.startDate;
+  const all = employmentContracts(s);
+  for (;;) {
+    const prev = all.find((c) => c.partyId === contract.partyId && c.terminatedBy === null && c.endDate !== null && addDays(c.endDate, 1) === start);
+    if (!prev) return start;
+    start = prev.startDate;
+  }
+}
+
+/** Staż w firmie (ciągłość zatrudnienia u pracodawcy) — nie zeruje się przy awansie. */
+export function companyTenureDays(s: GameState, contract: EmploymentContract, date: IsoDate = s.clock.today): number {
+  return Math.max(0, diffDays(date, companyTenureStart(s, contract)));
+}
+
+/** Staż na stanowisku (od początku bieżącej umowy) — zeruje się przy awansie. */
+export function positionTenureDays(contract: EmploymentContract, date: IsoDate): number {
+  return Math.max(0, diffDays(date, contract.startDate));
 }

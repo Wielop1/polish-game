@@ -1,9 +1,10 @@
 import { SKILL_LABELS } from './config.ts';
 import { CommandError, createObligation, ensureParty, logEvent } from './core.ts';
-import { currentEmployment, currentLease } from './contracts.ts';
+import { companyTenureDays, currentEmployment, currentLease, positionTenureDays } from './contracts.ts';
+import { dominantFactor, layoffRisk } from './labor.ts';
 import { addDays, daysInMonth, formatDatePL, parseIso } from './date.ts';
 import type { IsoDate } from './date.ts';
-import { promoteEmployment, tenureDays, terminateEmployment, noticeEndDate } from './jobs.ts';
+import { promoteEmployment, terminateEmployment, noticeEndDate } from './jobs.ts';
 import { formatPLN, mulBps, zl } from './money.ts';
 import { createRng } from './rng.ts';
 import type { Rng } from './rng.ts';
@@ -115,7 +116,7 @@ const TEMPLATES: Template[] = [
     rollDay: 25,
     weight(s, date) {
       const c = currentEmployment(s, date);
-      if (!c || c.endDate !== null || tenureDays(s, c) < 60 || performance(s) < 7_000) return 0;
+      if (!c || c.endDate !== null || companyTenureDays(s, c, date) < 60 || performance(s) < 7_000) return 0;
       return Math.round((500 * performance(s)) / 10_000);
     },
     create() {
@@ -138,7 +139,8 @@ const TEMPLATES: Template[] = [
     rollDay: 12,
     weight(s, date) {
       const c = currentEmployment(s, date);
-      if (!c || c.endDate !== null || tenureDays(s, c) < 180 || performance(s) < 8_000) return 0;
+      // awans wymaga stażu w firmie (ciągłość zatrudnienia) ORAZ czasu na obecnym stanowisku
+      if (!c || c.endDate !== null || companyTenureDays(s, c, date) < 180 || positionTenureDays(c, date) < 180 || performance(s) < 8_000) return 0;
       if (hasPending(s, 'promotion')) return 0;
       if (s.lifeEvents.some((e) => e.templateId === 'promotion' && e.chosenOptionId === 'accept' && e.date > addDays(date, -365))) return 0;
       return 300;
@@ -168,22 +170,25 @@ const TEMPLATES: Template[] = [
   {
     id: 'job_loss',
     rollDay: 27,
-    weight(s, date) {
-      const c = currentEmployment(s, date);
-      if (!c || c.endDate !== null || tenureDays(s, c) < 90) return 0;
-      const p = performance(s);
-      return 120 * (1 + (p < 6_000 ? 3 : p < 8_000 ? 1 : 0));
-    },
+    // Ryzyko wynika wyłącznie z czynników: wydajność/absencje, kondycja pracodawcy, koniunktura (patrz labor.ts).
+    weight: (s, date) => layoffRisk(s, date).totalBps,
     create(s, date) {
       const c = currentEmployment(s, date)!;
-      return { title: 'Utrata zatrudnienia', body: `${s.parties[c.partyId]?.name ?? 'Pracodawca'} wypowiedział Ci umowę o pracę.`, options: [], defaultOptionId: null, expiresInDays: null, params: { contractId: c.id }, tone: 'warning' };
+      const reason = dominantFactor(layoffRisk(s, date));
+      return {
+        title: 'Utrata zatrudnienia',
+        body: `${s.parties[c.partyId]?.name ?? 'Pracodawca'} wypowiedział Ci umowę o pracę. Przyczyna: ${reason?.label ?? 'reorganizacja'}.`,
+        options: [], defaultOptionId: null, expiresInDays: null,
+        params: { contractId: c.id, reason: reason?.id ?? 'reorganizacja', reasonLabel: reason?.label ?? 'reorganizacja' },
+        tone: 'warning',
+      };
     },
-    apply(s, _ev, _o, _rng, date) {
+    apply(s, ev, _o, _rng, date) {
       const c = currentEmployment(s, date);
       if (!c || c.endDate !== null) return 'Wypowiedzenie nie wywołało skutków (umowa już się kończy).';
       const end = noticeEndDate(date, c.noticeMonths);
       terminateEmployment(s, c, 'employer', end);
-      return `Pracujesz i otrzymujesz wynagrodzenie do ${formatDatePL(end)} (okres wypowiedzenia: ${c.noticeMonths} mies.). Poszukaj nowej pracy w ofertach.`;
+      return `Przyczyna: ${String(ev.params.reasonLabel)}. Pracujesz i otrzymujesz wynagrodzenie do ${formatDatePL(end)} (okres wypowiedzenia: ${c.noticeMonths} mies.). Poszukaj nowej pracy w ofertach.`;
     },
   },
   {
@@ -365,4 +370,9 @@ export function expireLifeEvent(s: GameState, eventId: string, date: IsoDate): v
 
 export function pendingLifeEvents(s: GameState): LifeEvent[] {
   return s.lifeEvents.filter((e) => e.status === 'pending');
+}
+
+/** Aktualne wagi (pkt bazowe/mies.) wszystkich szablonów — diagnostyka i testy. */
+export function eventWeights(s: GameState, date: IsoDate = s.clock.today): Record<string, number> {
+  return Object.fromEntries(TEMPLATES.map((t) => [t.id, t.weight(s, date)]));
 }

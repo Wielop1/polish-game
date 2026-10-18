@@ -117,7 +117,7 @@ Sprawdzane w testach po każdym miesiącu symulacji oraz przy wczytywaniu zapisu
 
 **Oszczędności.** Odsetki i podatek: ADR-022. Przelew nie zmienia majątku netto i nie jest przychodem ani kosztem.
 
-**Wydarzenia życiowe.** ADR-023. Prawdopodobieństwa miesięczne (bazowe, w pkt bazowych): awaria 700 (jest najem, brak w ostatnich 60 dniach), niespodziewany wydatek 900, premia 500×wydajność (staż ≥ 60 dni, wydajność ≥ 70%), awans 300 (staż ≥ 180 dni, wydajność ≥ 80%, bez awansu w 12 mies.), utrata pracy 120–480 (zależnie od wydajności; staż ≥ 90 dni), zlecenie 700 (mieści się 2 godz. dziennie przez 14 dni), kurs 400 (≥ 1 400 zł na rachunkach, mieści się 2 godz. dziennie przez 30 dni). Wszystkie wartości przykładowe.
+**Wydarzenia życiowe.** ADR-023. Prawdopodobieństwa miesięczne (bazowe, w pkt bazowych): awaria 700 (jest najem, brak w ostatnich 60 dniach), niespodziewany wydatek 900, premia 500×wydajność (staż w firmie ≥ 60 dni, wydajność ≥ 70%), awans 300 (staż w firmie i na stanowisku ≥ 180 dni, wydajność ≥ 80%, bez awansu w 12 mies.), utrata pracy = suma czynników z `labor.ts` (wydajność 40/150, trudna sytuacja pracodawcy 50, recesja 50; 0 bez czynników; staż w firmie ≥ 90 dni — ADR-025), zlecenie 700 (mieści się 2 godz. dziennie przez 14 dni), kurs 400 (≥ 1 400 zł na rachunkach, mieści się 2 godz. dziennie przez 30 dni). Wszystkie wartości przykładowe.
 
 ## 9. Strategia testowania silnika
 

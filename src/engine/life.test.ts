@@ -3,19 +3,20 @@ import { ECONOMY_V01, JOB_CATALOG, LIFESTYLE, SAVINGS, estimateNet } from './con
 import { commands } from './commands.ts';
 import type { CommandResult } from './commands.ts';
 import { recordHistory } from './core.ts';
-import { currentEmployment, currentLease, employmentContracts, employmentStatus } from './contracts.ts';
+import { companyTenureDays, companyTenureStart, currentEmployment, currentLease, employmentContracts, employmentStatus, positionTenureDays } from './contracts.ts';
+import { economicClimate, employerCondition, layoffRisk } from './labor.ts';
 import { addDays, diffDays } from './date.ts';
 import { allowedMoveInDates, previewLease } from './housing.ts';
 import { checkInvariants } from './invariants.ts';
 import { applicationChanceBps, applicationBlocker } from './jobs.ts';
-import { pendingLifeEvents } from './lifeEvents.ts';
+import { eventWeights, pendingLifeEvents } from './lifeEvents.ts';
 import { mulBps, roundDiv, zl } from './money.ts';
 import { createNewGame } from './newGame.ts';
 import { SAVINGS_ACCOUNT_ID } from './newGame.ts';
 import { monthlySummaries, netWorth, netWorthBreakdown, overdueObligations, playerAccount, qualityOfLife, savingsBalance } from './selectors.ts';
 import { advanceDays, advanceOneDay, advanceToNextMonth, applyScheduledOccurrences, processDay } from './simulate.ts';
 import { applySavingsInterest } from './savings.ts';
-import type { GameState } from './state.ts';
+import type { EmploymentContract, GameState } from './state.ts';
 import { budgetFor, firstOverload, performanceBps, validatePlan } from './time.ts';
 
 const game = (seed = 'life', lifeEvents = false) => createNewGame({ firstName: 'Jan', lastName: 'Kowalski', seed, lifeEvents });
@@ -612,16 +613,18 @@ describe('wydarzenia życiowe', () => {
     expect(employmentContracts(declined)).toHaveLength(employmentContracts(s).length);
   });
 
-  it('utrata zatrudnienia: wypowiedzenie przez pracodawcę z zachowaniem okresu, potem brak pensji', () => {
-    const s = until('v2-0', '2027-07-28');
+  it('utrata zatrudnienia: wypowiedzenie przez pracodawcę z podaną przyczyną i okresem wypowiedzenia, potem brak pensji', () => {
+    const s = until('lay-10', '2028-01-28'); // pracodawca w trudnej sytuacji w 2028 r.
     const ev = s.lifeEvents.find((e) => e.templateId === 'job_loss')!;
     expect(ev).toBeDefined();
+    expect(ev.params.reason).toBe('employer');
+    expect(ev.outcome).toMatch(/Przyczyna: pracodawca w trudnej sytuacji/);
     const c = employmentContracts(s).find((x) => x.terminatedBy === 'employer')!;
-    expect(c).toMatchObject({ terminatedBy: 'employer', endDate: '2027-08-31' });
+    expect(c).toMatchObject({ terminatedBy: 'employer', endDate: '2028-02-29' }); // rok przestępny
     expect(employmentStatus(s)).toBe('notice');
     const later = advanceDays(s, 120);
     expect(employmentStatus(later)).toBe('unemployed');
-    expect(later.obligations.filter((o) => o.category === 'wynagrodzenie').at(-1)!.issueDate).toBe('2027-08-31');
+    expect(later.obligations.filter((o) => o.category === 'wynagrodzenie').at(-1)!.issueDate).toBe('2028-02-29');
     consistent(later);
   });
 
@@ -704,5 +707,156 @@ describe('wydarzenia życiowe', () => {
     expect(s.events.filter((e) => e.type === 'lifestyle.changed')).toHaveLength(1);
     expect(new Set(s.ledger.map((t) => t.id)).size).toBe(s.ledger.length);
     expect(overdueObligations(s).length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('v0.2.1: ryzyko utraty pracy wynika z przyczyn, nie z upływu czasu', () => {
+  const until = (seed: string, date: string) => advanceDays(game(seed, true), diffDays(date, '2026-01-01'));
+  const withFatigue = (s: GameState, f: number) => {
+    const c = structuredClone(s);
+    c.life.fatigue = f;
+    return c;
+  };
+  const passiveLosses = (seeds: number, months: number, plan?: { sleepHours: number; businessHours: number }) => {
+    let lost = 0;
+    for (let i = 0; i < seeds; i++) {
+      let s = game(`lay-${i}`, true);
+      if (plan) s = ok(commands.setTimePlan(s, plan));
+      for (let m = 0; m < months; m++) s = advanceToNextMonth(s);
+      if (s.lifeEvents.some((e) => e.templateId === 'job_loss')) lost += 1;
+    }
+    return lost;
+  };
+
+  it('wypoczęty pracownik w normalnych warunkach ma zerowe ryzyko — sam czas go nie zwalnia', () => {
+    let checked = 0;
+    for (let i = 0; i < 80 && checked < 5; i++) {
+      const s = advanceDays(game(`calm-${i}`), 200);
+      const year = 2026;
+      if (economicClimate(s.seed, year) === 'recesja' || employerCondition(s.seed, 'party:employer', year) === 'trudna') continue;
+      expect(layoffRisk(s).totalBps).toBe(0);
+      expect(eventWeights(s).job_loss).toBe(0);
+      checked += 1;
+    }
+    expect(checked).toBe(5);
+  });
+
+  it('czynniki: wyczerpanie, trudna sytuacja pracodawcy i recesja sumują się; okres próbny je wyłącza', () => {
+    const s = advanceDays(game('factors'), 150); // staż w firmie > 90 dni
+    const rested = layoffRisk(withFatigue(s, 0));
+    const tired = layoffRisk(withFatigue(s, 60)); // wydajność 79%
+    const exhausted = layoffRisk(withFatigue(s, 100)); // wydajność 51%
+    expect(exhausted.factors.find((f) => f.id === 'performance')!.bps).toBe(150);
+    expect(tired.factors.find((f) => f.id === 'performance')!.bps).toBe(40);
+    expect(rested.factors.find((f) => f.id === 'performance')).toBeUndefined();
+    expect(exhausted.totalBps - rested.totalBps).toBe(150);
+    expect(exhausted.totalBps).toBe(exhausted.factors.reduce((a, f) => a + f.bps, 0));
+    // okres próbny: < 90 dni stażu w firmie — brak ryzyka mimo wyczerpania
+    const early = advanceDays(game('factors'), 30);
+    expect(layoffRisk(withFatigue(early, 100)).totalBps).toBe(0);
+    // bez umowy nie ma kogo zwalniać
+    expect(layoffRisk(advanceDays(ok(commands.resignFromJob(early)), 80)).totalBps).toBe(0);
+  });
+
+  it('koniunktura i kondycja pracodawcy są deterministyczne i zmienne w czasie (ok. 15% lat złych)', () => {
+    expect(economicClimate('x', 2027)).toBe(economicClimate('x', 2027));
+    let recession = 0;
+    let weak = 0;
+    const n = 400;
+    for (let i = 0; i < n; i++) {
+      if (economicClimate(`k-${i}`, 2026) === 'recesja') recession += 1;
+      if (employerCondition(`k-${i}`, 'party:employer', 2026) === 'trudna') weak += 1;
+    }
+    expect(recession / n).toBeGreaterThan(0.08);
+    expect(recession / n).toBeLessThan(0.22);
+    expect(weak / n).toBeGreaterThan(0.08);
+    expect(weak / n).toBeLessThan(0.22);
+    expect(new Set([2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033].map((y) => economicClimate('k-3', y))).size).toBeGreaterThan(1);
+  });
+
+  it('bierna gra przez 3 lata rzadko kończy się zwolnieniem, a wyczerpujący tryb życia — często (ryzyko nie znika)', () => {
+    const passive = passiveLosses(40, 36);
+    const burnout = passiveLosses(40, 36, { sleepHours: 6, businessHours: 3 });
+    expect(passive).toBeLessThanOrEqual(5); // ≤ 12,5% (wcześniej ok. 35% w 3 lata)
+    expect(burnout).toBeGreaterThanOrEqual(10);
+    expect(burnout).toBeGreaterThan(passive * 3);
+    expect(passive).toBeGreaterThanOrEqual(1); // ryzyko nie znika: zewnętrzne czynniki (recesja, pracodawca) nadal zwalniają
+  }, 30_000);
+
+  it('zwolnienie jest deterministyczne i nie powtarza się dla umowy w okresie wypowiedzenia', () => {
+    const a = until('lay-10', '2028-06-01');
+    expect(until('lay-10', '2028-06-01')).toEqual(a);
+    expect(a.lifeEvents.filter((e) => e.templateId === 'job_loss')).toHaveLength(1);
+    expect(layoffRisk(until('lay-10', '2028-02-10')).totalBps).toBe(0); // w okresie wypowiedzenia
+  });
+});
+
+describe('v0.2.1: awans nie zeruje stażu w firmie', () => {
+  const promoted = () => {
+    const s = advanceDays(game('v2-2', true), diffDays('2026-08-13', '2026-01-01'));
+    const ev = pendingLifeEvents(s).find((e) => e.templateId === 'promotion')!;
+    return ok(commands.resolveLifeEvent(s, ev.id, 'accept'));
+  };
+
+  it('staż w firmie liczony od pierwszej umowy, staż na stanowisku od awansu', () => {
+    const s = advanceDays(promoted(), diffDays('2026-09-05', '2026-08-13')); // 5 września 2026
+    const cur = currentEmployment(s)!;
+    expect(cur.startDate).toBe('2026-09-01');
+    expect(companyTenureStart(s, cur)).toBe('2026-01-01');
+    expect(companyTenureDays(s, cur)).toBe(diffDays('2026-09-05', '2026-01-01'));
+    expect(positionTenureDays(cur, s.clock.today)).toBe(4);
+    consistent(s);
+  });
+
+  it('po awansie zachowane są uprawnienia z tytułu stażu w firmie (premia, ryzyko zwolnienia), ale nie nowy awans', () => {
+    const s = advanceDays(promoted(), diffDays('2026-09-05', '2026-08-13'));
+    const w = eventWeights(s);
+    expect(w.bonus).toBeGreaterThan(0); // dawniej 0 — staż liczony od nowej umowy (< 60 dni)
+    expect(w.promotion).toBe(0); // za krótko na stanowisku i niedawny awans
+    const exhausted = structuredClone(s);
+    exhausted.life.fatigue = 100;
+    expect(layoffRisk(exhausted).totalBps).toBeGreaterThanOrEqual(150); // nie wraca „okres próbny”
+    // kolejny awans możliwy dopiero po upływie czasu na stanowisku i 12 miesięcy od poprzedniego
+    expect(eventWeights(s, '2027-02-01').promotion).toBe(0);
+    expect(eventWeights(s, '2027-08-20').promotion).toBe(300);
+  });
+
+  it('historia zatrudnienia i wypłaty zostają: dwie umowy, brak dubli, jedno naliczenie na miesiąc', () => {
+    const s = advanceDays(promoted(), 100);
+    const contracts = employmentContracts(s);
+    expect(contracts.map((c) => [c.startDate, c.endDate])).toEqual([['2026-01-01', '2026-08-31'], ['2026-09-01', null]]);
+    expect(contracts[0]!.terminatedBy).toBeNull();
+    const months = s.obligations.filter((o) => o.category === 'wynagrodzenie').map((o) => o.issueDate.slice(0, 7));
+    expect(new Set(months).size).toBe(months.length);
+    consistent(s);
+  });
+
+  it('ciągłość przerywa wypowiedzenie, przerwa w zatrudnieniu i zmiana pracodawcy; łańcuchy awansów się sumują', () => {
+    const base = advanceDays(game('chain'), 60);
+    const cur = currentEmployment(base)!;
+    const mk = (id: string, partyId: string, start: string, end: string | null, by: 'employee' | 'employer' | null): EmploymentContract => ({ ...structuredClone(cur), id, partyId, startDate: start, endDate: end, terminatedBy: by });
+    const byId = (st: GameState, id: string) => st.contracts.find((x) => x.id === id) as EmploymentContract;
+    const s = structuredClone(base);
+    s.contracts = s.contracts.filter((c) => c.type !== 'employment');
+    // dwa awanse u tego samego pracodawcy (annex → annex), potem bieżąca umowa
+    s.contracts.push(
+      mk('a', 'party:employer', '2024-01-01', '2024-12-31', null),
+      mk('b', 'party:employer', '2025-01-01', '2025-12-31', null),
+      mk('c', 'party:employer', '2026-01-01', null, null),
+    );
+    const c = byId(s, 'c');
+    expect(companyTenureStart(s, c)).toBe('2024-01-01');
+    // wypowiedzenie przez pracownika zrywa ciągłość
+    byId(s, 'b').terminatedBy = 'employee';
+    expect(companyTenureStart(s, c)).toBe('2026-01-01');
+    // przerwa (dzień wolny) też
+    byId(s, 'b').terminatedBy = null;
+    byId(s, 'b').endDate = '2025-12-30';
+    expect(companyTenureStart(s, c)).toBe('2026-01-01');
+    // inny pracodawca nie dziedziczy stażu
+    const d = mk('d', 'party:inny', '2026-01-01', null, null);
+    byId(s, 'b').endDate = '2025-12-31';
+    s.contracts.push(d);
+    expect(companyTenureStart(s, d)).toBe('2026-01-01');
   });
 });

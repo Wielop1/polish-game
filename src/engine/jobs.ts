@@ -3,7 +3,7 @@ import type { JobOffer } from './config.ts';
 import { SKILL_LABELS } from './config.ts';
 import { CommandError, ensureParty, logEvent, nextCounter, partyName } from './core.ts';
 import { currentEmployment, employmentContracts, upcomingEmployment } from './contracts.ts';
-import { addDays, addMonthsToKey, dateInMonth, diffDays, firstOfNextMonth, formatDatePL, monthKey, monthKeyToYm } from './date.ts';
+import { addDays, addMonthsToKey, dateInMonth, firstOfNextMonth, formatDatePL, monthKey, monthKeyToYm } from './date.ts';
 import type { IsoDate } from './date.ts';
 import { formatPLN, mulBps } from './money.ts';
 import { createRng } from './rng.ts';
@@ -285,10 +285,6 @@ export function promoteEmployment(s: GameState, raisePct: number): { newContract
     noticeMonths: cur.noticeMonths, location: cur.location, jobOfferId: cur.jobOfferId,
   });
   return { newContract, startDate };
-}
-
-export function tenureDays(s: GameState, contract: EmploymentContract): number {
-  return Math.max(0, diffDays(s.clock.today, contract.startDate));
 }
 
 export function currentPerformanceBps(s: GameState): number {

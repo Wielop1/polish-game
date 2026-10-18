@@ -104,3 +104,14 @@ Statusy: *Zaakceptowana* · *Proponowana* (czeka na zatwierdzenie) · *Zastąpio
 ## ADR-024 · Migracja zapisu v1 → v2 z zamrożonymi wartościami domyślnymi — *Zaakceptowana*
 **Decyzja:** `migrateV1ToV2` (`src/persistence/migrations.ts`) nie zmienia historii finansowej, dodaje nowe struktury z zamrożonymi stałymi (nie importuje `config.ts`), nie zgaduje nieznanych danych (`grossMonthly`, standard i powierzchnia lokalu → `null`), przenosi opłaty z reguły „media” do umowy najmu, a wydatki stylu życia mapuje tak, że „standardowy” = kwoty z v1. Test używa **prawdziwego zapisu wygenerowanego przez v0.1** (`fixtures/save-v1.json`).
 **Konsekwencje:** zapisy v1 działają dalej bez resetu; kolejne migracje dopisujemy w `MIGRATIONS`, fixture’ów nie usuwamy.
+
+---
+
+# v0.2.1 — korekta zatrudnienia
+
+## ADR-025 · Zwolnienia z przyczyn (nie z upływu czasu) i rozdzielenie stażu w firmie od stażu na stanowisku — *Zaakceptowana* (zmienia fragmenty ADR-023)
+**Kontekst:** w v0.2 utrata pracy miała stałe ryzyko 1,2%/mies. od 90. dnia stażu, więc samo przewijanie czasu kończyło się zwolnieniem (ok. 50% w 5 lat), a awans (nowa umowa) zerował staż.
+**Decyzja:**
+1. Ryzyko zwolnienia (`layoffRisk`, `src/engine/labor.ts`) jest sumą czynników; bez czynników wynosi 0: wydajność/absencje z wyczerpania (+150 pkt bazowych/mies. przy wydajności < 60%, +40 przy < 80%), trudna sytuacja pracodawcy (+50; 15% lat), recesja (+50; 15% lat). Klimat gospodarczy i kondycja pracodawcy są losowane deterministycznie z (seed, rok) i (seed, pracodawca, rok), niezależnie od działań gracza. Okres próbny: bez ryzyka przy stażu w firmie < 90 dni. Wydarzenie podaje przyczynę (największy czynnik); ekran „Oferty pracy” pokazuje poziom ryzyka i czynniki.
+2. Staż w firmie = ciągłość zatrudnienia u tego samego pracodawcy: łańcuch umów, w którym każda następna zaczyna się dzień po końcu poprzedniej, a poprzednia zakończyła się zmianą warunków (`terminatedBy: null`), nie wypowiedzeniem. Staż na stanowisku = od początku bieżącej umowy. Premia i ryzyko zwolnienia używają stażu w firmie; awans wymaga obu (≥ 180 dni w firmie i na stanowisku) oraz 12 miesięcy od poprzedniego.
+**Konsekwencje:** brak zmian schematu i migracji — łańcuch wynika z istniejących pól, więc zapisy v1 i v2 działają bez zmian (awanse z v0.2 mają `terminatedBy: null`). Pomiar na 60 seedach × 5 lat: bierna gra traci pracę w ok. 8% przypadków (przyczyny zewnętrzne), wyczerpujący plan dnia w ok. 53%. Bez absencji jako osobnej mechaniki — „absencje” to opis niskiej wydajności z wyczerpania. Wartości są przykładowe.

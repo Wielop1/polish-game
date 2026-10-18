@@ -1,6 +1,7 @@
 import { JOB_CATALOG, NET_ESTIMATE_NOTICE, estimateNet } from '../../engine/config.ts';
 import type { JobOffer } from '../../engine/config.ts';
-import { currentEmployment, employmentStatus, upcomingEmployment } from '../../engine/contracts.ts';
+import { companyTenureDays, currentEmployment, employmentStatus, positionTenureDays, upcomingEmployment } from '../../engine/contracts.ts';
+import { CLIMATE_LABEL, layoffRisk } from '../../engine/labor.ts';
 import { formatDatePL } from '../../engine/date.ts';
 import { applicationBlocker, applicationChanceBps, chanceLabel, employmentHistory, noticeEndDate, offerById, skillGaps, startDateForNewJob } from '../../engine/jobs.ts';
 import { workHoursPerWorkday } from '../../engine/time.ts';
@@ -61,6 +62,25 @@ function OfferCard({ offer }: { offer: JobOffer }) {
   );
 }
 
+function tenureLabel(days: number): string {
+  if (days < 31) return `${days} dni`;
+  const months = Math.floor(days / 30.4);
+  return months < 24 ? `${months} mies.` : `${Math.floor(months / 12)} lat ${months % 12} mies.`;
+}
+
+function RiskLine() {
+  const game = useGameStore((s) => s.game)!;
+  const risk = layoffRisk(game);
+  const level = risk.totalBps === 0 ? 'niskie' : risk.totalBps < 100 ? 'podwyższone' : 'wysokie';
+  return (
+    <div data-testid="layoff-risk" className="mt-2 text-xs text-slate-400">
+      Ryzyko utraty pracy: <strong className={risk.totalBps === 0 ? 'text-gain' : risk.totalBps < 100 ? 'text-gold' : 'text-loss'}>{level}</strong>
+      {' '}· koniunktura: {CLIMATE_LABEL[risk.climate]}
+      {risk.factors.length > 0 ? <> · czynniki: {risk.factors.map((f) => f.label).join('; ')}</> : <> · brak czynników ryzyka</>}
+    </div>
+  );
+}
+
 export function JobsScreen() {
   const game = useGameStore((s) => s.game)!;
   const respond = useGameStore((s) => s.respondToJobOffer);
@@ -89,6 +109,8 @@ export function JobsScreen() {
               <div className="text-lg font-semibold text-slate-50">{cur.title}</div>
               <div className="text-sm text-slate-400">{game.parties[cur.partyId]?.name} · {cur.location} · od {formatDatePL(cur.startDate)}</div>
               <div className="mt-1 text-xs text-slate-500">{cur.hoursPerMonth} godz./mies. · wypowiedzenie {cur.noticeMonths} mies. · umowa o pracę</div>
+              <div data-testid="tenure" className="mt-1 text-xs text-slate-500">staż w firmie {tenureLabel(companyTenureDays(game, cur))} · na stanowisku {tenureLabel(positionTenureDays(cur, today))}</div>
+              {cur.endDate === null && <RiskLine />}
               {cur.endDate && <div className="mt-2 text-sm text-gold">Umowa kończy się {formatDatePL(cur.endDate)} ({cur.terminatedBy === 'employer' ? 'wypowiedział pracodawca' : 'Twoje wypowiedzenie'}).</div>}
             </div>
             <div className="text-right">
