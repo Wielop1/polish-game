@@ -6,9 +6,15 @@ import type { RegisterInput } from './business.ts';
 import { applyForJob, resignFromJob, respondToJobOffer } from './jobs.ts';
 import { resolveLifeEvent } from './lifeEvents.ts';
 import { signLease } from './housing.ts';
-import { addSpecialization, buyEquipment, buyMaterial, buyMissingForJob, declineEnquiry, maintainEquipment, resolveComplaint, respondToCounter, sendQuote, setAdvertising, signContract, terminateJob } from './renovation.ts';
+import { addSpecialization, assignCrew, assignVehicle, buyEquipment, buyMaterial, buyMissingForJob, declineEnquiry, maintainEquipment, resolveComplaint, respondToCounter, sendQuote, setAdvertising, signContract, terminateJob } from './renovation.ts';
 import type { QuoteInput } from './renovation.ts';
 import { hireAccountingOffice, terminateAccountingOffice } from './accounting.ts';
+import { closeListing, giveNotice, makeOffer, publishListing, rejectCandidate, setWage } from './workforce.ts';
+import type { Offer } from './workforce.ts';
+import { acceptSubOffer, acceptSubWork, cancelSubcontract, declineSubOffer, requestSubOffer } from './subcontractors.ts';
+import { createTeam, deleteTeam, updateTeam } from './teams.ts';
+import type { TeamMember } from './teams.ts';
+import { buyVehicle } from './fleet.ts';
 import { transferFunds } from './savings.ts';
 import type { Grosze } from './money.ts';
 import type { GameState, Lifestyle, TaxForm } from './state.ts';
@@ -108,4 +114,23 @@ export const commands = {
   // v0.5 — księgowość
   hireAccountingOffice: (state: GameState, planId: string) => runCommand(state, (d) => hireAccountingOffice(d, planId)),
   terminateAccountingOffice: (state: GameState) => runCommand(state, (d) => terminateAccountingOffice(d)),
+  // v0.6 — pracownicy i rekrutacja (wspólny silnik)
+  publishListing: (state: GameState, input: { role: string; minLevel: number; tier: 'basic' | 'premium' }) => runCommand(state, (d) => publishListing(d, input)),
+  closeListing: (state: GameState, listingId: string) => runCommand(state, (d) => closeListing(d, listingId)),
+  makeOffer: (state: GameState, candidateId: string, offer: Offer) => runCommand(state, (d) => makeOffer(d, candidateId, offer)),
+  rejectCandidate: (state: GameState, candidateId: string) => runCommand(state, (d) => rejectCandidate(d, candidateId)),
+  giveNotice: (state: GameState, employmentId: string) => runCommand(state, (d) => giveNotice(d, employmentId)),
+  setWage: (state: GameState, employmentId: string, gross: Grosze) => runCommand(state, (d) => setWage(d, employmentId, gross)),
+  // v0.6 — podwykonawcy, ekipy, pojazdy
+  requestSubOffer: (state: GameState, subId: string, jobId: string, scopeBps: number) => runCommand(state, (d) => requestSubOffer(d, subId, jobId, scopeBps)),
+  acceptSubOffer: (state: GameState, subcontractId: string) => runCommand(state, (d) => acceptSubOffer(d, subcontractId)),
+  declineSubOffer: (state: GameState, subcontractId: string) => runCommand(state, (d) => declineSubOffer(d, subcontractId)),
+  cancelSubcontract: (state: GameState, subcontractId: string) => runCommand(state, (d) => cancelSubcontract(d, subcontractId)),
+  acceptSubWork: (state: GameState, subcontractId: string) => runCommand(state, (d) => acceptSubWork(d, subcontractId)),
+  createTeam: (state: GameState, name: string, members: TeamMember[]) => runCommand(state, (d) => createTeam(d, name, members)),
+  updateTeam: (state: GameState, teamId: string, members: TeamMember[]) => runCommand(state, (d) => updateTeam(d, teamId, members)),
+  deleteTeam: (state: GameState, teamId: string) => runCommand(state, (d) => deleteTeam(d, teamId)),
+  assignCrew: (state: GameState, jobId: string, teamId: string | null, supervision: 'worker' | 'supervise' | 'hands-off', vehicleId: string | null, ownerHoursPerDay?: number) => runCommand(state, (d) => assignCrew(d, jobId, teamId, supervision, vehicleId, ownerHoursPerDay)),
+  assignVehicle: (state: GameState, jobId: string, vehicleId: string | null) => runCommand(state, (d) => assignVehicle(d, jobId, vehicleId)),
+  buyVehicle: (state: GameState, catalogId: string) => runCommand(state, (d) => buyVehicle(d, catalogId)),
 };

@@ -1,6 +1,8 @@
 import { activeBusiness, isSuspendedOn, issueDocument } from './business.ts';
-import { CommandError, ensureParty, logEvent, nextCounter } from './core.ts';
-import { addDays, diffDays, formatDatePL, monthKey, parseIso } from './date.ts';
+import { grossOfNet, purchaseCost, requireBusiness, requireCash, supplier, SUPPLIER_PARTY, vatRateNow } from './opsCommon.ts';
+export { availableCash, grossOfNet, SUPPLIER_PARTY, vatRateNow } from './opsCommon.ts';
+import { CommandError, createObligation, ensureParty, logEvent, nextCounter } from './core.ts';
+import { addDays, dateInMonth, diffDays, firstOfNextMonth, formatDatePL, monthKey, parseIso, weekdayIndex } from './date.ts';
 import type { IsoDate } from './date.ts';
 import { RULES_2026 as R } from './legal.ts';
 import { formatPLN, mulBps, roundDiv, zl } from './money.ts';
@@ -9,11 +11,15 @@ import { createRng } from './rng.ts';
 import {
   ADVERTISING, BASE_ENQUIRY_BPS, CANCEL_AFTER_DEADLINE_DAYS, CLIENT_NAMES, COMPLAINT_WINDOW_DAYS, COMPLEXITY_HOURS_BPS, DELAY_PENALTY_BPS_PER_WEEK,
   DELAY_PENALTY_CAP_BPS, DISTRICTS, EQUIPMENT, EQUIPMENT_BY_ID, MATERIAL_BY_ID, MAX_OPEN_ENQUIRIES, OTHER_COSTS_BPS, OWN_LABOR_RATE_DEFAULT, QUALITY_REQ_LABEL,
-  QUALITY_THRESHOLD, SEASONALITY_BPS, SERVICES, SERVICE_BY_ID, SKILL_QUALITY, SKILL_SPEED_BPS, SKILL_START_CENTI, SKILL_THRESHOLD_CENTI, SPECIALIZATION_COURSE, STANDARDS,
+  QUALITY_THRESHOLD, SEASONALITY_BPS, loadPoints, normCentiOf, SERVICES, SERVICE_BY_ID, SKILL_QUALITY, SKILL_SPEED_BPS, SKILL_START_CENTI, SKILL_THRESHOLD_CENTI, SPECIALIZATION_COURSE, STANDARDS,
 } from './renovationCatalog.ts';
 import type { MaterialStandard as Std, ServiceDef } from './renovationCatalog.ts';
 import { inventoryValue, equipmentValue } from './selectors.ts';
 import { budgetFor, firstOverload, performanceBps } from './time.ts';
+import { vehicleDef, useVehicle } from './fleet.ts';
+import { describeConflict, releaseJob, reserve, resourceBusy } from './teams.ts';
+import { ACTIVE_SUB, processSubcontracts, requestSubOffer, settleJobSubcontracts, subById, subPrice, subSpeedBps, subcontractsOfJob } from './subcontractors.ts';
+import { employmentActiveOn, employmentById, hoursPerWorkday, personById, personLevel, personName, personPerformanceBps } from './workforce.ts';
 import type {
   Business, Complexity, EquipmentItem, GameState, MaterialStandard, RenoCostPlan, RenoEnquiry, RenoJob, RenoQuote, RenovationState, ServiceOrder,
 } from './state.ts';
@@ -25,8 +31,6 @@ import type {
  * jakość, reklamacje i reputację. WSZYSTKIE ceny i normy to parametry symulacyjne (renovationCatalog.ts).
  */
 
-export const SUPPLIER_PARTY = 'party:supplier-reno';
-const MARKET_PARTY_NAME = 'Hurtownie i dostawcy materiałów (fikcyjni)';
 
 const reno = (s: GameState): RenovationState => s.reno;
 const tomorrow = (s: GameState) => addDays(s.clock.today, 1);
@@ -79,22 +83,26 @@ export function equipmentStatus(s: GameState, def: ServiceDef): { missing: strin
 }
 
 /** Sprzęt, który zużywa się podczas pracy przy usłudze (wymagany + przyspieszający, wszystko co ma wpływ). */
-function relevantEquipment(s: GameState, serviceId: string): EquipmentItem[] {
+function relevantDefs(serviceId: string) {
   const def = SERVICE_BY_ID.get(serviceId)!;
+  return EQUIPMENT.filter((e) => def.requiredEquipment.includes(e.id) || (e.speedBps[serviceId] ?? e.speedBps['*'] ?? 0) > 0 || (e.quality[serviceId] ?? e.quality['*'] ?? 0) > 0);
+}
+
+/** Sprzęt istotny dla usługi: najlepszy sprawny egzemplarz każdego rodzaju (z `used` — tylko niewykorzystany dziś). */
+function relevantEquipment(s: GameState, serviceId: string, used?: Set<string>): EquipmentItem[] {
   const out: EquipmentItem[] = [];
-  for (const e of EQUIPMENT) {
-    const relevant = def.requiredEquipment.includes(e.id) || (e.speedBps[serviceId] ?? e.speedBps['*'] ?? 0) > 0 || (e.quality[serviceId] ?? e.quality['*'] ?? 0) > 0;
-    if (!relevant) continue;
-    const item = ownedEquipment(s, e.id);
-    if (item && item.conditionBps > 0) out.push(item);
+  for (const e of relevantDefs(serviceId)) {
+    const item = reno(s).equipment.filter((x) => x.catalogId === e.id && x.conditionBps > 0 && !(used && used.has(`eq:${x.id}`))).sort((a, b) => b.conditionBps - a.conditionBps)[0];
+    if (item) out.push(item);
   }
   return out;
 }
 
 /** Łączny mnożnik wydajności (pkt bazowe; 10 000 = norma): umiejętności × sprzęt, z karą za zużyty sprzęt. */
-export function speedBps(s: GameState, serviceId: string): number {
-  let bps: number = SKILL_SPEED_BPS[clamp(skillLevel(s, serviceId), 1, 5)]!;
-  for (const item of relevantEquipment(s, serviceId)) {
+/** Mnożnik wydajności (pkt bazowe; 10 000 = norma) dla poziomu umiejętności i wskazanego sprzętu, z karą za zużyty sprzęt. */
+export function speedForLevel(level: number, items: EquipmentItem[], serviceId: string): number {
+  let bps: number = SKILL_SPEED_BPS[clamp(level, 1, 5)]!;
+  for (const item of items) {
     const def = EQUIPMENT_BY_ID.get(item.catalogId)!;
     const boost = def.speedBps[serviceId] ?? def.speedBps['*'] ?? 0;
     if (boost > 0) bps = roundDiv(bps * (10_000 + boost), 10_000);
@@ -103,15 +111,21 @@ export function speedBps(s: GameState, serviceId: string): number {
   return bps;
 }
 
-function equipmentQuality(s: GameState, serviceId: string): number {
+/** Wydajność właściciela przy bieżących umiejętnościach i sprzęcie. */
+export function speedBps(s: GameState, serviceId: string): number {
+  return speedForLevel(skillLevel(s, serviceId), relevantEquipment(s, serviceId), serviceId);
+}
+
+function equipmentQualityOf(items: EquipmentItem[], serviceId: string): number {
   let q = 0;
-  for (const item of relevantEquipment(s, serviceId)) {
+  for (const item of items) {
     const def = EQUIPMENT_BY_ID.get(item.catalogId)!;
     q += def.quality[serviceId] ?? def.quality['*'] ?? 0;
     if (item.conditionBps < 3_000) q -= 4;
   }
   return Math.min(10, q);
 }
+const equipmentQuality = (s: GameState, serviceId: string): number => equipmentQualityOf(relevantEquipment(s, serviceId), serviceId);
 
 export function transportSaveBps(s: GameState): number {
   let best = 0;
@@ -140,6 +154,31 @@ export function materialAvailable(s: GameState, key: string, date: IsoDate): boo
 
 export const stockQty = (s: GameState, key: string): number => reno(s).stock[key]?.qty ?? 0;
 
+/** Priorytet przy wspólnym zapasie: wcześniejszy start, potem numer kontraktu. */
+const jobPriority = (a: RenoJob, b: RenoJob): number => a.startDate.localeCompare(b.startDate) || a.id.localeCompare(b.id);
+export const remainingNeed = (job: RenoJob, key: string): number => Math.max(0, (job.need[key] ?? 0) - (job.consumed[key]?.qty ?? 0));
+
+/** Zapas zarezerwowany przez kontrakty o wyższym priorytecie (albo wszystkie aktywne, gdy `job` = null — dla nowej oferty). */
+export function stockReservedFor(s: GameState, key: string, job: RenoJob | null): number {
+  let sum = 0;
+  for (const o of reno(s).jobs) {
+    if (o.stage === 'done' || o.stage === 'cancelled' || (job && (o.id === job.id || jobPriority(o, job) > 0))) continue;
+    sum += remainingNeed(o, key);
+  }
+  return sum;
+}
+
+/** Braki materiałowe kontraktu z uwzględnieniem zapasu wspólnego z innymi kontraktami (równoległe kontrakty nie liczą tych samych materiałów dwa razy). */
+export function jobShortage(s: GameState, job: RenoJob): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const key of Object.keys(job.need)) {
+    const free = Math.max(0, stockQty(s, key) - stockReservedFor(s, key, job));
+    const short = remainingNeed(job, key) - free;
+    if (short > 0) out[key] = short;
+  }
+  return out;
+}
+
 export function materialNeeds(serviceId: string, units: number, complexity: Complexity, std: MaterialStandard): Record<string, number> {
   const def = SERVICE_BY_ID.get(serviceId)!;
   const extra = complexity === 'trudne' ? 11_000 : 10_000;
@@ -148,8 +187,7 @@ export function materialNeeds(serviceId: string, units: number, complexity: Comp
   return out;
 }
 
-export const normCenti = (serviceId: string, units: number, complexity: Complexity): number =>
-  roundDiv(SERVICE_BY_ID.get(serviceId)!.normCentiPerUnit * units * COMPLEXITY_HOURS_BPS[complexity], 10_000);
+export const normCenti = (serviceId: string, units: number, complexity: Complexity): number => normCentiOf(serviceId, units, complexity);
 
 /** Orientacyjna cena rynkowa netto zlecenia — baza budżetu klienta i wskaźnika cen. */
 export function referencePrice(serviceId: string, units: number, complexity: Complexity, qualityReq: number): Grosze {
@@ -192,6 +230,10 @@ export interface QuoteInput {
   advanceBps: number;
   paymentTermDays: number;
   laborRate: Grosze;
+  /** Ekipa realizująca kontrakt (null/undefined = właściciel samodzielnie), nadzór właściciela i pojazd. */
+  teamId?: string | null;
+  supervision?: 'worker' | 'supervise' | 'hands-off';
+  vehicleId?: string | null;
 }
 
 export interface QuotePreview {
@@ -215,10 +257,10 @@ export interface QuotePreview {
   errors: string[];
   warnings: string[];
   timeConflict: { date: IsoDate; missing: number } | null;
+  /** Godziny pracy całej ekipy (setne godziny) i średnia wydajność dobowa (ekipa) — do porównania wariantów. */
+  crewHoursCenti: number;
 }
 
-export const vatRateNow = (b: Business): number => (b.vat.status === 'active' ? R.vat.rateBps : 0);
-export const grossOfNet = (net: Grosze, vatBps: number): Grosze => net + mulBps(net, vatBps);
 
 export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: boolean } = {}): QuotePreview {
   const def = SERVICE_BY_ID.get(i.serviceId);
@@ -227,22 +269,72 @@ export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: b
   const today = s.clock.today;
   const errors: string[] = [];
   const warnings: string[] = [];
-  const speed = speedBps(s, i.serviceId);
   const norm = normCenti(i.serviceId, i.units, i.complexity);
-  const plannedCenti = Math.max(1, roundDiv(norm * 10_000, Math.max(1, speed)));
   const hpd = clamp(Math.round(i.hoursPerDay) || 1, 1, 8);
-  const minDays = Math.ceil(plannedCenti / (hpd * 100));
+  const team = i.teamId ? s.ops.teams.find((t) => t.id === i.teamId) ?? null : null;
+  if (i.teamId && !team) errors.push('Nie ma takiej ekipy.');
+  const ownerWorks = !team || team.members.some((m) => m.kind === 'owner');
+  const supervision: 'worker' | 'supervise' | 'hands-off' = ownerWorks ? 'worker' : i.supervision === 'hands-off' ? 'hands-off' : 'supervise';
+  let speed = speedBps(s, i.serviceId);
+  let plannedCenti = Math.max(1, roundDiv(norm * 10_000, Math.max(1, speed)));
+  let minDays = Math.ceil(plannedCenti / (hpd * 100));
+  let teamLabor: Grosze | null = null;
+  let transportOverride: Grosze | null = null;
+  let crewHours = plannedCenti;
+  if (team) {
+    const from = i.startDate > today ? i.startDate : addDays(today, 1);
+    const spec: CrewSpec = { id: 'preview', serviceId: i.serviceId, normCenti: norm, hoursPerDay: hpd, crew: { teamId: team.id, supervision }, vehicleId: i.vehicleId ?? null, units: i.units };
+    const cap = crewDailyAverage(s, spec, from, 'assume');
+    if (cap.avg <= 0) errors.push('Ekipa nie ma dostępnych wykonawców (brak aktywnych pracowników/podwykonawców, sprzętu lub właściciela).');
+    minDays = Math.ceil(norm / Math.max(1, cap.avg));
+    let wd = from;
+    while (weekdayIndex(wd) >= 5) wd = addDays(wd, 1);
+    const day = crewDay(s, spec, wd, new Set(), 'assume');
+    const pWork = Math.max(1, day.raw);
+    crewHours = roundDiv(day.workers.filter((w) => w.c > 0).reduce((a, w) => a + w.hoursCenti, 0) * norm, pWork);
+    plannedCenti = Math.max(1, crewHours);
+    speed = roundDiv(norm * 10_000, plannedCenti);
+    let labor = 0;
+    const sumC = Math.max(1, day.workers.reduce((a, w) => a + w.c, 0));
+    for (const w of day.workers) {
+      if (w.c <= 0) continue;
+      if (w.kind === 'employee') labor += roundDiv(employmentById(s, w.employmentId!)!.hourlyCost * w.hoursCenti * norm, 100 * pWork);
+      else if (w.kind === 'owner') labor += roundDiv(i.laborRate * w.hoursCenti * norm, 100 * pWork);
+      else {
+        const sub = subById(s, w.key.slice(4))!;
+        const share = clamp(Math.round((w.c * 10_000) / sumC / 500) * 500, 1_000, 10_000);
+        labor += subPrice(sub, i.serviceId, i.units, i.complexity, share);
+      }
+    }
+    if (supervision === 'supervise') labor += roundDiv(i.laborRate * 100 * minDays, 100);
+    teamLabor = labor;
+    if (i.vehicleId) {
+      const v = s.ops.vehicles.find((x) => x.id === i.vehicleId);
+      if (!v) errors.push('Nie ma takiego pojazdu.');
+      else transportOverride = Math.ceil(norm / pWork) * vehicleDef(v).runPerDay;
+    }
+    for (const m of team.members) {
+      if (m.kind === 'employee') {
+        const e = employmentById(s, m.id);
+        const hit = e ? resourceBusy(s, 'employee', e.id, i.startDate, addDays(i.startDate, Math.max(1, i.durationDays) - 1)) : undefined;
+        if (hit && e) warnings.push(`${personName(personById(s, e.personId)!)} jest ${describeConflict(s, hit)}.`);
+      }
+    }
+    if (day.coordination < 10_000) warnings.push(`Praca w ${day.workers.filter((w) => w.c > 0).length} osoby wymaga koordynacji — wydajność zespołu jest niższa niż suma wydajności jednostek.`);
+    if (day.workers.filter((w) => w.c > 0).length > Math.max(1, Math.floor(norm / 100 / 12))) warnings.push('Zakres jest zbyt mały, by wszyscy członkowie ekipy pracowali efektywnie — dodatkowe osoby niewiele przyspieszą pracę.');
+    if (supervision === 'hands-off') warnings.push('Bez nadzoru właściciela rośnie ryzyko problemów i spada jakość (−4 pkt jakości).');
+  }
   const need = materialNeeds(i.serviceId, i.units, i.complexity, i.standard);
   let materials = 0;
   const shortage: Record<string, number> = {};
   for (const [key, qty] of Object.entries(need)) {
     materials += qty * materialPrice(s, key, today);
-    const short = qty - stockQty(s, key);
+    const short = qty - Math.max(0, stockQty(s, key) - stockReservedFor(s, key, null));
     if (short > 0) shortage[key] = short;
   }
-  const transport = minDays * roundDiv(def.transportPerDay * (10_000 - transportSaveBps(s)), 10_000);
+  const transport = transportOverride ?? minDays * roundDiv(def.transportPerDay * (10_000 - transportSaveBps(s)), 10_000);
   const other = mulBps(materials, OTHER_COSTS_BPS);
-  const labor = roundDiv(plannedCenti * i.laborRate, 100);
+  const labor = teamLabor ?? roundDiv(plannedCenti * i.laborRate, 100);
   const total = materials + labor + transport + other;
   const markupBps = total > 0 ? roundDiv((i.priceNet - total) * 10_000, total) : 0;
   const marginBps = i.priceNet > 0 ? roundDiv((i.priceNet - total) * 10_000, i.priceNet) : 0;
@@ -254,10 +346,15 @@ export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: b
   if (!b) errors.push('Nie prowadzisz działalności.');
   else if (b.closeOn !== null) errors.push('Działalność jest w trakcie zamykania.');
   else if (isSuspendedOn(b, today) || b.suspensions.some((x) => x.from > today)) errors.push('Działalność jest zawieszona lub zawieszenie jest zaplanowane.');
-  if (!isSpecialized(s, i.serviceId)) errors.push(`Brak specjalizacji „${def.label}” — dodaj ją w zakładce Sprzęt i umiejętności (szkolenie ${formatPLN(SPECIALIZATION_COURSE, { round: true })}).`);
-  else if (level < difficulty) errors.push(`Za niski poziom umiejętności (${level}) na to zlecenie (wymagany ${difficulty}). Zdobywaj doświadczenie przy łatwiejszych pracach.`);
+  if (ownerWorks) {
+    if (!isSpecialized(s, i.serviceId)) errors.push(`Brak specjalizacji „${def.label}” — dodaj ją w zakładce Sprzęt i umiejętności (szkolenie ${formatPLN(SPECIALIZATION_COURSE, { round: true })}).`);
+    else if (level < difficulty) errors.push(`Za niski poziom umiejętności (${level}) na to zlecenie (wymagany ${difficulty}). Zdobywaj doświadczenie przy łatwiejszych pracach.`);
+  } else if (team) {
+    const levels = team.members.flatMap((m) => (m.kind === 'employee' ? [personLevel(personById(s, employmentById(s, m.id)?.personId ?? '') ?? { xp: {} } as never, i.serviceId)] : m.kind === 'sub' && subById(s, m.id)?.services.includes(i.serviceId) ? [clamp(Math.round(((subById(s, m.id)?.quality ?? 0) - 40) / 10), 1, 5)] : []));
+    if (levels.length === 0 || Math.max(...levels) < difficulty) errors.push(`Nikt w ekipie nie ma umiejętności wymaganych przy tym zleceniu (poziom ${difficulty}).`);
+  }
   const eq = equipmentStatus(s, def);
-  if (eq.missing.length) errors.push(`Brakuje wymaganego sprzętu: ${eq.missing.join(', ')}.`);
+  if (eq.missing.length && !(team && !ownerWorks && team.members.every((m) => m.kind === 'sub'))) errors.push(`Brakuje wymaganego sprzętu: ${eq.missing.join(', ')}.`);
   if (eq.broken.length) errors.push(`Sprzęt wymaga konserwacji (stan 0%): ${eq.broken.join(', ')}.`);
   if (!Number.isInteger(i.priceNet) || i.priceNet <= 0) errors.push('Podaj dodatnią cenę netto.');
   if (!Number.isInteger(i.advanceBps) || i.advanceBps < 0 || i.advanceBps > 5_000) errors.push('Zaliczka: od 0 do 50% ceny.');
@@ -265,22 +362,23 @@ export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: b
   if (!Number.isInteger(i.hoursPerDay) || i.hoursPerDay < 1 || i.hoursPerDay > 8) errors.push('Godziny dziennie: od 1 do 8.');
   if (i.startDate <= today) errors.push('Rozpoczęcie prac najwcześniej jutro.');
   if (i.startDate > addDays(today, 120)) errors.push('Rozpoczęcie prac najpóźniej za 120 dni.');
-  if (!Number.isInteger(i.durationDays) || i.durationDays < minDays) errors.push(`Przy ${hpd} godz. dziennie praca zajmie co najmniej ${minDays} dni — wydłuż termin lub zwiększ godziny dziennie.`);
+  if (!Number.isInteger(i.durationDays) || i.durationDays < minDays) errors.push(team ? `Ekipa potrzebuje co najmniej ${minDays} dni kalendarzowych — wydłuż termin lub wzmocnij ekipę.` : `Przy ${hpd} godz. dziennie praca zajmie co najmniej ${minDays} dni — wydłuż termin lub zwiększ godziny dziennie.`);
   if (i.laborRate < 0) errors.push('Stawka robocizny nie może być ujemna.');
 
   let timeConflict: QuotePreview['timeConflict'] = null;
-  if (b && i.startDate > today && Number.isInteger(i.durationDays) && i.durationDays >= 1 && i.durationDays <= 200) {
-    timeConflict = firstOverload(s, i.startDate, addDays(i.startDate, i.durationDays - 1), { extraHoursPerDay: hpd });
+  const ownerHours = supervision === 'worker' ? hpd : supervision === 'supervise' ? 1 : 0;
+  if (b && ownerHours > 0 && i.startDate > today && Number.isInteger(i.durationDays) && i.durationDays >= 1 && i.durationDays <= 200) {
+    timeConflict = firstOverload(s, i.startDate, addDays(i.startDate, i.durationDays - 1), { extraHoursPerDay: ownerHours });
     if (timeConflict) warnings.push(`Kolizja czasu: ${formatDatePL(timeConflict.date)} brakuje ${timeConflict.missing} godz. (etat, sen, obowiązki i inne kontrakty zajmują dobę).`);
   }
-  if (i.priceNet > 0 && marginBps < 0) warnings.push('Cena nie pokrywa planowanych kosztów (łącznie z Twoją robocizną po podanej stawce).');
+  if (i.priceNet > 0 && marginBps < 0) warnings.push(team ? 'Cena nie pokrywa planowanych kosztów (w tym wynagrodzeń ekipy po stawce godzinowej kosztu pracodawcy).' : 'Cena nie pokrywa planowanych kosztów (łącznie z Twoją robocizną po podanej stawce).');
   if (b && b.vat.status === 'exempt') warnings.push('Zwolnienie podmiotowe z VAT: cena dla klienta = cena netto (bez VAT).');
   if (b && b.vat.status === 'active') warnings.push(`Czynny podatnik VAT: do ceny netto dolicza się ${vatRateBps / 100}% VAT (obsługiwana tylko stawka podstawowa; obniżona 8% dla remontów mieszkań — niezaimplementowana, RENO-VAT-REDUCED).`);
-  if (i.advanceBps > 0) warnings.push('Zaliczka jest odrębnym dokumentem sprzedaży (przychód i VAT powstają przy jej otrzymaniu) — rozliczenie końcowe obejmuje resztę ceny.');
+  if (i.advanceBps > 0) warnings.push(`Zaliczka to gotówka i zobowiązanie do wykonania usługi — NIE przychód podatkowy: przychód powstaje po wykonaniu usługi (rozliczenie końcowe).${b && b.vat.status === 'active' ? ' VAT od zaliczki powstaje w dacie jej otrzymania.' : ''} (ADV-PIT, ADV-VAT)`);
   void opts;
   return {
     normCenti: norm, speedBps: speed, plannedCenti, minDays, planned: { materials, labor, transport, other, total }, vatRateBps, priceGross: grossOfNet(Math.max(0, i.priceNet), vatRateBps),
-    markupBps, marginBps, effectiveHourly, need, stockShortage: shortage, difficulty, level, errors, warnings, timeConflict,
+    markupBps, marginBps, effectiveHourly, need, stockShortage: shortage, difficulty, level, errors, warnings, timeConflict, crewHoursCenti: crewHours,
   };
 }
 
@@ -304,46 +402,13 @@ export function defaultQuoteInput(s: GameState, enq: RenoEnquiry): QuoteInput {
 
 /* ---------- Pomocnicze: dokumenty i gotówka firmy ---------- */
 
-function supplier(s: GameState): void {
-  ensureParty(s, { id: SUPPLIER_PARTY, name: MARKET_PARTY_NAME, role: 'service' });
-}
-
-/** Gotówka firmy po odliczeniu zobowiązań już wymagalnych (nie wolno wydać pieniędzy, które są już „zajęte”). */
-export function availableCash(s: GameState, b: Business): Grosze {
-  let due = 0;
-  for (const o of s.obligations) if (o.scope === 'business' && o.status === 'open' && o.direction === 'payable' && o.dueDate <= s.clock.today) due += o.amount;
-  return s.accounts[b.accountId]!.balance - due;
-}
-
-function requireBusiness(s: GameState): Business {
-  const b = activeBusiness(s);
-  if (!b) throw new CommandError('Nie prowadzisz działalności.');
-  if (s.clock.today < b.startDate) throw new CommandError('Działalność jeszcze się nie rozpoczęła.');
-  if (b.closeOn !== null) throw new CommandError('Działalność jest w trakcie zamykania.');
-  return b;
-}
-
-function purchaseCost(s: GameState, b: Business, net: Grosze, description: string, orderId: string | null = null, date: IsoDate = s.clock.today): { docId: string; taxAmount: Grosze } {
-  supplier(s);
-  const doc = issueDocument(s, b, { kind: 'cost', issueDate: date, counterpartyId: SUPPLIER_PARTY, orderId, description, net, termDays: 0 });
-  return { docId: doc.id, taxAmount: doc.taxAmount };
-}
-
-function requireCash(s: GameState, b: Business, net: Grosze): void {
-  // dla zwolnionego z VAT dokument kosztowy = kwota końcowa; dla czynnego podatnika płacimy netto + VAT dostawcy
-  const need = b.vat.status === 'active' ? grossOfNet(net, R.vat.rateBps) : net;
-  const have = availableCash(s, b);
-  if (have < need) throw new CommandError(`Za mało środków na rachunku firmowym (dostępne ${formatPLN(Math.max(0, have))}, potrzeba ${formatPLN(need)}). Zrób wkład własny na rachunek firmowy.`);
-}
-
 /* ---------- Komendy: sprzęt, materiały, reklama, specjalizacje ---------- */
 
 export function buyEquipment(s: GameState, catalogId: string): string {
   const b = requireBusiness(s);
   const def = EQUIPMENT_BY_ID.get(catalogId);
   if (!def) throw new CommandError('Nieznany sprzęt.');
-  const owned = ownedEquipment(s, catalogId);
-  if (owned && owned.conditionBps > 0) throw new CommandError('Masz już ten sprzęt w użyciu. Zużyty (0%) można kupić ponownie.');
+  if (reno(s).equipment.filter((e) => e.catalogId === catalogId && e.conditionBps > 0).length >= 4) throw new CommandError('Masz już 4 sprawne egzemplarze tego sprzętu — to maksimum. Kolejne kup, gdy któryś się zużyje.');
   requireCash(s, b, def.priceNet);
   const { docId, taxAmount } = purchaseCost(s, b, def.priceNet, `Sprzęt: ${def.label}`);
   const n = nextCounter(s, 'reno:equipment');
@@ -389,7 +454,8 @@ export function buyMissingForJob(s: GameState, jobId: string): string {
   if (!job || job.stage === 'done' || job.stage === 'cancelled') throw new CommandError('Ten kontrakt nie wymaga zakupów.');
   const parts: string[] = [];
   for (const [key, need] of Object.entries(job.need)) {
-    const missing = need - (job.consumed[key]?.qty ?? 0) - stockQty(s, key);
+    const missing = jobShortage(s, job)[key] ?? 0;
+    void need;
     if (missing > 0) parts.push(buyMaterial(s, key, missing));
   }
   if (parts.length === 0) throw new CommandError('Masz już wszystkie materiały potrzebne do tego kontraktu.');
@@ -439,8 +505,14 @@ function priceIndexBps(s: GameState): number {
 }
 
 function availabilityBps(s: GameState, date: IsoDate): number {
+  // dostępność terminów: właściciel ma wolne godziny albo wolna jest ekipa z pracownikami (kontrakt nie musi czekać na właściciela)
   let ok = 0;
-  for (let i = 1; i <= 14; i++) if (budgetFor(s, addDays(date, i)).free >= 2) ok += 1;
+  for (let i = 1; i <= 14; i++) {
+    const d = addDays(date, i);
+    const ownerFree = budgetFor(s, d).free >= 2;
+    const teamFree = s.ops.teams.some((t) => t.members.some((m) => m.kind === 'employee') && !s.reno.jobs.some((j) => j.crew.teamId === t.id && j.stage !== 'done' && j.stage !== 'cancelled' && j.startDate <= d && d <= j.deadline));
+    if (ownerFree || teamFree) ok += 1;
+  }
   return 4_000 + roundDiv(6_000 * ok, 14);
 }
 
@@ -517,6 +589,7 @@ export function sendQuote(s: GameState, enquiryId: string, input: QuoteInput): s
     vatRateBps: p.vatRateBps, advanceBps: input.advanceBps, paymentTermDays: input.paymentTermDays, startDate: input.startDate, durationDays: input.durationDays,
     hoursPerDay: input.hoursPerDay, laborRate: input.laborRate, planned: p.planned, plannedCenti: p.plannedCenti, sentOn: today, decideOn, status: 'sent', counter: null,
     held: false, note: '', acceptedOn: null, signBy: null, replyDays: diffDays(today, enq.receivedOn),
+    teamId: input.teamId ?? null, supervision: input.teamId ? ((s.ops.teams.find((t) => t.id === input.teamId)?.members.some((m) => m.kind === 'owner') ?? true) ? 'worker' : input.supervision === 'hands-off' ? 'hands-off' : 'supervise') : 'worker', vehicleId: input.vehicleId ?? null,
   };
   reno(s).quotes.push(q);
   enq.status = 'quoted';
@@ -636,6 +709,56 @@ export function respondToCounter(s: GameState, quoteId: string, action: 'accept'
 
 /* ---------- Podpisanie umowy ---------- */
 
+/** Przydziela ekipę, sprzęt, pojazd i czas właściciela do kontraktu; rzuca CommandError przy konfliktach (stan jest wtedy odrzucany). */
+function setupCrew(s: GameState, job: RenoJob, order: ServiceOrder): void {
+  releaseJob(s, job.id, ['employee', 'equipment', 'vehicle']);
+  const team = job.crew.teamId ? s.ops.teams.find((t) => t.id === job.crew.teamId) : undefined;
+  if (job.crew.teamId && !team) throw new CommandError('Nie ma takiej ekipy.');
+  const ownerWorks = !team || team.members.some((m) => m.kind === 'owner');
+  job.crew.supervision = ownerWorks ? 'worker' : job.crew.supervision === 'hands-off' ? 'hands-off' : 'supervise';
+  const def = SERVICE_BY_ID.get(job.serviceId)!;
+  const ownerHours = job.crew.supervision === 'worker' ? job.hoursPerDay : job.crew.supervision === 'supervise' ? 1 : 0;
+  // czas właściciela (praca albo nadzór) — kontrakt zajmuje godziny doby; delegowanie bez nadzoru ich nie zajmuje
+  let c = s.commitments.find((x) => x.id === order.commitmentId);
+  if (c) c.endDate = addDays(c.startDate, -1);
+  if (ownerHours > 0) {
+    const clash = firstOverload(s, job.startDate, job.deadline, { extraHoursPerDay: ownerHours });
+    if (clash) throw new CommandError(`Brak wolnych godzin: ${formatDatePL(clash.date)} brakuje ${clash.missing} godz. Zmień plan dnia, zakończ inny kontrakt albo przydziel ekipę.`);
+    if (c) { c.startDate = job.startDate; c.endDate = job.deadline; c.hoursPerDay = ownerHours; }
+    else { c = { id: order.commitmentId, label: `Remont: ${job.clientName.split(' (')[0]}`, startDate: job.startDate, endDate: job.deadline, hoursPerDay: ownerHours, sourceEventId: null }; s.commitments.push(c); }
+  }
+  const employees = (team?.members ?? []).filter((m) => m.kind === 'employee').map((m) => ({ m, e: employmentById(s, m.id) }));
+  for (const { m, e } of employees) {
+    if (!e || !employmentActiveOn(e, job.startDate)) throw new CommandError(`Pracownik ${m.id} nie ma aktywnej umowy w dniu rozpoczęcia prac.`);
+    const hit = resourceBusy(s, 'employee', e.id, job.startDate, job.deadline, job.id);
+    if (hit) throw new CommandError(`${personName(personById(s, e.personId)!)} jest ${describeConflict(s, hit)} — ten sam pracownik nie może pracować przy dwóch kontraktach jednocześnie.`);
+  }
+  if (job.vehicleId) {
+    const v = s.ops.vehicles.find((x) => x.id === job.vehicleId);
+    if (!v) throw new CommandError('Nie ma takiego pojazdu.');
+    const hit = resourceBusy(s, 'vehicle', v.id, job.startDate, job.deadline, job.id);
+    if (hit) throw new CommandError(`Pojazd jest już ${describeConflict(s, hit)}.`);
+  }
+  if (!ownerWorks && team) {
+    const levels = team.members.flatMap((m) => (m.kind === 'employee' ? [personLevel(personById(s, employmentById(s, m.id)?.personId ?? '')!, job.serviceId)] : subById(s, m.id)?.services.includes(job.serviceId) ? [clamp(Math.round(((subById(s, m.id)?.quality ?? 0) - 40) / 10), 1, 5)] : []));
+    if (levels.length === 0 || Math.max(...levels) < job.difficulty) throw new CommandError('Nikt w ekipie nie ma umiejętności wymaganych przy tym zleceniu.');
+  }
+  // komplety narzędzi: jeden na osobę pracującą własnym sprzętem (właściciel, pracownicy); podwykonawcy mają własne
+  const needing = employees.length + (ownerWorks ? 1 : 0);
+  if (needing > 0) {
+    const freeOf = (id: string) => reno(s).equipment.filter((x) => x.catalogId === id && x.conditionBps > 0 && !resourceBusy(s, 'equipment', x.id, job.startDate, job.deadline, job.id)).sort((a, b) => b.conditionBps - a.conditionBps);
+    const reqIds = def.requiredEquipment;
+    const sets = reqIds.length ? Math.min(...reqIds.map((id) => freeOf(id).length)) : needing;
+    if (reqIds.length && sets === 0) throw new CommandError(`Brak wolnego kompletu sprzętu w terminie kontraktu (${reqIds.map((id) => EQUIPMENT_BY_ID.get(id)!.label).join(', ')}) — wszystkie egzemplarze są przydzielone do innych kontraktów. Kup kolejny egzemplarz albo zmień termin.`);
+    for (const d of relevantDefs(job.serviceId)) {
+      const take = reqIds.includes(d.id) ? Math.min(sets, needing) : Math.min(needing, freeOf(d.id).length);
+      for (const item of freeOf(d.id).slice(0, take)) reserve(s, job.id, 'equipment', item.id, job.startDate, job.deadline);
+    }
+  }
+  for (const { e } of employees) reserve(s, job.id, 'employee', e!.id, job.startDate, job.deadline);
+  if (job.vehicleId) reserve(s, job.id, 'vehicle', job.vehicleId, job.startDate, job.deadline);
+}
+
 export function signContract(s: GameState, quoteId: string): string {
   const b = requireBusiness(s);
   const today = s.clock.today;
@@ -646,44 +769,96 @@ export function signContract(s: GameState, quoteId: string): string {
   const enq = reno(s).enquiries.find((e) => e.id === q.enquiryId)!;
   const def = SERVICE_BY_ID.get(q.serviceId)!;
   const difficulty = jobDifficulty(def, q.complexity);
-  if (skillLevel(s, q.serviceId) < difficulty) throw new CommandError('Poziom umiejętności jest za niski na to zlecenie.');
+  const team = q.teamId ? s.ops.teams.find((t) => t.id === q.teamId) : undefined;
+  if (q.teamId && !team) throw new CommandError('Ekipa przypisana do oferty już nie istnieje.');
+  const ownerWorks = !team || team.members.some((m) => m.kind === 'owner');
+  if (ownerWorks && skillLevel(s, q.serviceId) < difficulty) throw new CommandError('Poziom umiejętności jest za niski na to zlecenie.');
   const eq = equipmentStatus(s, def);
-  if (eq.missing.length || eq.broken.length) throw new CommandError(`Sprzęt: ${[...eq.missing, ...eq.broken].join(', ')} — uzupełnij lub skonserwuj przed podpisaniem.`);
+  if ((eq.missing.length || eq.broken.length) && !(team && !ownerWorks && team.members.every((m) => m.kind === 'sub'))) throw new CommandError(`Sprzęt: ${[...eq.missing, ...eq.broken].join(', ')} — uzupełnij lub skonserwuj przed podpisaniem.`);
   const start = q.startDate > today ? q.startDate : tomorrow(s);
   const deadline = addDays(start, q.durationDays - 1);
-  const clash = firstOverload(s, start, deadline, { extraHoursPerDay: q.hoursPerDay });
-  if (clash) throw new CommandError(`Brak wolnych godzin: ${formatDatePL(clash.date)} brakuje ${clash.missing} godz. Zmień plan dnia, zakończ inny kontrakt albo odrzuć umowę.`);
 
   const n = nextCounter(s, 'reno:job');
   const jobId = `job:${n}`;
   const orderId = `order:${jobId}`;
   const commitmentId = `commit:${orderId}`;
-  s.commitments.push({ id: commitmentId, label: `Remont: ${def.label} — ${enq.clientName}`, startDate: start, endDate: deadline, hoursPerDay: q.hoursPerDay, sourceEventId: null });
   const norm = normCenti(q.serviceId, q.units, q.complexity);
+  const hoursPerDay = ownerWorks ? q.hoursPerDay : 1;
   const order: ServiceOrder = {
     id: orderId, offerId: q.id, clientId: enq.clientId, title: `${def.label}: ${q.units} ${def.unit}, ${enq.location}`, netValue: q.priceNet, hoursTotal: Math.max(1, Math.ceil(q.plannedCenti / 100)),
-    progressCentiHours: 0, hoursPerDay: q.hoursPerDay, costNet: q.planned.materials + q.planned.transport + q.planned.other, paymentTermDays: q.paymentTermDays,
+    progressCentiHours: 0, hoursPerDay, costNet: q.planned.materials + q.planned.transport + q.planned.other, paymentTermDays: q.paymentTermDays,
     latePenaltyBps: DELAY_PENALTY_BPS_PER_WEEK, acceptedOn: today, startDate: start, deadline, status: 'in_progress', completedOn: null, salesDocumentId: null, commitmentId, late: false, kind: 'renovation',
   };
   s.serviceOrders.push(order);
   const advanceNet = roundDiv(q.priceNet * q.advanceBps, 10_000);
   let advanceDocId: string | null = null;
   if (advanceNet > 0) {
-    const doc = issueDocument(s, b, { kind: 'sales', issueDate: today, counterpartyId: enq.clientId, orderId, description: `Zaliczka: ${order.title}`, net: advanceNet, termDays: 2, part: 'advance', noDelay: true });
+    // zaliczka: gotówka i zobowiązanie do wykonania usługi — nie przychód podatkowy; VAT (czynny podatnik) w dacie otrzymania
+    const doc = issueDocument(s, b, {
+      kind: 'sales', issueDate: today, counterpartyId: enq.clientId, orderId, description: `Zaliczka: ${order.title}`, net: advanceNet, termDays: 2, part: 'advance', noDelay: true,
+      taxAmountOverride: 0, obligationCategory: 'zaliczka_klienta', vatAtReceipt: true,
+    });
     advanceDocId = doc.id;
   }
   const job: RenoJob = {
     id: jobId, orderId, quoteId: q.id, businessId: b.id, clientId: enq.clientId, clientName: enq.clientName, location: enq.location, serviceId: q.serviceId, units: q.units,
     complexity: q.complexity, difficulty, standard: q.standard, qualityReq: enq.qualityReq, budgetGross: enq.budgetGross, priceNet: q.priceNet, vatRateBps: vatRateNow(b), advanceNet, advanceDocId,
     finalDocId: null, paymentTermDays: q.paymentTermDays, planned: q.planned, plannedCenti: q.plannedCenti, laborRate: q.laborRate, lastDay: null, pauseUntil: null, normCenti: norm, extraCenti: 0, progressCenti: 0,
-    hoursPerDay: q.hoursPerDay, startDate: start, deadline, signedOn: today, stage: 'preparation', need: materialNeeds(q.serviceId, q.units, q.complexity, q.standard), consumed: {},
-    actual: { materials: 0, transport: 0, other: 0, rework: 0 }, workedDays: 0, blockedDays: 0, perfSumBps: 0, perfDays: 0, issues: [], reworkDone: false, quality: null, finishedOn: null,
+    hoursPerDay, startDate: start, deadline, signedOn: today, stage: 'preparation', need: materialNeeds(q.serviceId, q.units, q.complexity, q.standard), consumed: {},
+    actual: { materials: 0, transport: 0, other: 0, rework: 0, labor: 0, subcontract: 0, vehicle: 0 }, workedDays: 0, blockedDays: 0, perfSumBps: 0, perfDays: 0, issues: [], reworkDone: false, quality: null, finishedOn: null,
     handoverOn: null, settledOn: null, lateDays: 0, penaltyNet: 0, blockedReason: null,
+    crew: { teamId: q.teamId, supervision: q.supervision }, advanceMode: 'deferred', qualityHoursCenti: 0, qualityWeightedSum: 0, vehicleId: q.vehicleId,
   };
+  setupCrew(s, job, order);
   reno(s).jobs.push(job);
   q.status = 'signed';
-  logEvent(s, { id: `reno.contract:${jobId}`, date: today, type: 'reno.contract', tone: 'positive', title: `Podpisano umowę: ${order.title}`, detail: `${enq.clientName} · ${formatPLN(q.priceNet)} netto · start ${formatDatePL(start)}, termin ${formatDatePL(deadline)} · ${advanceNet > 0 ? `zaliczka ${formatPLN(advanceNet)} netto` : 'bez zaliczki'} · kara za zwłokę ${DELAY_PENALTY_BPS_PER_WEEK / 100}% za każdy rozpoczęty tydzień (max ${DELAY_PENALTY_CAP_BPS / 100}%)`, amount: null, category: null });
+  logEvent(s, { id: `reno.contract:${jobId}`, date: today, type: 'reno.contract', tone: 'positive', title: `Podpisano umowę: ${order.title}`, detail: `${enq.clientName} · ${formatPLN(q.priceNet)} netto · start ${formatDatePL(start)}, termin ${formatDatePL(deadline)} · ${advanceNet > 0 ? `zaliczka ${formatPLN(advanceNet)} netto (przychód po wykonaniu usługi)` : 'bez zaliczki'} · ${team ? `ekipa „${team.name}”` : 'wykonuje właściciel'} · kara za zwłokę ${DELAY_PENALTY_BPS_PER_WEEK / 100}% za każdy rozpoczęty tydzień (max ${DELAY_PENALTY_CAP_BPS / 100}%)`, amount: null, category: null });
   return `Umowa podpisana. Prace od ${formatDatePL(start)}, termin ${formatDatePL(deadline)}. Kup materiały przed rozpoczęciem.`;
+}
+
+/** Zmiana wykonawców kontraktu przed rozpoczęciem prac: ekipa (albo właściciel samodzielnie), nadzór i pojazd. */
+export function assignCrew(s: GameState, jobId: string, teamId: string | null, supervision: 'worker' | 'supervise' | 'hands-off', vehicleId: string | null, ownerHoursPerDay?: number): string {
+  requireBusiness(s);
+  const job = reno(s).jobs.find((j) => j.id === jobId);
+  if (!job || job.stage === 'done' || job.stage === 'cancelled') throw new CommandError('Ten kontrakt jest już zakończony.');
+  if (s.clock.today >= job.startDate) throw new CommandError('Ekipę można zmienić tylko przed rozpoczęciem prac.');
+  const order = s.serviceOrders.find((o) => o.id === job.orderId)!;
+  job.crew = { teamId, supervision };
+  job.vehicleId = vehicleId;
+  const team = teamId ? s.ops.teams.find((t) => t.id === teamId) : undefined;
+  const ownerWorks = !team || team.members.some((m) => m.kind === 'owner');
+  job.hoursPerDay = ownerWorks ? clamp(ownerHoursPerDay ?? (job.hoursPerDay || 4), 1, 8) : 1;
+  order.hoursPerDay = job.hoursPerDay;
+  setupCrew(s, job, order);
+  // ekipa z podwykonawcami: dla każdego podwykonawcy w składzie bez aktywnej umowy prosimy o ofertę (do zaakceptowania w ekranie „Podwykonawcy”)
+  const msgs: string[] = [];
+  for (const m of team?.members ?? []) {
+    if (m.kind !== 'sub') continue;
+    if (s.ops.subcontracts.some((c) => c.jobId === job.id && c.subId === m.id && ['offered', ...ACTIVE_SUB].includes(c.status))) continue;
+    const sub = subById(s, m.id)!;
+    if (!sub.services.includes(job.serviceId)) continue;
+    const workers = (team?.members ?? []).filter((x) => x.kind !== 'owner').length + (ownerWorks ? 1 : 0);
+    msgs.push(requestSubOffer(s, m.id, job.id, clamp(Math.floor(10_000 / Math.max(1, workers) / 500) * 500, 1_000, 10_000)));
+  }
+  logEvent(s, { id: `crew.assignment:${job.id}:${s.clock.today}:${teamId ?? 'owner'}`, date: s.clock.today, type: 'crew.assignment', tone: 'neutral', title: `Przydzielono wykonawców: ${job.clientName.split(' (')[0]}`, detail: team ? `Ekipa „${team.name}”, nadzór: ${job.crew.supervision === 'worker' ? 'właściciel pracuje' : job.crew.supervision === 'supervise' ? 'nadzoruje (1 godz./dzień)' : 'bez nadzoru'}` : 'Właściciel wykonuje samodzielnie', amount: null, category: null });
+  return `Wykonawcy przydzieleni${msgs.length ? `. ${msgs.join(' ')}` : '.'}`;
+}
+
+export function assignVehicle(s: GameState, jobId: string, vehicleId: string | null): string {
+  requireBusiness(s);
+  const job = reno(s).jobs.find((j) => j.id === jobId);
+  if (!job || job.stage === 'done' || job.stage === 'cancelled') throw new CommandError('Ten kontrakt jest już zakończony.');
+  if (vehicleId) {
+    const v = s.ops.vehicles.find((x) => x.id === vehicleId);
+    if (!v) throw new CommandError('Nie ma takiego pojazdu.');
+    const from = s.clock.today >= job.startDate ? addDays(s.clock.today, 1) : job.startDate;
+    const hit = resourceBusy(s, 'vehicle', v.id, from, job.deadline, job.id);
+    if (hit) throw new CommandError(`Pojazd jest już ${describeConflict(s, hit)}.`);
+    releaseJob(s, job.id, ['vehicle']);
+    reserve(s, job.id, 'vehicle', v.id, from, job.deadline);
+  } else releaseJob(s, job.id, ['vehicle']);
+  job.vehicleId = vehicleId;
+  return vehicleId ? 'Pojazd przydzielony do kontraktu.' : 'Pojazd odłączony od kontraktu.';
 }
 
 /** Rozwiązanie kontraktu przez gracza — zaliczka wraca do klienta (jako koszt, SIMPLIFIED), reputacja spada. */
@@ -704,14 +879,158 @@ function cancelJob(s: GameState, b: Business, job: RenoJob, date: IsoDate, reaso
   const c = s.commitments.find((x) => x.id === order.commitmentId);
   if (c) c.endDate = date < c.startDate ? c.startDate : date;
   if (job.advanceNet > 0) {
-    // zwrot zaliczki: korekta faktury zaliczkowej nie jest modelowana — ujmujemy jako koszt (SIMPLIFIED, FE-RENO-ADVANCE)
-    supplier(s);
-    issueDocument(s, b, { kind: 'cost', issueDate: date, counterpartyId: job.clientId, orderId: job.orderId, description: `Zwrot zaliczki: ${order.title}`, net: job.advanceNet, termDays: 0 });
-    job.actual.rework += job.advanceNet;
+    if (job.advanceMode === 'legacy') {
+      // zapisy sprzed v0.6: zaliczka była ujęta jako przychód, więc zwrot to koszt (SIMPLIFIED, RENO-COMPLAINT-CORRECTION)
+      supplier(s);
+      issueDocument(s, b, { kind: 'cost', issueDate: date, counterpartyId: job.clientId, orderId: job.orderId, description: `Zwrot zaliczki: ${order.title}`, net: job.advanceNet, termDays: 0 });
+      job.actual.rework += job.advanceNet;
+    } else {
+      // zaliczka nie była przychodem — zwrot likwiduje zobowiązanie do wykonania usługi (brak kosztu i brak korekty przychodu)
+      const advDoc = s.documents.find((d) => d.id === job.advanceDocId);
+      const gross = advDoc?.gross ?? job.advanceNet;
+      createObligation(s, {
+        occurrenceId: `refund:${job.id}`, ruleId: `refund:${job.id}`, direction: 'payable', counterpartyId: job.clientId, accountId: b.accountId, scope: 'business', amount: gross,
+        issueDate: date, dueDate: addDays(date, 3), category: 'zwrot_zaliczki', description: `Zwrot zaliczki klientowi: ${order.title}`,
+      });
+      if (advDoc && advDoc.vat > 0) {
+        // korekta VAT od zaliczki (SIMPLIFIED): VAT wraca od urzędu skarbowego w terminie rozliczenia następnego miesiąca
+        const ny = parseIso(firstOfNextMonth(date));
+        createObligation(s, {
+          occurrenceId: `refund-vat:${job.id}`, ruleId: `refund:${job.id}`, direction: 'receivable', counterpartyId: 'party:us', accountId: b.accountId, scope: 'business', amount: advDoc.vat,
+          issueDate: date, dueDate: dateInMonth(ny.year, ny.month, R.vat.dueDay), category: 'vat_naliczony', description: `Korekta VAT od zaliczki: ${order.title}`,
+        });
+      }
+    }
   }
+  settleJobSubcontracts(s, b, job, date);
+  releaseJob(s, job.id);
   const n = nextCounter(s, 'reno:review');
   reno(s).reviews.push({ id: `review:${n}`, jobId: job.id, date, rating10: 10, parts: { quality: 10, punctuality: 10, conformity: 10, price: 30, communication: 20 }, comment: `Umowa rozwiązana: ${reason}.` });
   logEvent(s, { id: `reno.contract:${job.id}:cancelled`, date, type: 'reno.contract', tone: 'negative', title: `Umowa rozwiązana: ${order.title}`, detail: `${reason}. Zaliczka zwrócona, opinia 1,0★.`, amount: null, category: null });
+}
+
+
+/* ---------- Ekipy: wydajność dnia pracy ---------- */
+
+/** Minimalny opis kontraktu potrzebny do policzenia dnia pracy ekipy (wycena używa tego samego kodu co realizacja). */
+export interface CrewSpec { id: string; serviceId: string; normCenti: number; hoursPerDay: number; crew: RenoJob['crew']; vehicleId: string | null; units: number }
+
+export interface CrewWorker {
+  key: string;
+  kind: 'owner' | 'employee' | 'sub';
+  label: string;
+  hoursCenti: number;
+  perf: number;
+  level: number;
+  speed: number;
+  toolFactor: number;
+  needsTools: boolean;
+  tools: EquipmentItem[];
+  /** Wkład w postęp dnia (setne godziny normy) przed ograniczeniami zespołu. */
+  c: number;
+  baseQuality: number;
+  employmentId?: string;
+  personId?: string;
+  subcontractId?: string;
+  cap: number;
+}
+
+export interface CrewDay {
+  /** Postęp brutto dnia (setne godziny normy) po ograniczeniach zespołu i transportu. */
+  raw: number;
+  workers: CrewWorker[];
+  blocked: string | null;
+  vehicleFree: boolean;
+  perfAvg: number;
+  toolSets: number;
+  ownerWorks: boolean;
+  coordination: number;
+  transport: number;
+}
+
+const OTHER_WORKER_TOOLLESS_BPS = 3_500;
+
+export function crewDay(s: GameState, spec: CrewSpec, date: IsoDate, used: Set<string>, mode: 'actual' | 'assume'): CrewDay {
+  const def = SERVICE_BY_ID.get(spec.serviceId)!;
+  const team = spec.crew.teamId ? s.ops.teams.find((t) => t.id === spec.crew.teamId) ?? null : null;
+  const workday = weekdayIndex(date) < 5;
+  const ownerWorks = !team || team.members.some((m) => m.kind === 'owner');
+  const ws: CrewWorker[] = [];
+  if (ownerWorks) {
+    ws.push({ key: 'owner', kind: 'owner', label: 'Właściciel', hoursCenti: spec.hoursPerDay * 100, perf: performanceBps(s.life.fatigue), level: clamp(skillLevel(s, spec.serviceId), 1, 5), speed: 0, toolFactor: 10_000, needsTools: true, tools: [], c: 0, baseQuality: SKILL_QUALITY[clamp(skillLevel(s, spec.serviceId), 1, 5)]!, cap: Infinity });
+  }
+  if (team && workday) {
+    for (const m of team.members) {
+      if (m.kind !== 'employee') continue;
+      const e = employmentById(s, m.id);
+      if (!e || !employmentActiveOn(e, date) || used.has(`emp:${e.id}`)) continue;
+      const p = personById(s, e.personId)!;
+      const level = personLevel(p, spec.serviceId);
+      ws.push({ key: `emp:${e.id}`, kind: 'employee', label: personName(p), hoursCenti: hoursPerWorkday(e) * 100, perf: personPerformanceBps(p), level, speed: 0, toolFactor: 10_000, needsTools: true, tools: [], c: 0, baseQuality: SKILL_QUALITY[level]!, employmentId: e.id, personId: p.id, cap: Infinity });
+    }
+  }
+  if (workday) {
+    if (mode === 'actual') {
+      for (const c of subcontractsOfJob(s, spec.id)) {
+        if ((c.status !== 'in_progress' && c.status !== 'accepted') || date < addDays(c.startDate, c.delayDays) || c.performedCenti >= c.requiredCenti || used.has(`sub:${c.subId}`)) continue;
+        const sub = subById(s, c.subId)!;
+        const q = (c.qualityScore ?? sub.quality) - (c.defects ? 8 : 0);
+        ws.push({ key: `sub:${c.subId}`, kind: 'sub', label: sub.name, hoursCenti: 800, perf: 10_000, level: clamp(Math.round((q - 40) / 10), 1, 5), speed: subSpeedBps(sub), toolFactor: 10_000, needsTools: false, tools: [], c: 0, baseQuality: clamp(q, 10, 100), subcontractId: c.id, cap: c.requiredCenti - c.performedCenti });
+      }
+    } else if (team) {
+      for (const m of team.members) {
+        if (m.kind !== 'sub') continue;
+        const sub = subById(s, m.id);
+        if (!sub || !sub.services.includes(spec.serviceId)) continue;
+        ws.push({ key: `sub:${sub.id}`, kind: 'sub', label: sub.name, hoursCenti: 800, perf: 10_000, level: 3, speed: subSpeedBps(sub), toolFactor: 10_000, needsTools: false, tools: [], c: 0, baseQuality: sub.quality, subcontractId: undefined, cap: Infinity });
+      }
+    }
+  }
+  // narzędzia: komplet = wszystkie wymagane rodzaje; pracownik bez kompletu pracuje tylko jako pomocnik
+  const reqIds = def.requiredEquipment;
+  const defs = relevantDefs(spec.serviceId);
+  const freeBy = new Map<string, EquipmentItem[]>();
+  for (const e of defs) freeBy.set(e.id, reno(s).equipment.filter((x) => x.catalogId === e.id && x.conditionBps > 0 && !used.has(`eq:${x.id}`)).sort((a, b) => b.conditionBps - a.conditionBps));
+  const needTools = ws.filter((w) => w.needsTools).sort((a, b) => b.level - a.level);
+  const sets = reqIds.length ? Math.min(...reqIds.map((id) => freeBy.get(id)!.length)) : needTools.length;
+  let blocked: string | null = null;
+  if (reqIds.length && sets === 0 && needTools.length > 0) blocked = `Brak wolnego sprzętu: ${reqIds.filter((id) => freeBy.get(id)!.length === 0).map((id) => EQUIPMENT_BY_ID.get(id)!.label).join(', ')}`;
+  needTools.forEach((w, k) => {
+    if (k < sets || reqIds.length === 0) w.tools = defs.map((d) => freeBy.get(d.id)![k]).filter((x): x is EquipmentItem => !!x);
+    else w.toolFactor = OTHER_WORKER_TOOLLESS_BPS;
+  });
+  for (const w of ws) {
+    if (w.kind !== 'sub') w.speed = speedForLevel(w.level, w.tools, spec.serviceId);
+    let c = roundDiv(w.hoursCenti * w.perf, 10_000);
+    c = roundDiv(c * w.speed, 10_000);
+    c = roundDiv(c * w.toolFactor, 10_000);
+    w.c = Math.min(c, w.cap);
+  }
+  // ograniczenia: tylu ludzi, ilu uniesie zakres (mała praca nie przyspiesza od liczby osób), koordynacja zespołu, transport
+  const useful = Math.max(1, Math.floor(spec.normCenti / 100 / 12));
+  [...ws].sort((a, b) => b.c - a.c).forEach((w, i) => { if (i >= useful) w.c = roundDiv(w.c * 2_500, 10_000); });
+  const sum = ws.reduce((a, w) => a + w.c, 0);
+  const active = ws.filter((w) => w.c > 0).length;
+  const coordination = active <= 2 ? 10_000 : active === 3 ? 9_300 : active === 4 ? 8_800 : 8_400;
+  const v = spec.vehicleId ? s.ops.vehicles.find((x) => x.id === spec.vehicleId) : undefined;
+  const vehicleFree = !!v && v.conditionBps > 0 && !used.has(`veh:${v.id}`);
+  const load = loadPoints(spec.serviceId, spec.units);
+  const transport = vehicleFree ? (vehicleDef(v!).capacity >= load ? 10_000 : 8_500 + roundDiv(1_500 * vehicleDef(v!).capacity, load)) : active >= 2 ? 9_000 : 10_000;
+  const raw = roundDiv(roundDiv(sum * coordination, 10_000) * transport, 10_000);
+  const hSum = ws.filter((w) => w.c > 0).reduce((a, w) => a + w.hoursCenti, 0);
+  const perfAvg = hSum > 0 ? roundDiv(ws.filter((w) => w.c > 0).reduce((a, w) => a + w.perf * w.hoursCenti, 0), hSum) : 10_000;
+  return { raw, workers: ws, blocked, vehicleFree, perfAvg, toolSets: sets, ownerWorks, coordination, transport };
+}
+
+/** Przeciętny postęp na dzień kalendarzowy (5 dni roboczych + weekend) — do prognoz i wycen. */
+export function crewDailyAverage(s: GameState, spec: CrewSpec, from: IsoDate, mode: 'actual' | 'assume'): { workday: number; weekend: number; avg: number } {
+  let wd = from;
+  while (weekdayIndex(wd) >= 5) wd = addDays(wd, 1);
+  let we = from;
+  while (weekdayIndex(we) !== 5) we = addDays(we, 1);
+  const a = crewDay(s, spec, wd, new Set(), mode).raw;
+  const b = crewDay(s, spec, we, new Set(), mode).raw;
+  return { workday: a, weekend: b, avg: Math.max(0, roundDiv(5 * a + 2 * b, 7)) };
 }
 
 /* ---------- Realizacja prac ---------- */
@@ -722,27 +1041,29 @@ export function jobForecast(s: GameState, job: RenoJob, date: IsoDate = s.clock.
   const total = job.normCenti + job.extraCenti;
   const remaining = Math.max(0, total - job.progressCenti);
   const reasons: string[] = [];
-  const speed = speedBps(s, job.serviceId);
-  const perf = performanceBps(s.life.fatigue);
-  const perDay = Math.max(1, roundDiv(job.hoursPerDay * 100 * perf * speed, 100_000_000));
+  const from = date < job.startDate ? job.startDate : addDays(date, 1);
+  const cap = crewDailyAverage(s, job, from, 'actual');
+  const perDay = Math.max(1, cap.avg);
   const days = Math.ceil(remaining / perDay);
   const startOfWork = date < job.startDate ? job.startDate : date;
   const etaDate = job.stage === 'done' || job.stage === 'cancelled' ? null : addDays(startOfWork, Math.max(0, days - (date < job.startDate ? 1 : 0)));
   let score = 0;
   if (etaDate && etaDate > job.deadline) { score += 2; reasons.push(`prognozowane zakończenie ${formatDatePL(etaDate)} po terminie ${formatDatePL(job.deadline)}`); }
   else if (etaDate && diffDays(job.deadline, etaDate) <= 2) { score += 1; reasons.push('mały zapas czasu do terminu'); }
-  const short = Object.entries(job.need).filter(([k, need]) => need - (job.consumed[k]?.qty ?? 0) - stockQty(s, k) > 0);
+  const short = Object.entries(jobShortage(s, job));
   if (short.length && job.stage !== 'done') { score += date >= addDays(job.startDate, -3) ? 2 : 1; reasons.push('brakuje materiałów'); }
   const def = SERVICE_BY_ID.get(job.serviceId)!;
   const eq = equipmentStatus(s, def);
   if (eq.broken.length) { score += 2; reasons.push('sprzęt wymaga konserwacji'); }
-  if (s.life.fatigue >= 60) { score += 1; reasons.push('wysokie zmęczenie obniża wydajność'); }
+  if (cap.avg === 0 && job.stage !== 'done' && job.stage !== 'cancelled') { score += 2; reasons.push('brak dostępnych wykonawców'); }
+  if (job.crew.teamId === null && s.life.fatigue >= 60) { score += 1; reasons.push('wysokie zmęczenie obniża wydajność'); }
+  if (job.crew.supervision === 'hands-off') { score += 1; reasons.push('praca bez nadzoru właściciela zwiększa ryzyko problemów'); }
   if (job.issues.length >= 2) { score += 1; reasons.push('problemy techniczne wydłużają pracę'); }
   return { etaDate, remainingCenti: remaining, risk: score >= 3 ? 'wysokie' : score >= 1 ? 'średnie' : 'niskie', reasons, progressPct: Math.min(100, Math.round((job.progressCenti * 100) / total)) };
 }
 
-function wearEquipment(s: GameState, serviceId: string, hours: number): void {
-  for (const item of relevantEquipment(s, serviceId)) {
+function wearItems(items: EquipmentItem[], hours: number): void {
+  for (const item of items) {
     const def = EQUIPMENT_BY_ID.get(item.catalogId)!;
     item.conditionBps = Math.max(0, item.conditionBps - Math.max(1, roundDiv(hours * 10_000, def.durabilityHours)));
     item.usedCenti += hours * 100;
@@ -783,11 +1104,10 @@ const ISSUES_ORG: { title: string; centi: [number, number]; pause: [number, numb
   { title: 'Klient zmienił zakres prac w trakcie realizacji', centi: [300, 800], pause: [0, 1] },
 ];
 
-function maybeIssue(s: GameState, job: RenoJob, date: IsoDate): void {
+function maybeIssue(s: GameState, job: RenoJob, date: IsoDate, crewLevel: number): void {
   const def = SERVICE_BY_ID.get(job.serviceId)!;
   const rng = createRng(s.seed, `reno:issue:${job.id}:${date}`);
-  const level = skillLevel(s, job.serviceId);
-  const bps = 250 + job.difficulty * 80 + (job.complexity === 'trudne' ? 150 : 0) + Math.max(0, job.difficulty - level + 1) * 100;
+  const bps = 250 + job.difficulty * 80 + (job.complexity === 'trudne' ? 150 : 0) + Math.max(0, job.difficulty - crewLevel + 1) * 100 + (job.crew.supervision === 'hands-off' ? 150 : 0);
   if (rng.int(0, 9_999) >= bps) return;
   const technical = rng.int(0, 99) < 60;
   let title: string;
@@ -809,28 +1129,30 @@ function maybeIssue(s: GameState, job: RenoJob, date: IsoDate): void {
   logEvent(s, { id: `reno.issue:${id}`, date, type: 'reno.issue', tone: 'warning', title: `${job.clientName}: ${title}`, detail: `Dodatkowa praca ok. ${(addedCenti / 100).toFixed(1).replace('.', ',')} godz.${delayDays > 0 ? ` · przerwa ${delayDays} dn.` : ''}`, amount: null, category: null });
 }
 
-function workJob(s: GameState, b: Business, job: RenoJob, date: IsoDate): void {
+function workJob(s: GameState, b: Business, job: RenoJob, date: IsoDate, used: Set<string>): void {
   const order = s.serviceOrders.find((o) => o.id === job.orderId)!;
   const commitment = s.commitments.find((c) => c.id === order.commitmentId);
   if (job.lastDay !== null && date <= job.lastDay) return;
   job.lastDay = date;
   if (date < job.startDate) { job.stage = 'preparation'; return; }
   if (date > addDays(job.deadline, CANCEL_AFTER_DEADLINE_DAYS)) { cancelJob(s, b, job, date, 'Klient odstąpił od umowy po przekroczeniu terminu o 45 dni'); return; }
-  const def = SERVICE_BY_ID.get(job.serviceId)!;
   const total = job.normCenti + job.extraCenti;
+  const ownerTime = job.crew.supervision !== 'hands-off';
 
-  // praca po terminie umowy zajmuje godziny tylko wtedy, gdy doba na to pozwala (inne kontrakty mają pierwszeństwo — bez przekroczenia 24 godzin)
-  if (commitment && date > commitment.endDate) {
-    if (budgetFor(s, date).free >= job.hoursPerDay) commitment.endDate = date;
+  // praca po terminie umowy zajmuje godziny właściciela tylko wtedy, gdy doba na to pozwala (inne kontrakty mają pierwszeństwo)
+  if (commitment && ownerTime && date > commitment.endDate) {
+    if (budgetFor(s, date).free >= commitment.hoursPerDay) commitment.endDate = date;
     else { job.blockedDays += 1; job.blockedReason = 'Brak wolnych godzin — doba zajęta przez inne zobowiązania'; return; }
   }
   if (job.pauseUntil && date <= job.pauseUntil) { job.blockedDays += 1; job.blockedReason = 'Przerwa organizacyjna (klient/dostawca)'; return; }
-  const eq = equipmentStatus(s, def);
-  if (eq.missing.length || eq.broken.length) { job.blockedDays += 1; job.stage = 'materials'; job.blockedReason = `Brak sprawnego sprzętu: ${[...eq.missing, ...eq.broken].join(', ')}`; return; }
-  const perf = performanceBps(s.life.fatigue);
-  const speed = speedBps(s, job.serviceId);
-  const raw = roundDiv(job.hoursPerDay * 100 * perf * speed, 100_000_000);
-  let p = Math.min(Math.max(1, raw), total - job.progressCenti);
+  const cd = crewDay(s, job, date, used, 'actual');
+  if (cd.blocked) { job.blockedDays += 1; job.stage = 'materials'; job.blockedReason = cd.blocked; return; }
+  if (cd.raw <= 0) {
+    // zespół bez właściciela nie pracuje w weekendy — to nie jest przestój; w dzień roboczy brak ludzi to przestój
+    if (weekdayIndex(date) < 5) { job.blockedDays += 1; job.blockedReason = 'Brak dostępnych wykonawców (ekipa nieprzydzielona lub nieobecna)'; }
+    return;
+  }
+  let p = Math.min(cd.raw, total - job.progressCenti);
   if (job.progressCenti < job.normCenti) p = Math.min(p, maxProgressByStock(s, job) - job.progressCenti);
   if (p <= 0) {
     job.blockedDays += 1;
@@ -843,19 +1165,48 @@ function workJob(s: GameState, b: Business, job: RenoJob, date: IsoDate): void {
   job.blockedReason = null;
   job.progressCenti += p;
   job.workedDays += 1;
-  job.perfSumBps += perf;
+  job.perfSumBps += cd.perfAvg;
   job.perfDays += 1;
   order.progressCentiHours = job.progressCenti;
   consumeMaterials(s, job, date);
-  wearEquipment(s, job.serviceId, job.hoursPerDay);
-  const gained = roundDiv(job.hoursPerDay * 100 * perf, 10_000); // doświadczenie = faktycznie przepracowany czas, nie kliknięcia
-  reno(s).skillXp[job.serviceId] = (reno(s).skillXp[job.serviceId] ?? 0) + gained;
-  maybeIssue(s, job, date);
+  const month = monthKey(date);
+  for (const w of cd.workers) {
+    if (w.c <= 0) continue;
+    const h = roundDiv(w.hoursCenti * p, cd.raw); // faktycznie przepracowane setne godziny (po ograniczeniach)
+    job.qualityHoursCenti += h;
+    job.qualityWeightedSum += h * w.baseQuality;
+    const gained = roundDiv(h * w.perf, 10_000); // doświadczenie = faktycznie przepracowany czas, nie kliknięcia
+    if (w.kind === 'owner') reno(s).skillXp[job.serviceId] = (reno(s).skillXp[job.serviceId] ?? 0) + gained;
+    if (w.kind === 'employee') {
+      const person = personById(s, w.personId!)!;
+      const emp = employmentById(s, w.employmentId!)!;
+      person.xp[job.serviceId] = (person.xp[job.serviceId] ?? 0) + gained;
+      person.lastWorkedOn = date;
+      const cost = roundDiv(emp.hourlyCost * h, 100);
+      job.actual.labor += cost;
+      s.ops.laborAllocated[month] = (s.ops.laborAllocated[month] ?? 0) + cost;
+      used.add(w.key);
+    }
+    if (w.kind === 'sub') {
+      const sc = s.ops.subcontracts.find((x) => x.id === w.subcontractId)!;
+      sc.performedCenti = Math.min(sc.requiredCenti, sc.performedCenti + roundDiv(w.c * p, cd.raw));
+      if (sc.performedCenti >= sc.requiredCenti && sc.status !== 'delivered') { sc.status = 'delivered'; sc.deliveredOn = date; logEvent(s, { id: `sub.contract:${sc.id}:delivered`, date, type: 'sub.contract', tone: 'neutral', title: `Podwykonawca zgłasza zakończenie prac: ${w.label}`, detail: 'Odbierz pracę w ekranie „Podwykonawcy” (bez odbioru zostanie rozliczona automatycznie przy zakończeniu kontraktu).', amount: null, category: null }); }
+      used.add(w.key);
+    }
+    if (w.tools.length) { wearItems(w.tools, h / 100); for (const t of w.tools) used.add(`eq:${t.id}`); }
+  }
+  if (job.vehicleId && cd.vehicleFree) {
+    const v = s.ops.vehicles.find((x) => x.id === job.vehicleId)!;
+    job.actual.vehicle += useVehicle(s, v, date);
+    used.add(`veh:${v.id}`);
+  }
+  const levels = cd.workers.filter((w) => w.kind !== 'sub' && w.c > 0).map((w) => w.level);
+  maybeIssue(s, job, date, levels.length ? Math.round(levels.reduce((a, x) => a + x, 0) / levels.length) : 2);
   if (job.progressCenti >= job.normCenti + job.extraCenti) {
     job.stage = 'handover';
     job.finishedOn = date;
     job.lateDays = Math.max(0, diffDays(date, job.deadline));
-    if (commitment) commitment.endDate = date;
+    if (commitment) commitment.endDate = date < commitment.startDate ? commitment.startDate : date;
     logEvent(s, { id: `reno.work:${job.id}:finished:${job.reworkDone ? 2 : 1}`, date, type: 'reno.work', tone: 'neutral', title: `Prace zakończone: ${order.title}`, detail: 'Odbiór przez klienta następnego dnia.', amount: null, category: null });
   }
 }
@@ -863,12 +1214,16 @@ function workJob(s: GameState, b: Business, job: RenoJob, date: IsoDate): void {
 /** Wynik jakości 0–100: umiejętności, standard materiałów, sprzęt, różnica trudności, zmęczenie i niewielka losowość. */
 export function jobQuality(s: GameState, job: RenoJob): number {
   const level = clamp(skillLevel(s, job.serviceId), 1, 5);
-  let q: number = SKILL_QUALITY[level]!;
+  const ownerWorks = job.crew.teamId === null || !!s.ops.teams.find((t) => t.id === job.crew.teamId)?.members.some((m) => m.kind === 'owner');
+  // jakość bazowa ważona czasem pracy wykonawców (właściciel, pracownicy, podwykonawcy); dla zapisów sprzed v0.6 — umiejętności właściciela
+  let q: number = job.qualityHoursCenti > 0 ? roundDiv(job.qualityWeightedSum, job.qualityHoursCenti) : SKILL_QUALITY[level]!;
   q += STANDARDS[job.standard].quality;
   q += equipmentQuality(s, job.serviceId);
-  q += Math.min(6, Math.max(0, level - job.difficulty) * 2);
+  if (ownerWorks) q += Math.min(6, Math.max(0, level - job.difficulty) * 2);
   const avgPerf = job.perfDays > 0 ? roundDiv(job.perfSumBps, job.perfDays) : 10_000;
   q -= Math.round((10_000 - avgPerf) / 200);
+  if (job.crew.supervision === 'hands-off') q -= 4;
+  for (const c of subcontractsOfJob(s, job.id)) if (c.defects && c.status !== 'cancelled' && c.status !== 'declined' && c.status !== 'expired') q -= Math.round((6 * c.scopeBps) / 10_000);
   if (job.reworkDone) q += 8;
   q += createRng(s.seed, `reno:quality:${job.id}:${job.reworkDone ? 2 : 1}`).int(-4, 4);
   return clamp(q, 10, 100);
@@ -917,7 +1272,7 @@ function handover(s: GameState, b: Business, job: RenoJob, date: IsoDate): void 
   // rozliczenie: koszty dojazdów i drobne (dokumenty kosztowe), przychód = cena − zaliczka − kara umowna
   supplier(s);
   const def = SERVICE_BY_ID.get(job.serviceId)!;
-  const transport = job.workedDays * roundDiv(def.transportPerDay * (10_000 - transportSaveBps(s)), 10_000);
+  const transport = job.vehicleId ? 0 : job.workedDays * roundDiv(def.transportPerDay * (10_000 - transportSaveBps(s)), 10_000);
   const other = mulBps(job.actual.materials, OTHER_COSTS_BPS);
   if (transport > 0) { issueDocument(s, b, { kind: 'cost', issueDate: date, counterpartyId: SUPPLIER_PARTY, orderId: order.id, description: `Dojazdy i transport: ${order.title}`, net: transport, termDays: 7 }); job.actual.transport = transport; }
   if (other > 0) { issueDocument(s, b, { kind: 'cost', issueDate: date, counterpartyId: SUPPLIER_PARTY, orderId: order.id, description: `Pozostałe koszty (odpady, drobiazgi): ${order.title}`, net: other, termDays: 7 }); job.actual.other = other; }
@@ -925,7 +1280,8 @@ function handover(s: GameState, b: Business, job: RenoJob, date: IsoDate): void 
   const penaltyBps = Math.min(DELAY_PENALTY_CAP_BPS, DELAY_PENALTY_BPS_PER_WEEK * weeksLate);
   job.penaltyNet = mulBps(job.priceNet, penaltyBps);
   const finalNet = Math.max(1, job.priceNet - job.advanceNet - job.penaltyNet);
-  const doc = issueDocument(s, b, { kind: 'sales', issueDate: date, counterpartyId: job.clientId, orderId: order.id, description: `${order.title}${job.advanceNet > 0 ? ' — rozliczenie końcowe po zaliczce' : ''}`, net: finalNet, termDays: job.paymentTermDays, part: job.advanceNet > 0 ? 'final' : 'full' });
+  // przychód podatkowy powstaje po wykonaniu usługi: dla zaliczek ujętych od v0.6 — pełna cena (zaliczka + reszta) w tym dokumencie
+  const doc = issueDocument(s, b, { kind: 'sales', issueDate: date, counterpartyId: job.clientId, orderId: order.id, description: `${order.title}${job.advanceNet > 0 ? ' — rozliczenie końcowe po zaliczce' : ''}`, net: finalNet, termDays: job.paymentTermDays, part: job.advanceNet > 0 ? 'final' : 'full', taxAmountOverride: job.advanceMode === 'deferred' && job.advanceNet > 0 ? finalNet + job.advanceNet : undefined });
   job.finalDocId = doc.id;
   job.handoverOn = date;
   job.settledOn = date;
@@ -934,6 +1290,8 @@ function handover(s: GameState, b: Business, job: RenoJob, date: IsoDate): void 
   order.completedOn = date;
   order.salesDocumentId = doc.id;
   order.late = job.lateDays > 0;
+  settleJobSubcontracts(s, b, job, date);
+  releaseJob(s, job.id);
   const gross = grossOfNet(job.priceNet - job.penaltyNet, job.vatRateBps);
   const r = ratingParts(job, quote, gross);
   const n = nextCounter(s, 'reno:review');
@@ -945,13 +1303,13 @@ function handover(s: GameState, b: Business, job: RenoJob, date: IsoDate): void 
 }
 
 /** Prawdopodobieństwo reklamacji (pkt bazowe): rośnie wraz z niską jakością, problemami, poprawkami, opóźnieniem i niedopasowaniem standardu materiałów. */
-export function complaintBps(job: RenoJob, quality: number): number {
-  const bps = (80 - quality) * 220 + job.issues.length * 250 + (job.reworkDone ? 800 : 0) + (job.lateDays > 0 ? 400 : 0) + (STANDARDS[job.standard].level < job.qualityReq ? 600 : 0);
+export function complaintBps(job: RenoJob, quality: number, extra = 0): number {
+  const bps = (80 - quality) * 220 + job.issues.length * 250 + (job.reworkDone ? 800 : 0) + (job.lateDays > 0 ? 400 : 0) + (STANDARDS[job.standard].level < job.qualityReq ? 600 : 0) + extra;
   return clamp(bps, 100, 7_500);
 }
 
 function scheduleComplaint(s: GameState, job: RenoJob, date: IsoDate, quality: number): void {
-  const bps = complaintBps(job, quality);
+  const bps = complaintBps(job, quality, subcontractsOfJob(s, job.id).filter((c) => c.defects && c.performedCenti > 0).length * 1_200);
   const rng = createRng(s.seed, `reno:complaint:${job.id}`);
   if (rng.int(0, 9_999) >= bps) return;
   const severity = quality < 45 ? 3 : quality < 60 ? 2 : 1;
@@ -1047,11 +1405,14 @@ export function processRenovation(s: GameState, b: Business, date: IsoDate): voi
   if (s.processed[key]) return;
   s.processed[key] = true;
   chargeAdvertising(s, b, date);
-  for (const job of reno(s).jobs) {
-    if (job.businessId !== b.id) continue;
+  processSubcontracts(s, date);
+  // zasoby (pracownicy, podwykonawcy, sprzęt, pojazdy) nie mogą pracować przy dwóch kontraktach tego samego dnia; wcześniejszy kontrakt ma pierwszeństwo
+  const used = new Set<string>();
+  const jobs = reno(s).jobs.filter((j) => j.businessId === b.id).sort((a, c) => a.startDate.localeCompare(c.startDate) || a.id.localeCompare(c.id));
+  for (const job of jobs) {
     if (job.stage === 'done' || job.stage === 'cancelled') continue;
     if (job.stage === 'handover') { if (job.finishedOn && date > job.finishedOn) handover(s, b, job, date); continue; }
-    workJob(s, b, job, date);
+    workJob(s, b, job, date, used);
   }
   processQuotes(s, date);
   processComplaints(s, date);
@@ -1063,8 +1424,8 @@ export function renovationGaps(s: GameState, b: Business, date: IsoDate): { key:
   for (const job of reno(s).jobs) {
     if (job.businessId !== b.id || job.stage === 'done' || job.stage === 'cancelled') continue;
     if (date >= addDays(job.startDate, -3) && date <= job.deadline) {
-      const short = Object.entries(job.need).filter(([k, need]) => need - (job.consumed[k]?.qty ?? 0) - stockQty(s, k) > 0);
-      if (short.length) out.push({ key: `materials:${job.id}`, text: `Brak materiałów do kontraktu „${job.clientName}” (start ${formatDatePL(job.startDate)}): ${short.map(([k, n]) => `${MATERIAL_BY_ID.get(splitKey(k).materialId)!.label} (brakuje ${n - (job.consumed[k]?.qty ?? 0) - stockQty(s, k)})`).join(', ')}.` });
+      const short = Object.entries(jobShortage(s, job));
+      if (short.length) out.push({ key: `materials:${job.id}`, text: `Brak materiałów do kontraktu „${job.clientName}” (start ${formatDatePL(job.startDate)}): ${short.map(([k, n]) => `${MATERIAL_BY_ID.get(splitKey(k).materialId)!.label} (brakuje ${n})`).join(', ')}.` });
     }
   }
   for (const c of reno(s).complaints) if (c.status === 'open') out.push({ key: `complaint:${c.id}`, text: `Reklamacja czeka na decyzję do ${formatDatePL(c.deadline)}.` });
@@ -1088,6 +1449,10 @@ export interface JobFinancials {
   actualMaterials: Grosze;
   actualOther: Grosze;
   actualLaborValue: Grosze;
+  /** Koszt pracy pracowników przypisany do kontraktu (wg godzin pracy × godzinowy koszt pracodawcy). */
+  actualEmployees: Grosze;
+  actualSubcontract: Grosze;
+  actualVehicle: Grosze;
   actualCost: Grosze;
   /** Wynik ekonomiczny (bez własnej robocizny): przychód − materiały zużyte − transport − inne − poprawki. */
   economicResult: Grosze;
@@ -1097,16 +1462,19 @@ export interface JobFinancials {
   settled: boolean;
 }
 
-export function jobFinancials(job: RenoJob): JobFinancials {
+export function jobFinancials(job: RenoJob, subs: { status: string; priceNet: number; performedCenti: number; requiredCenti: number }[] = []): JobFinancials {
   const settled = job.stage === 'done';
   const revenue = job.priceNet - (settled ? job.penaltyNet : 0);
-  const nonLabor = job.actual.materials + job.actual.transport + job.actual.other + job.actual.rework;
-  const workedCenti = job.workedDays * job.hoursPerDay * 100;
+  // podwykonawcy: rozliczeni — faktyczny koszt, w toku — proporcjonalnie do wykonanego zakresu
+  const subAccrued = job.actual.subcontract + subs.filter((c) => ['accepted', 'in_progress', 'delivered'].includes(c.status)).reduce((a, c) => a + roundDiv(c.priceNet * c.performedCenti, Math.max(1, c.requiredCenti)), 0);
+  const nonLabor = job.actual.materials + job.actual.transport + job.actual.other + job.actual.rework + job.actual.labor + job.actual.vehicle + subAccrued;
+  const ownerPerDay = job.crew.supervision === 'worker' ? job.hoursPerDay : job.crew.supervision === 'supervise' ? 1 : 0;
+  const workedCenti = job.workedDays * ownerPerDay * 100;
   const laborValue = roundDiv(workedCenti * job.laborRate, 100);
   const actualCost = nonLabor + laborValue;
   return {
     revenueNet: revenue, plannedCost: job.planned.total, plannedMarginBps: roundDiv((job.priceNet - job.planned.total) * 10_000, job.priceNet),
-    actualMaterials: job.actual.materials, actualOther: job.actual.transport + job.actual.other + job.actual.rework, actualLaborValue: laborValue, actualCost,
+    actualMaterials: job.actual.materials, actualOther: job.actual.transport + job.actual.other + job.actual.rework, actualLaborValue: laborValue, actualEmployees: job.actual.labor, actualSubcontract: subAccrued, actualVehicle: job.actual.vehicle, actualCost,
     economicResult: revenue - nonLabor, actualMarginBps: settled ? roundDiv((revenue - actualCost) * 10_000, revenue) : null,
     workedHours: workedCenti / 100, hourlyPay: workedCenti > 0 ? roundDiv((revenue - nonLabor) * 100, workedCenti) : null, settled,
   };
@@ -1157,11 +1525,11 @@ export function renoDashboard(s: GameState): RenoDashboard {
     scheduleLoadPct: Math.min(100, load),
     jobsAtRisk: active.filter((j) => jobForecast(s, j).risk === 'wysokie').length,
     plannedCostActive: active.reduce((a, j) => a + j.planned.total, 0),
-    actualCostActive: active.reduce((a, j) => a + jobFinancials(j).actualCost, 0),
+    actualCostActive: active.reduce((a, j) => a + jobFinancials(j, subcontractsOfJob(s, j.id)).actualCost, 0),
     contractedNet: active.reduce((a, j) => a + j.priceNet, 0),
     doneJobs: done.length,
-    economicResultDone: done.reduce((a, j) => a + jobFinancials(j).economicResult, 0),
-    revenueDone: done.reduce((a, j) => a + jobFinancials(j).revenueNet, 0),
+    economicResultDone: done.reduce((a, j) => a + jobFinancials(j, subcontractsOfJob(s, j.id)).economicResult, 0),
+    revenueDone: done.reduce((a, j) => a + jobFinancials(j, subcontractsOfJob(s, j.id)).revenueNet, 0),
   };
 }
 

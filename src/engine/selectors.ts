@@ -47,6 +47,21 @@ export function equipmentValue(s: GameState): Grosze {
   return s.reno.equipment.reduce((a, e) => a + roundDiv(e.cost * e.conditionBps, 10_000), 0);
 }
 
+/** Wartość księgowa pojazdów firmowych: cena zakupu × stan techniczny. */
+export function vehiclesValue(s: GameState): Grosze {
+  return s.ops.vehicles.reduce((a, v) => a + roundDiv(v.cost * v.conditionBps, 10_000), 0);
+}
+
+/** Przedpłaty dla podwykonawców (zaliczki jeszcze nierozliczone) — aktywo, nie koszt. */
+export function prepaidValue(s: GameState): Grosze {
+  return s.ops.subcontracts.reduce((a, c) => a + c.prepaid, 0);
+}
+
+/** Zaliczki od klientów ujęte od v0.6: zobowiązanie do wykonania usługi do czasu odbioru (nie przychód). */
+export function deferredAdvances(s: GameState): Grosze {
+  return s.reno.jobs.filter((j) => j.advanceMode === 'deferred' && j.advanceDocId !== null && j.stage !== 'done' && j.stage !== 'cancelled').reduce((a, j) => a + j.advanceNet, 0);
+}
+
 export function heldDeposits(s: GameState): Grosze {
   return s.assets.filter((a) => a.status === 'held').reduce((a, x) => a + x.amount, 0);
 }
@@ -64,6 +79,12 @@ export interface NetWorthBreakdown {
   inventory: Grosze;
   /** Wartość księgowa sprzętu firmy (aktywo). */
   equipment: Grosze;
+  /** Pojazdy firmowe wg wartości księgowej (aktywo). */
+  vehicles: Grosze;
+  /** Przedpłaty dla podwykonawców (aktywo). */
+  prepaid: Grosze;
+  /** Zaliczki od klientów do czasu wykonania usługi (zobowiązanie, odejmowane od majątku). */
+  deferred: Grosze;
   /** Otwarte należności gracza (np. naliczona, niewypłacona pensja). */
   receivables: Grosze;
   /** Otwarte zobowiązania gracza (np. naliczony, nieopłacony czynsz). */
@@ -75,7 +96,7 @@ export function openObligations(s: GameState, direction?: Obligation['direction'
   return s.obligations.filter((o) => o.status === 'open' && (!direction || o.direction === direction));
 }
 
-/** Majątek netto = rachunki + kaucje + zapasy + sprzęt (aktywa) + otwarte należności − otwarte zobowiązania. */
+/** Majątek netto = rachunki + kaucje + zapasy + sprzęt + pojazdy + przedpłaty (aktywa) + otwarte należności − otwarte zobowiązania − zaliczki do czasu wykonania usługi. */
 export function netWorthBreakdown(s: GameState): NetWorthBreakdown {
   let receivables = 0;
   let payables = 0;
@@ -90,7 +111,10 @@ export function netWorthBreakdown(s: GameState): NetWorthBreakdown {
   const biz = businessBalance(s);
   const inv = inventoryValue(s);
   const eq = equipmentValue(s);
-  return { cash: c, savings: sv, business: biz, deposits: dep, inventory: inv, equipment: eq, receivables, payables, netWorth: c + sv + biz + dep + inv + eq + receivables - payables };
+  const veh = vehiclesValue(s);
+  const pre = prepaidValue(s);
+  const def = deferredAdvances(s);
+  return { cash: c, savings: sv, business: biz, deposits: dep, inventory: inv, equipment: eq, vehicles: veh, prepaid: pre, deferred: def, receivables, payables, netWorth: c + sv + biz + dep + inv + eq + veh + pre + receivables - payables - def };
 }
 
 export function netWorth(s: GameState): Grosze {
@@ -261,12 +285,17 @@ export function businessSummaries(s: GameState): BusinessMonth[] {
     if (!m) map.set(mk, (m = { month: mk, revenue: 0, costs: 0, income: 0, zus: 0, pit: 0, result: 0 }));
     return m;
   };
+  // przychody i koszty (podatkowe) z dokumentów: zaliczki nie są przychodem do wykonania usługi, wynagrodzenia i składki pracodawcy są kosztem,
+  // zakup pojazdu nie jest kosztem; zobowiązania (ZUS właściciela, PIT) — jak dotąd z kategorii zobowiązań
+  for (const d of s.documents) {
+    const m = get(monthKey(d.issueDate));
+    if (d.kind === 'sales') m.revenue += d.taxAmount;
+    else m.costs += d.taxAmount;
+  }
   for (const o of s.obligations) {
     if (o.scope !== 'business') continue;
     const m = get(monthKey(o.issueDate));
-    if (o.category === 'przychod_dzialalnosci') m.revenue += o.amount;
-    else if (o.category === 'koszt_dzialalnosci') m.costs += o.amount;
-    else if (isZus(o.category)) m.zus += o.amount;
+    if (isZus(o.category)) m.zus += o.amount;
     else if (o.category === 'pit_zaliczka' || o.category === 'pit_roczny') m.pit += o.amount;
     else if (o.category === 'pit_zwrot') m.pit -= o.amount;
     else if (o.category === 'zus_zdrowotna_zwrot') m.zus -= o.amount;

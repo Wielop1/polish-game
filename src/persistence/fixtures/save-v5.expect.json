@@ -1,0 +1,17 @@
+{
+  "today": "2026-10-09",
+  "cash": 6146168,
+  "business": 2576745,
+  "netWorth": 9468448,
+  "ledgerCount": 262,
+  "obligationCount": 288,
+  "eventCount": 815,
+  "documents": 71,
+  "jobs": 9,
+  "activeJobs": 3,
+  "advanceDocs": 9,
+  "doneJobs": 6,
+  "stockMoves": 107,
+  "lastTxId": "tx:settle:obl:doc:biz:1:cost:2026-10:1:vat-supplier",
+  "equipment": 2
+}

@@ -191,3 +191,75 @@ export const ACCOUNTING_PLANS: readonly AccountingPlan[] = [
   },
 ];
 export const ACCOUNTING_PLAN_BY_ID = new Map(ACCOUNTING_PLANS.map((p) => [p.id, p]));
+
+/* ---------- v0.6: umiejętności pracowników, role, pojazdy, podwykonawcy (parametry symulacyjne) ---------- */
+
+/** Poziom umiejętności z doświadczenia (setne godziny): 1 = początkujący, 2 od 40 godz., 3–5 wg progów. */
+export function levelFromXp(xp: number): number {
+  let level = xp >= SKILL_START_CENTI ? 2 : 1;
+  for (const th of SKILL_THRESHOLD_CENTI) if (xp >= th) level += 1;
+  return Math.min(5, level);
+}
+/** Doświadczenie odpowiadające początkowi poziomu (dla generowanych kandydatów). */
+export const LEVEL_START_XP = [0, 0, SKILL_START_CENTI, SKILL_THRESHOLD_CENTI[0], SKILL_THRESHOLD_CENTI[1], SKILL_THRESHOLD_CENTI[2]] as const;
+
+/** Rynkowe wynagrodzenie brutto miesięcznie przy pełnym etacie wg poziomu (PARAMETR SYMULACYJNY, nie dane rynkowe). */
+export const MARKET_GROSS_BY_LEVEL = [0, zl(4_806), zl(5_400), zl(6_300), zl(7_400), zl(8_600)] as const;
+
+export interface RoleDef { id: string; label: string; skillId: string }
+export const ROLES: readonly RoleDef[] = [
+  { id: 'malarz', label: 'Malarz', skillId: 'malowanie' },
+  { id: 'gipsiarz', label: 'Gipsiarz (gładzie)', skillId: 'gladzie' },
+  { id: 'monter-podlog', label: 'Monter podłóg', skillId: 'panele' },
+  { id: 'wykonczeniowiec', label: 'Pracownik wykończeniowy', skillId: 'drobne' },
+  { id: 'pomocnik', label: 'Pracownik ogólny / pomocnik', skillId: 'ogolne' },
+];
+export const ROLE_BY_ID = new Map(ROLES.map((r) => [r.id, r]));
+
+export const LISTING_TIERS = {
+  basic: { label: 'Ogłoszenie podstawowe', costNet: zl(300), rateBps: 1_200 },
+  premium: { label: 'Ogłoszenie wyróżnione', costNet: zl(800), rateBps: 2_600 },
+} as const;
+export const MAX_CANDIDATES_PER_LISTING = 6;
+export const LISTING_DAYS = 21;
+export const MAX_EMPLOYEES = 8;
+
+export const FIRST_NAMES = ['Adam', 'Bartosz', 'Cezary', 'Damian', 'Edyta', 'Filip', 'Grzegorz', 'Hubert', 'Iwona', 'Jakub', 'Kamil', 'Łukasz', 'Marta', 'Norbert', 'Oskar', 'Patryk', 'Rafał', 'Sylwia', 'Tadeusz', 'Wojciech'] as const;
+export const LAST_NAMES = ['Adamski', 'Baran', 'Czarnecki', 'Dąbrowski', 'Gajewski', 'Jasiński', 'Kaczmarek', 'Lewandowski', 'Maj', 'Nowicki', 'Olszewski', 'Pawlak', 'Rutkowski', 'Sikora', 'Tomaszewski', 'Urban', 'Walczak', 'Zawadzki'] as const;
+
+export interface VehicleDef {
+  id: string;
+  label: string;
+  description: string;
+  priceNet: Grosze;
+  /** Pojemność transportowa w punktach ładunku (porównywana z zapotrzebowaniem kontraktu). */
+  capacity: number;
+  /** Zmienny koszt eksploatacji za dzień pracy przy kontrakcie (paliwo, zużycie). */
+  runPerDay: Grosze;
+  /** Koszty stałe miesięcznie (ubezpieczenie, przegląd, postój). */
+  fixedMonthly: Grosze;
+  /** Trwałość: dni użycia do pełnego zużycia. */
+  durabilityDays: number;
+}
+export const VEHICLES: readonly VehicleDef[] = [
+  { id: 'kombi', label: 'Pojazd osobowo-dostawczy (kombi)', description: 'Tani w utrzymaniu, mała pojemność.', priceNet: zl(24_000), capacity: 2, runPerDay: zl(40), fixedMonthly: zl(260), durabilityDays: 1_500 },
+  { id: 'van-small', label: 'Mały samochód dostawczy', description: 'Dobry kompromis dla ekipy 2–3 osób.', priceNet: zl(38_000), capacity: 3, runPerDay: zl(55), fixedMonthly: zl(320), durabilityDays: 1_800 },
+  { id: 'bus', label: 'Większy bus', description: 'Duża pojemność: materiały i ekipa 4–5 osób.', priceNet: zl(72_000), capacity: 6, runPerDay: zl(80), fixedMonthly: zl(480), durabilityDays: 2_200 },
+];
+export const VEHICLE_BY_ID = new Map(VEHICLES.map((v) => [v.id, v]));
+export const VEHICLE_AGING_BPS_PER_MONTH = 40;
+
+/** Zapotrzebowanie transportowe kontraktu (punkty ładunku) — porównywane z pojemnością pojazdu. */
+export const loadPoints = (serviceId: string, units: number): number => 1 + Math.floor(units / (serviceId === 'panele' ? 30 : serviceId === 'drobne' ? 40 : 60));
+
+export const SUBCONTRACTOR_SEEDS: { name: string; services: string[]; priceBps: number; quality: number; reliabilityBps: number }[] = [
+  { name: 'Malowanie-Serwis Łyna (fikcyjna)', services: ['malowanie', 'gladzie'], priceBps: 4_200, quality: 74, reliabilityBps: 8_800 },
+  { name: 'PodłogiPro Warmia (fikcyjna)', services: ['panele', 'drobne'], priceBps: 3_800, quality: 82, reliabilityBps: 9_200 },
+  { name: 'Ekipa Remontowa Kormoran (fikcyjna)', services: ['malowanie', 'gladzie', 'panele', 'drobne'], priceBps: 3_400, quality: 62, reliabilityBps: 7_400 },
+  { name: 'Wykończenia Dajtki (fikcyjna)', services: ['gladzie', 'malowanie'], priceBps: 4_800, quality: 88, reliabilityBps: 9_400 },
+  { name: 'Montaż-Szybko Jaroty (fikcyjna)', services: ['panele', 'drobne', 'malowanie'], priceBps: 3_100, quality: 55, reliabilityBps: 6_800 },
+];
+
+/** Norma pracy w setnych godziny (bez uwzględnienia wydajności wykonawcy) dla zakresu usługi. */
+export const normCentiOf = (serviceId: string, units: number, complexity: 'standard' | 'trudne'): number =>
+  Math.round((SERVICE_BY_ID.get(serviceId)!.normCentiPerUnit * units * COMPLEXITY_HOURS_BPS[complexity]) / 10_000);

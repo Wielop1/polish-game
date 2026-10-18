@@ -154,3 +154,31 @@ export function migrateV4ToV5(raw: unknown): unknown {
   s.accounting = { office: null, history: [], lastFeeMonth: null, suggestions: [] };
   return s;
 }
+
+/**
+ * v5 → v6: pracownicy, ekipy, podwykonawcy, pojazdy (`ops`) i nowe pola kontraktów remontowych.
+ * Historia nietknięta. Zaliczki sprzed v0.6 pozostają ujęte jak dotąd (`advanceMode: 'legacy'` — przychód w dacie wystawienia),
+ * nowe zaliczki są ujmowane jako zobowiązanie do wykonania usługi (kontrolowane rozróżnienie zamiast zmiany zaksięgowanych operacji).
+ */
+export function migrateV5ToV6(raw: unknown, buildPool: (seed: string) => unknown[]): unknown {
+  if (typeof raw !== 'object' || raw === null) throw new Error('Zapis v5 ma nieprawidłową strukturę stanu.');
+  const s = structuredClone(raw) as Json;
+  for (const j of s.reno.jobs as Json[]) {
+    j.actual = { ...j.actual, labor: 0, subcontract: 0, vehicle: 0 };
+    j.crew = { teamId: null, supervision: 'worker' };
+    j.advanceMode = 'legacy';
+    j.qualityHoursCenti = 0;
+    j.qualityWeightedSum = 0;
+    j.vehicleId = null;
+  }
+  for (const q of s.reno.quotes as Json[]) {
+    q.teamId = null;
+    q.supervision = 'worker';
+    q.vehicleId = null;
+  }
+  s.ops = {
+    people: [], employments: [], payslips: [], listings: [], candidates: [], subcontractors: buildPool(s.seed as string), subcontracts: [], teams: [], assignments: [], vehicles: [],
+    laborAllocated: {}, vehicleRunning: {},
+  };
+  return s;
+}

@@ -67,9 +67,7 @@ export function yearReport(s: GameState, year: number): YearReport {
   for (const o of s.obligations) {
     if (o.scope === 'business') {
       if (inYear(o.issueDate)) {
-        if (o.category === 'przychod_dzialalnosci') r.revenue += o.amount;
-        else if (o.category === 'koszt_dzialalnosci') r.costs += o.amount;
-        else if (COST_ZUS.has(o.category)) r.zus += o.amount;
+        if (COST_ZUS.has(o.category)) r.zus += o.amount;
         else if (COST_PIT.has(o.category)) r.pit += o.amount;
         else if (o.category === 'pit_zwrot') r.pit -= o.amount;
         else if (o.category === 'zus_zdrowotna_zwrot') r.zus -= o.amount;
@@ -84,6 +82,11 @@ export function yearReport(s: GameState, year: number): YearReport {
       else if (o.direction === 'payable') r.privateExpenses += o.amount;
     }
   }
+  for (const d of s.documents) {
+    if (!inYear(d.issueDate)) continue;
+    if (d.kind === 'sales') r.revenue += d.taxAmount;
+    else r.costs += d.taxAmount;
+  }
   for (const tx of s.ledger) {
     if (!bizAccounts.has(tx.accountId) || tx.date > asOf) continue;
     r.businessCash += tx.amount;
@@ -91,7 +94,7 @@ export function yearReport(s: GameState, year: number): YearReport {
     if (tx.transferId) {
       if (tx.amount > 0) r.ownerContributions += tx.amount;
       else r.ownerWithdrawals += -tx.amount;
-    } else if (tx.category === 'przychod_dzialalnosci' && tx.amount > 0) r.customerPayments += tx.amount;
+    } else if ((tx.category === 'przychod_dzialalnosci' || tx.category === 'zaliczka_klienta') && tx.amount > 0) r.customerPayments += tx.amount;
     else if (tx.category.startsWith('vat_')) r.vatPaidNet += -tx.amount;
     if (!tx.transferId && tx.amount < 0 && !tx.category.startsWith('vat_')) r.cashOut += -tx.amount;
   }

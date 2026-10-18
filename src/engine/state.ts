@@ -255,6 +255,12 @@ export const EventTypeSchema = z.enum([
   'reno.stock',
   'accounting.notice',
   'accounting.contract',
+  'hr.recruitment',
+  'hr.employment',
+  'hr.payroll',
+  'sub.contract',
+  'fleet.vehicle',
+  'crew.assignment',
 ]);
 
 export const GameEventSchema = z.object({
@@ -500,9 +506,9 @@ export const DocumentSchema = z.object({
   termDate: IsoDateSchema,
   obligationIds: z.array(IdSchema),
   /** Kwota stanowiąca przychód (sprzedaż) albo koszt uzyskania przychodu (koszt) dla podatku dochodowego. */
-  taxAmount: PositiveGroszeSchema,
-  /** `advance` = zaliczka (odrębny dokument), `final` = rozliczenie końcowe pomniejszone o zaliczkę, `full` = całość. */
-  part: z.enum(['full', 'advance', 'final']),
+  taxAmount: NonNegGroszeSchema,
+  /** `advance` = zaliczka (odrębny dokument; od v0.6 nie jest przychodem podatkowym do wykonania usługi), `final` = rozliczenie końcowe pomniejszone o zaliczkę, `payroll` = lista płac, `capital` = zakup środka trwałego bez kosztu podatkowego, `full` = całość. */
+  part: z.enum(['full', 'advance', 'final', 'payroll', 'capital']),
 });
 
 /** Miesięczne rozliczenie podatkowo-składkowe JDG (ślad obliczeń dla ekranu „Podatki i ZUS”). */
@@ -687,6 +693,10 @@ export const RenoQuoteSchema = z.object({
   signBy: IsoDateSchema.nullable(),
   /** Dni od zapytania do wysłania oferty (komunikacja). */
   replyDays: z.number().int().min(0),
+  /** Planowana ekipa (null = właściciel samodzielnie), nadzór właściciela i pojazd. */
+  teamId: IdSchema.nullable(),
+  supervision: z.enum(['worker', 'supervise', 'hands-off']),
+  vehicleId: IdSchema.nullable(),
 });
 
 export const RenoJobSchema = z.object({
@@ -732,7 +742,16 @@ export const RenoJobSchema = z.object({
   need: z.record(z.string(), z.number().int().min(0)),
   consumed: z.record(z.string(), z.object({ qty: z.number().int().min(0), value: NonNegGroszeSchema })),
   /** Koszty rzeczywiste (ekonomiczne): zużyte materiały, transport, inne, poprawki. */
-  actual: z.object({ materials: NonNegGroszeSchema, transport: NonNegGroszeSchema, other: NonNegGroszeSchema, rework: NonNegGroszeSchema }),
+  actual: z.object({ materials: NonNegGroszeSchema, transport: NonNegGroszeSchema, other: NonNegGroszeSchema, rework: NonNegGroszeSchema, labor: NonNegGroszeSchema, subcontract: NonNegGroszeSchema, vehicle: NonNegGroszeSchema }),
+  /** Ekipa realizująca kontrakt: `teamId` null = właściciel samodzielnie; nadzór dotyczy ekip bez właściciela jako wykonawcy. */
+  crew: z.object({ teamId: IdSchema.nullable(), supervision: z.enum(['worker', 'supervise', 'hands-off']) }),
+  /** Sposób ujęcia zaliczki: `legacy` (v0.5: przychód w dacie wystawienia) albo `deferred` (od v0.6: przychód dopiero po wykonaniu usługi). */
+  advanceMode: z.enum(['legacy', 'deferred']),
+  /** Przepracowane setne godziny i suma godzin × bazowa jakość wykonawców (jakość ważona czasem pracy). */
+  qualityHoursCenti: z.number().int().min(0),
+  qualityWeightedSum: z.number().int().min(0),
+  /** Pojazd przydzielony do kontraktu (rezerwacja w `ops.assignments`). */
+  vehicleId: IdSchema.nullable(),
   workedDays: z.number().int().min(0),
   blockedDays: z.number().int().min(0),
   perfSumBps: z.number().int().min(0),
@@ -814,6 +833,191 @@ export const RenovationStateSchema = z.object({
   complaints: z.array(RenoComplaintSchema),
 });
 
+
+/* ---------- Pracownicy, ekipy, podwykonawcy, pojazdy (v0.6) ---------- */
+
+export const WorkerPersonSchema = z.object({
+  id: IdSchema,
+  firstName: z.string().min(1).max(40),
+  lastName: z.string().min(1).max(40),
+  birthDate: IsoDateSchema,
+  /** Doświadczenie (setne godziny) per umiejętność — poziom wynika z doświadczenia. */
+  xp: z.record(z.string(), z.number().int().min(0)),
+  /** Oczekiwane wynagrodzenie brutto miesięcznie przy pełnym etacie. */
+  expectedGross: PositiveGroszeSchema,
+  availableFrom: IsoDateSchema,
+  diligence: z.number().int().min(0).max(100),
+  loyalty: z.number().int().min(0).max(100),
+  morale: z.number().int().min(0).max(100),
+  fatigue: z.number().int().min(0).max(100),
+  status: z.enum(['candidate', 'employee', 'former', 'withdrawn']),
+  lastWorkedOn: IsoDateSchema.nullable(),
+});
+
+export const EmploymentSchema = z.object({
+  id: IdSchema,
+  personId: IdSchema,
+  businessId: IdSchema,
+  role: z.string().min(1),
+  grossMonthly: PositiveGroszeSchema,
+  /** Wymiar czasu pracy: godziny w miesiącu (160 = pełny etat). */
+  hoursPerMonth: z.number().int().min(40).max(200),
+  startDate: IsoDateSchema,
+  /** Ostatni dzień zatrudnienia (null = bezterminowo / bez wypowiedzenia). */
+  endDate: IsoDateSchema.nullable(),
+  noticeGivenOn: IsoDateSchema.nullable(),
+  noticeLabel: z.string().nullable(),
+  wageHistory: z.array(z.object({ from: IsoDateSchema, gross: PositiveGroszeSchema })),
+  /** Koszt całkowity pracodawcy za godzinę (grosze) — podstawa przypisywania kosztu pracy do kontraktów. */
+  hourlyCost: z.number().int().min(0),
+  status: z.enum(['active', 'ended']),
+});
+
+export const EmployerContributionsSchema = z.object({
+  emerytalna: NonNegGroszeSchema, rentowa: NonNegGroszeSchema, wypadkowa: NonNegGroszeSchema, fp: NonNegGroszeSchema, fgsp: NonNegGroszeSchema, total: NonNegGroszeSchema,
+});
+
+export const EmployerPayslipSchema = z.object({
+  id: IdSchema,
+  employmentId: IdSchema,
+  personId: IdSchema,
+  businessId: IdSchema,
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  accrualDate: IsoDateSchema,
+  payDate: IsoDateSchema,
+  factorBps: z.number().int().min(1).max(10_000),
+  gross: PositiveGroszeSchema,
+  pensionBase: NonNegGroszeSchema,
+  emerytalna: NonNegGroszeSchema,
+  rentowa: NonNegGroszeSchema,
+  chorobowa: NonNegGroszeSchema,
+  socialTotal: NonNegGroszeSchema,
+  health: NonNegGroszeSchema,
+  exemptGross: NonNegGroszeSchema,
+  taxableSocial: NonNegGroszeSchema,
+  koszty: NonNegGroszeSchema,
+  pitBase: NonNegGroszeSchema,
+  pitAdvance: NonNegGroszeSchema,
+  net: PositiveGroszeSchema,
+  reductionApplied: NonNegGroszeSchema,
+  employer: EmployerContributionsSchema,
+  totalCost: PositiveGroszeSchema,
+  docId: IdSchema,
+  obligationIds: z.array(IdSchema),
+});
+
+export const JobListingSchema = z.object({
+  id: IdSchema,
+  businessId: IdSchema,
+  role: z.string().min(1),
+  skillId: z.string().min(1),
+  minLevel: z.number().int().min(1).max(5),
+  tier: z.enum(['basic', 'premium']),
+  postedOn: IsoDateSchema,
+  endsOn: IsoDateSchema,
+  status: z.enum(['active', 'closed']),
+  costDocId: IdSchema.nullable(),
+  commitmentId: IdSchema.nullable(),
+});
+
+export const CandidateSchema = z.object({
+  id: IdSchema,
+  listingId: IdSchema,
+  personId: IdSchema,
+  appliedOn: IsoDateSchema,
+  expiresOn: IsoDateSchema,
+  status: z.enum(['new', 'countered', 'hired', 'declined', 'rejected', 'expired']),
+  rounds: z.number().int().min(0),
+  lastOffer: z.object({ gross: PositiveGroszeSchema, hoursPerMonth: z.number().int(), startDate: IsoDateSchema }).nullable(),
+  counterGross: PositiveGroszeSchema.nullable(),
+  note: z.string().max(200),
+  employmentId: IdSchema.nullable(),
+});
+
+export const SubcontractorSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(80),
+  services: z.array(z.string()),
+  /** Cennik: pracochłonność robocizny jako % ceny referencyjnej usługi (materiały zapewnia zleceniodawca). */
+  priceBps: z.number().int().min(1_000).max(9_000),
+  quality: z.number().int().min(0).max(100),
+  /** Prawdopodobieństwo dotrzymania terminu (pkt bazowe). */
+  reliabilityBps: z.number().int().min(0).max(10_000),
+});
+
+export const SubcontractSchema = z.object({
+  id: IdSchema,
+  subId: IdSchema,
+  jobId: IdSchema,
+  serviceId: z.string().min(1),
+  scopeBps: z.number().int().min(1_000).max(10_000),
+  priceNet: PositiveGroszeSchema,
+  advanceBps: z.number().int().min(0).max(3_000),
+  advanceNet: NonNegGroszeSchema,
+  /** Zaliczka wpłacona podwykonawcy, jeszcze nierozliczona — aktywo (przedpłata), nie koszt. */
+  prepaid: NonNegGroszeSchema,
+  advanceObligationId: IdSchema.nullable(),
+  offeredOn: IsoDateSchema,
+  expiresOn: IsoDateSchema,
+  startDate: IsoDateSchema,
+  plannedDays: z.number().int().min(1),
+  status: z.enum(['offered', 'accepted', 'in_progress', 'delivered', 'settled', 'declined', 'expired', 'cancelled']),
+  requiredCenti: z.number().int().min(1),
+  performedCenti: z.number().int().min(0),
+  /** Opóźnienie (dni bez pracy) wynikające z ryzyka — losowane deterministycznie przy akceptacji. */
+  delayDays: z.number().int().min(0),
+  delayFrom: IsoDateSchema.nullable(),
+  defects: z.boolean(),
+  qualityScore: z.number().int().min(0).max(100).nullable(),
+  deliveredOn: IsoDateSchema.nullable(),
+  settledOn: IsoDateSchema.nullable(),
+  settlementDocId: IdSchema.nullable(),
+  settledNet: NonNegGroszeSchema,
+});
+
+export const TeamSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(60),
+  members: z.array(z.object({ kind: z.enum(['owner', 'employee', 'sub']), id: IdSchema })),
+  createdOn: IsoDateSchema,
+});
+
+export const AssignmentSchema = z.object({
+  id: IdSchema,
+  jobId: IdSchema,
+  kind: z.enum(['employee', 'sub', 'equipment', 'vehicle']),
+  resourceId: IdSchema,
+  from: IsoDateSchema,
+  to: IsoDateSchema,
+});
+
+export const VehicleSchema = z.object({
+  id: IdSchema,
+  catalogId: z.string().min(1),
+  purchasedOn: IsoDateSchema,
+  cost: PositiveGroszeSchema,
+  docId: IdSchema,
+  conditionBps: z.number().int().min(0).max(10_000),
+  usedDays: z.number().int().min(0),
+});
+
+export const OpsSchema = z.object({
+  people: z.array(WorkerPersonSchema),
+  employments: z.array(EmploymentSchema),
+  payslips: z.array(EmployerPayslipSchema),
+  listings: z.array(JobListingSchema),
+  candidates: z.array(CandidateSchema),
+  subcontractors: z.array(SubcontractorSchema),
+  subcontracts: z.array(SubcontractSchema),
+  teams: z.array(TeamSchema),
+  assignments: z.array(AssignmentSchema),
+  vehicles: z.array(VehicleSchema),
+  /** Koszt pracy pracowników przypisany do kontraktów w miesiącu (YYYY-MM) — reszta listy płac to koszt stały (bezczynność). */
+  laborAllocated: z.record(z.string(), z.number().int().min(0)),
+  /** Zmienne koszty eksploatacji pojazdów naliczone w miesiącu (rozliczane dokumentem na koniec miesiąca). */
+  vehicleRunning: z.record(z.string(), z.number().int().min(0)),
+});
+
 /* ---------- Księgowość (v0.5) ---------- */
 
 export const AccountingSchema = z.object({
@@ -875,6 +1079,8 @@ export const GameStateSchema = z.object({
   /** Moduł branży remontowej (v0.5). Pusty, dopóki gracz nie prowadzi takiej działalności. */
   reno: RenovationStateSchema,
   accounting: AccountingSchema,
+  /** Pracownicy, rekrutacja, podwykonawcy, ekipy, przydziały zasobów i pojazdy (v0.6; wspólny silnik, nie moduł branży). */
+  ops: OpsSchema,
 });
 
 export type Person = z.infer<typeof PersonSchema>;
@@ -917,6 +1123,18 @@ export type RenoReview = z.infer<typeof RenoReviewSchema>;
 export type RenoComplaint = z.infer<typeof RenoComplaintSchema>;
 export type RenovationState = z.infer<typeof RenovationStateSchema>;
 export type Accounting = z.infer<typeof AccountingSchema>;
+export type WorkerPerson = z.infer<typeof WorkerPersonSchema>;
+export type Employment = z.infer<typeof EmploymentSchema>;
+export type EmployerPayslip = z.infer<typeof EmployerPayslipSchema>;
+export type EmployerContributions = z.infer<typeof EmployerContributionsSchema>;
+export type JobListing = z.infer<typeof JobListingSchema>;
+export type Candidate = z.infer<typeof CandidateSchema>;
+export type Subcontractor = z.infer<typeof SubcontractorSchema>;
+export type Subcontract = z.infer<typeof SubcontractSchema>;
+export type Team = z.infer<typeof TeamSchema>;
+export type Assignment = z.infer<typeof AssignmentSchema>;
+export type Vehicle = z.infer<typeof VehicleSchema>;
+export type Ops = z.infer<typeof OpsSchema>;
 export type MaterialStandard = z.infer<typeof MaterialStandardSchema>;
 export type Complexity = z.infer<typeof ComplexitySchema>;
 export type LedgerEntry = z.infer<typeof LedgerEntrySchema>;

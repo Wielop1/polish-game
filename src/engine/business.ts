@@ -132,7 +132,17 @@ interface DocInput {
   net: Grosze;
   termDays: number;
   /** Zaliczka / rozliczenie końcowe po zaliczce (domyślnie całość). */
-  part?: 'full' | 'advance' | 'final';
+  part?: 'full' | 'advance' | 'final' | 'payroll' | 'capital';
+  /** Dostawca (koszt) nie nalicza VAT — np. podwykonawca zwolniony z VAT albo zakup bez prawa do odliczenia (kwota = cena końcowa). */
+  supplierVat?: 'auto' | 'none';
+  /** Kwota przychodu/kosztu podatkowego (domyślnie z dokumentu); 0 = zaliczka niebędąca jeszcze przychodem, wyższa = rozliczenie po zaliczce. */
+  taxAmountOverride?: Grosze;
+  /** Kwota do zapłaty / zapłaty przez kontrahenta (mniejsza od ceny, gdy część została już rozliczona zaliczką); 0 = brak zobowiązania. */
+  cashNet?: Grosze;
+  /** Kategoria zobowiązania z tytułu ceny netto (np. zaliczka zamiast przychodu). */
+  obligationCategory?: string;
+  /** Zaliczka od klienta: VAT powstaje w dacie otrzymania (termin płatności), nie w dacie wystawienia. */
+  vatAtReceipt?: boolean;
   /** Bez losowego opóźnienia płatności klienta (np. zaliczka płatna przy podpisaniu umowy). */
   noDelay?: boolean;
 }
@@ -150,7 +160,7 @@ export function issueDocument(s: GameState, b: Business, input: DocInput): Busin
       });
     }
   }
-  const taxed = b.vat.status === 'active';
+  const taxed = b.vat.status === 'active' && !(input.kind === 'cost' && input.supplierVat === 'none');
   const vat = taxed ? vatOf(input.net, R.vat.rateBps) : 0;
   const gross = input.net + vat;
   const ym = monthKey(input.issueDate).replace('-', '/');
@@ -163,17 +173,18 @@ export function issueDocument(s: GameState, b: Business, input: DocInput): Busin
     id, businessId: b.id, kind: input.kind, number, issueDate: input.issueDate, saleDate: input.issueDate,
     counterpartyId: input.counterpartyId, orderId: input.orderId, description: input.description,
     net: input.net, vatRateBps: taxed ? R.vat.rateBps : 0, vat, gross, vatTreatment: taxed ? 'taxed' : 'exempt', termDate,
-    obligationIds: [], taxAmount: input.kind === 'sales' ? input.net : taxed ? input.net : gross, part: input.part ?? 'full',
+    obligationIds: [], taxAmount: input.taxAmountOverride ?? (input.kind === 'sales' ? input.net : taxed ? input.net : gross), part: input.part ?? 'full',
   };
   const base = { ruleId: `doc:${id}`, issueDate: input.issueDate, accountId: b.accountId, scope: 'business' as const };
-  const vatDue = dueNextMonth(input.issueDate, R.vat.dueDay);
+  const vatDue = dueNextMonth(input.vatAtReceipt ? termDate : input.issueDate, R.vat.dueDay);
   const make = (suffix: string, o: { direction: 'receivable' | 'payable'; counterpartyId: string; amount: Grosze; dueDate: IsoDate; category: string; description: string }) => {
     const ob = createObligation(s, { ...base, ...o, occurrenceId: `${id}:${suffix}` });
     if (ob) doc.obligationIds.push(ob.id);
   };
   if (input.kind === 'sales') {
     const due = addDays(termDate, input.noDelay ? 0 : paymentDelayDays(s.seed, id));
-    make('net', { direction: 'receivable', counterpartyId: input.counterpartyId, amount: input.net, dueDate: due, category: BUSINESS_CATEGORIES.revenue, description: `${number}: ${input.description}` });
+    const cash = input.cashNet ?? input.net;
+    if (cash > 0) make('net', { direction: 'receivable', counterpartyId: input.counterpartyId, amount: cash, dueDate: due, category: input.obligationCategory ?? BUSINESS_CATEGORIES.revenue, description: `${number}: ${input.description}` });
     if (taxed) {
       make('vat-client', { direction: 'receivable', counterpartyId: input.counterpartyId, amount: vat, dueDate: due, category: BUSINESS_CATEGORIES.vatFromClient, description: `${number}: VAT od kontrahenta` });
       make('vat-due', { direction: 'payable', counterpartyId: US_PARTY, amount: vat, dueDate: vatDue, category: BUSINESS_CATEGORIES.vatDue, description: `VAT należny z ${number}` });
@@ -183,7 +194,8 @@ export function issueDocument(s: GameState, b: Business, input: DocInput): Busin
     make('vat-supplier', { direction: 'payable', counterpartyId: input.counterpartyId, amount: vat, dueDate: termDate, category: BUSINESS_CATEGORIES.vatToSupplier, description: `${number}: VAT dla dostawcy` });
     make('vat-input', { direction: 'receivable', counterpartyId: US_PARTY, amount: vat, dueDate: vatDue, category: BUSINESS_CATEGORIES.vatInput, description: `VAT naliczony z ${number}` });
   } else {
-    make('gross', { direction: 'payable', counterpartyId: input.counterpartyId, amount: gross, dueDate: termDate, category: BUSINESS_CATEGORIES.cost, description: `${number}: ${input.description}` });
+    const cash = input.cashNet ?? gross;
+    if (cash > 0) make('gross', { direction: 'payable', counterpartyId: input.counterpartyId, amount: cash, dueDate: termDate, category: input.obligationCategory ?? BUSINESS_CATEGORIES.cost, description: `${number}: ${input.description}` });
   }
   s.documents.push(doc);
   logEvent(s, {

@@ -113,7 +113,8 @@ const once = (s: GameState, key: string): boolean => {
 
 function notice(s: GameState, date: IsoDate, key: string, tone: 'neutral' | 'warning' | 'positive', title: string, detail = ''): void {
   if (!once(s, `acc:${key}`)) return;
-  logEvent(s, { id: `accounting.notice:${key}`, date, type: 'accounting.notice', tone, title: `Biuro rachunkowe: ${title}`, detail, amount: null, category: null });
+  const long = title.length > 150;
+  logEvent(s, { id: `accounting.notice:${key}`, date, type: 'accounting.notice', tone, title: `Biuro rachunkowe: ${long ? `${title.slice(0, 147)}…` : title}`, detail: (long ? title : detail).slice(0, 300), amount: null, category: null });
 }
 
 /** Wywoływane codziennie dla aktywnej działalności (po przetworzeniu branży); idempotentne. */

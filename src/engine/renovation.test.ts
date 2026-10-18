@@ -184,7 +184,7 @@ describe('2. sprzęt, jego koszt, wartość i zużycie', () => {
     expect(bizBalance(s2)).toBe(cash0 - zl(3_800));
     expect(netWorth(s2)).toBe(nw0 + (netWorth(s2) - nw0)); // majątek zmienia się tylko o niezwiązane pozycje (pensja, wydatki)
     expect(businessSummaries(s2).reduce((a, m) => a + m.costs, 0)).toBe(zl(3_800)); // koszt podatkowy od razu
-    expect(fail(commands.buyEquipment(s2, 'sprayer'))).toMatch(/Masz już ten sprzęt/);
+    expect(ok(commands.buyEquipment(s2, 'sprayer')).reno.equipment.filter((e) => e.catalogId === 'sprayer')).toHaveLength(2); // drugi egzemplarz (dla równoległych kontraktów)
     consistent(s2);
   });
 
@@ -464,7 +464,9 @@ describe('5. zaliczka i rozliczenie końcowe', () => {
     s = advanceDays(s, 3);
     s = ok(commands.terminateJob(s, job.id));
     expect(jobOf(s, job.id).stage).toBe('cancelled');
-    expect(s.documents.some((d) => d.kind === 'cost' && d.description.startsWith('Zwrot zaliczki') && d.net === zl(400))).toBe(true);
+    // od v0.6 zaliczka nie była przychodem, więc jej zwrot nie jest kosztem — to likwidacja zobowiązania wobec klienta
+    expect(s.obligations.find((o) => o.category === 'zwrot_zaliczki')).toMatchObject({ direction: 'payable', amount: zl(400), scope: 'business' });
+    expect(s.documents.some((d) => d.description.startsWith('Zwrot zaliczki'))).toBe(false);
     expect(s.reno.reviews.at(-1)).toMatchObject({ jobId: job.id, rating10: 10 });
     expect(s.serviceOrders.find((o) => o.id === job.orderId)!.status).toBe('failed');
     expect(fail(commands.terminateJob(s, job.id))).toMatch(/zakończony/);
@@ -655,7 +657,7 @@ describe('7. realizacja prac', () => {
     let { s, job } = contract(renoGame(), { quote: { advanceBps: 2_000, priceNet: zl(2_000) } });
     s = toDate(s, addDays(job.deadline, 46)); // bez materiałów praca stoi
     expect(jobOf(s, job.id).stage).toBe('cancelled');
-    expect(s.documents.some((d) => d.description.startsWith('Zwrot zaliczki'))).toBe(true);
+    expect(s.obligations.some((o) => o.category === 'zwrot_zaliczki' && o.direction === 'payable')).toBe(true);
     expect(s.serviceOrders.find((o) => o.id === job.orderId)!.status).toBe('failed');
     consistent(s);
   });
@@ -700,6 +702,7 @@ describe('8. konflikty czasu', () => {
     j0.deadline = addDays(j0.startDate, 4);
     s.commitments.find((c) => c.id === `commit:${j0.orderId}`)!.endDate = j0.deadline;
     s.serviceOrders.find((o) => o.id === j0.orderId)!.deadline = j0.deadline;
+    for (const a of s.ops.assignments) if (a.jobId === j0.id) a.to = j0.deadline; // rezerwacje sprzętu zgodne ze skróconym terminem
     const second = contract(s, { quote: { startDate: addDays(j0.deadline, 1), durationDays: 8 }, enquiry: { units: 40 } });
     s = buyAll(second.s, second.job.id);
     for (let i = 0; i < 40; i++) {
