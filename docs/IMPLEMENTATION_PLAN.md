@@ -38,9 +38,9 @@
 **Warunek wejścia:** zatwierdzony, zweryfikowany zestaw źródeł prawnych na 2026 (do tego czasu placeholdery).
 **Kryteria:** testy na przypadkach wzorcowych z udokumentowanych źródeł; wyniki powtarzalne po dacie.
 
-## v0.4 — Domknięcie obowiązków JDG i podatków (propozycja po v0.3) ← *proponowane następne zadanie*
+## v0.4 — Poprawność rozliczeń i rozwój JDG ✅ (zakończona, patrz `PROJECT_STATUS.md`)
 
-Weryfikacja źródeł i wdrożenie pozycji z `FEATURE_EVOLUTION.md` oznaczonych v0.4: zmiana formy opodatkowania w kolejnym roku, zawieszenie/wznowienie, Mały ZUS Plus, roczne rozliczenie składki zdrowotnej, straty z lat ubiegłych, łączne rozliczenie etat+JDG, zweryfikowany kalkulator netto z etatu, zestaw wartości 2027 (gdy zweryfikowany). Bez zatrudniania pracowników.
+Weryfikacja źródeł i wdrożenie pozycji z `FEATURE_EVOLUTION.md` oznaczonych v0.4: zmiana formy opodatkowania w kolejnym roku, zawieszenie/wznowienie, Mały ZUS Plus, roczne rozliczenie składki zdrowotnej, straty z lat ubiegłych, łączne rozliczenie etat+JDG, zweryfikowany kalkulator netto z etatu, planowanie i podsumowanie roku. **Wykonane.** Zestaw wartości 2027 — nadal do weryfikacji źródeł (bez automatycznego przełączania). Bez zatrudniania pracowników.
 
 ## v0.5+ — Kredyty, leasing, odsetki (dawniej v0.4)
 

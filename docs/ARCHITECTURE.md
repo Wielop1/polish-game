@@ -96,7 +96,7 @@ interface SaveRepository { list(); get(slot); put(slot, json, savedAt, meta); re
 
 - **Magazyn:** IndexedDB (baza `polski-tycoon`, store `saves`, klucz `slot`). Rekord: `{slot, savedAt, meta, json}`. Sloty: `autosave`, `slot-1`, `slot-2`, `slot-3`. Gdy IndexedDB jest niedostępne, store przełącza się na magazyn w pamięci i UI pokazuje ostrzeżenie.
 - **Koperta zapisu (JSON):** `{ format: "polski-tycoon-save", version, savedAt, meta, state }`.
-- **Wersjonowanie:** `SAVE_VERSION = 3` (migracje v1 → v2 → v3 w `src/persistence/migrations.ts`, ADR-024/031). Zmiana kształtu `GameState` ⇒ `SAVE_VERSION + 1` + `MIGRATIONS[n]` (stan v n → n+1). Zapis z nowszej wersji jest odrzucany z czytelnym komunikatem.
+- **Wersjonowanie:** `SAVE_VERSION = 4` (migracje v1 → v2 → v3 → v4 w `src/persistence/migrations.ts`, ADR-024/031/039). Zmiana kształtu `GameState` ⇒ `SAVE_VERSION + 1` + `MIGRATIONS[n]` (stan v n → n+1). Zapis z nowszej wersji jest odrzucany z czytelnym komunikatem.
 - **Walidacja przy wczytaniu** (`parseSave`): poprawny JSON → koperta → migracje → **schemat Zod całego stanu** → **`checkInvariants`**. Dopiero wtedy stan trafia do gry. Błąd = komunikat w UI, bieżąca gra nietknięta.
 - **Walidacja przy zapisie** (`serializeSave`): odmowa zapisu stanu naruszającego niezmienniki.
 - **Autozapis:** po każdym przesunięciu czasu i po starcie nowej gry (asynchroniczny, bez blokowania UI; błąd → komunikat).

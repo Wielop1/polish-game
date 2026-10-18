@@ -13,6 +13,7 @@ import { LifestyleScreen } from './screens/LifestyleScreen.tsx';
 import { SavingsScreen } from './screens/SavingsScreen.tsx';
 import { TimeScreen } from './screens/TimeScreen.tsx';
 import { BizCalendarScreen, BizDocsScreen, BizFinanceScreen, BizOrdersScreen, BizOverviewScreen, BizRegisterScreen, BizTaxScreen } from './screens/BusinessScreens.tsx';
+import { BizReportScreen, BizSettlementScreen, PlanningScreen } from './screens/AnnualScreens.tsx';
 import { CharacterScreen } from './screens/CharacterScreen.tsx';
 import { DashboardScreen } from './screens/DashboardScreen.tsx';
 import { EventsScreen } from './screens/EventsScreen.tsx';
@@ -57,6 +58,9 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { id: 'bizFinance', label: 'Finanse firmy', icon: 'trend' },
       { id: 'bizTax', label: 'Podatki i ZUS', icon: 'shield' },
       { id: 'bizDocs', label: 'Dokumenty', icon: 'receipt' },
+      { id: 'bizSettlement', label: 'Rozliczenie roczne', icon: 'receipt' },
+      { id: 'bizReport', label: 'Podsumowanie roku', icon: 'list' },
+      { id: 'planning', label: 'Planowanie', icon: 'trend' },
       { id: 'bizCalendar', label: 'Kalendarz obowiązków', icon: 'calendar' },
     ],
   },
@@ -98,6 +102,9 @@ function renderScreen(screen: Screen) {
     case 'bizTax': return <BizTaxScreen />;
     case 'bizDocs': return <BizDocsScreen />;
     case 'bizCalendar': return <BizCalendarScreen />;
+    case 'bizSettlement': return <BizSettlementScreen />;
+    case 'bizReport': return <BizReportScreen />;
+    case 'planning': return <PlanningScreen />;
     case 'game': return <GameScreen />;
   }
 }
@@ -153,7 +160,7 @@ export function App() {
             </div>
           ))}
         </nav>
-        <p className="text-[11px] leading-relaxed text-slate-500">v0.3 · pierwsza działalność (JDG). Symulacja — nie porada prawna ani podatkowa.</p>
+        <p className="text-[11px] leading-relaxed text-slate-500">v0.4 · rozliczenia roczne i rozwój JDG. Symulacja — nie porada prawna ani podatkowa.</p>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

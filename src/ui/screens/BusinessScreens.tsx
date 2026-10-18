@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { BUSINESS_PROFILES, PROFILE_BY_ID } from '../../engine/businessCatalog.ts';
-import { BUSINESS_CATEGORIES, VAT_PASS_THROUGH, activeBusiness, allowedBusinessStarts, docsOf, previewRegistration, profileOf, validateRegistration, zusReliefEligible } from '../../engine/business.ts';
+import { BUSINESS_CATEGORIES, VAT_PASS_THROUGH, activeBusiness, allowedBusinessStarts, isSuspendedOn, docsOf, previewRegistration, profileOf, validateRegistration, zusReliefEligible } from '../../engine/business.ts';
 import type { RegisterInput } from '../../engine/business.ts';
 import { categoryInfo } from '../../engine/categories.ts';
 import { addDays, formatDatePL, formatDateShortPL, formatMonthPL, monthKey, parseIso } from '../../engine/date.ts';
@@ -16,6 +16,7 @@ import { useGameStore } from '../../store/gameStore.ts';
 import { BarChart, ProgressBar } from '../components/charts.tsx';
 import { Badge, Button, Card, Empty, Money, ScreenHeader, StatCard, cx, moneyTone } from '../components/ui.tsx';
 import { parseZloty } from '../format.ts';
+import { MalyZusCard, SuspensionCard, TaxFormCard } from './AnnualScreens.tsx';
 
 /* ---------- wspólne elementy ---------- */
 
@@ -248,7 +249,7 @@ export function BizOverviewScreen() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard testId="biz-balance" label="Rachunek firmowy" icon="wallet" accent="gain" value={<Money value={acc.balance} />} hint="środki właściciela w firmie" />
         <StatCard label="Płynność 30 dni" icon="clock" accent={liq.coverage >= 0 ? 'sky' : 'loss'} value={<Money value={liq.coverage} />} hint="saldo − zobowiązania w 30 dni" />
-        <StatCard label="Status" icon="building" accent="violet" value={biz.status === 'closed' ? 'zamknięta' : biz.closeOn ? 'w trakcie zamykania' : today < biz.startDate ? 'zarejestrowana' : 'aktywna'} hint={`start ${formatDatePL(biz.startDate)}`} />
+        <StatCard label="Status" icon="building" accent="violet" value={biz.status === 'closed' ? 'zamknięta' : biz.closeOn ? 'w trakcie zamykania' : today < biz.startDate ? 'zarejestrowana' : isSuspendedOn(biz, today) ? 'zawieszona' : 'aktywna'} hint={`start ${formatDatePL(biz.startDate)}`} />
         <StatCard label="Forma opodatkowania" icon="shield" accent="gold" value={biz.taxForm === 'skala' ? 'Skala' : biz.taxForm === 'liniowy' ? 'Liniowy 19%' : `Ryczałt ${profile.ryczaltRateBps / 100}%`} hint={`PKD ${biz.pkd}`} />
       </div>
 
@@ -295,8 +296,16 @@ export function BizOverviewScreen() {
       </Card>
 
       {biz.status === 'active' && !biz.closeOn && today >= biz.startDate && (
+        <>
+          <SuspensionCard />
+          <TaxFormCard />
+          <MalyZusCard />
+        </>
+      )}
+
+      {biz.status === 'active' && !biz.closeOn && today >= biz.startDate && (
         <Card title="Zakończenie działalności">
-          <p className="text-sm text-slate-400">Zakończenie następuje ostatniego dnia miesiąca, po zakończeniu trwających zleceń. Ostatnią zaliczkę i składki zapłacisz do 20. dnia następnego miesiąca, zeznanie roczne rozliczy podatek (do 30 kwietnia). Zawieszenie działalności nie jest jeszcze dostępne.</p>
+          <p className="text-sm text-slate-400">Zakończenie następuje ostatniego dnia miesiąca, po zakończeniu trwających zleceń. Ostatnią zaliczkę i składki zapłacisz do 20. dnia następnego miesiąca, zeznanie roczne rozliczy podatek (do 30 kwietnia).</p>
           <Button variant="danger" className="mt-3" onClick={confirmClose} data-testid="close-business">Zakończ działalność</Button>
         </Card>
       )}

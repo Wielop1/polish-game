@@ -1,10 +1,10 @@
 # FEATURE_EVOLUTION — rejestr rozwoju mechanik
 
-> **Trwały rejestr**: porównuje mechaniki zaimplementowane w v0.1–v0.3 z ich docelowym zachowaniem w realistycznym symulatorze polskiego przedsiębiorcy. Obowiązuje wszystkich agentów (`AGENTS.md` §0): przed zadaniem sprawdź pozycje, których ono dotyka; po zadaniu **zaktualizuj wyłącznie te pozycje** (status, stan obecny, brakujące funkcje) i dopisz nowe uproszczenia. **Nie usuwaj** pozycji ani pomysłów tylko dlatego, że nie należą do bieżącego etapu — zmień im status.
+> **Trwały rejestr**: porównuje mechaniki zaimplementowane w v0.1–v0.4 z ich docelowym zachowaniem w realistycznym symulatorze polskiego przedsiębiorcy. Obowiązuje wszystkich agentów (`AGENTS.md` §0): przed zadaniem sprawdź pozycje, których ono dotyka; po zadaniu **zaktualizuj wyłącznie te pozycje** (status, stan obecny, brakujące funkcje) i dopisz nowe uproszczenia. **Nie usuwaj** pozycji ani pomysłów tylko dlatego, że nie należą do bieżącego etapu — zmień im status.
 >
 > Kolumna „Etap” to **sugestia kolejności, nie termin**. Plan wersji: `IMPLEMENTATION_PLAN.md`.
 > Legenda statusu: ✅ zaimplementowane (może być uproszczone) · 🟡 częściowo · ⬜ nie rozpoczęte · ⏸ odłożone (wymaga weryfikacji źródeł/decyzji). Priorytet: **P1** — warunkuje realizm lub kolejne etapy, **P2** — ważne, **P3** — uzupełnienie.
-> Ostatnia aktualizacja: v0.3 (2026-10-18).
+> Ostatnia aktualizacja: v0.4 (2026-10-18).
 
 ## 1. Silnik, czas i dane
 
@@ -72,17 +72,19 @@
 
 | ID | Mechanika | Stan obecny | Docelowe zachowanie | Brakujące funkcje | Pr. | Zależności | Status | Etap |
 |---|---|---|---|---|---|---|---|---|
-| FE-TAX-01 | PIT dla JDG | Skala, liniowy, ryczałt (jedna stawka na profil); zaliczki narastająco, próg 1 000 zł, rozliczenie roczne jako saldo (30.04); metoda: data wystawienia | Pełny PIT: łączne rozliczenie z etatem, PIT-36/36L/28, zmiana formy opodatkowania, straty, ulgi, rozliczenie wspólne, metoda kasowa | Zmiana formy (kolejny rok), straty z lat ubiegłych, ulgi (IP Box, B+R, internetowa), kwartalne zaliczki, łączne rozliczenie etat+JDG, zaokrąglanie do zł, dokładne stawki ryczałtu wg PKWiU | P1 | LEGAL_SOURCES, FE-CORE-05 | 🟡 | v0.4 |
-| FE-TAX-02 | PIT od etatu | Netto = szacunek 73% brutto (placeholder) | Zweryfikowany kalkulator płac: składki pracownika, koszty uzyskania, kwota zmniejszająca, PIT-2, ulga dla młodych, PPK | Cały model brutto → netto, składki pracodawcy, roczne rozliczenie PIT-37 | P1 | LEGAL_SOURCES | ⬜ | v0.4 |
-| FE-ZUS-01 | Składki społeczne JDG | Standard (5 652 zł), preferencyjne (1 441,80 zł), ulga na start, zbieg z etatem; płatność do 20. dnia | + Mały ZUS Plus, wakacje składkowe, zawieszenie, część miesiąca (proporcje), zmiany podstaw w czasie | Mały ZUS Plus (zweryfikowane warunki), wakacje składkowe, składki za niepełny miesiąc, start w dowolnym dniu, zawieszenie | P1 | LEGAL_SOURCES | 🟡 | v0.4 |
+| FE-TAX-01 | PIT dla JDG | Skala, liniowy, ryczałt (jedna stawka na profil); zaliczki narastająco (zaokrąglone do zł), próg 1 000 zł; **roczne zeznanie** PIT-36 (skala: etat + JDG łącznie, 3 600 zł raz) / PIT-36L / PIT-28 / PIT-37, zapłata do 30.04, zwrot +45 dni; **straty** (5 lat, ≤ 50% rocznie, rejestr); **zmiana formy** od 1 stycznia z historią; metoda: data wystawienia | Pełny PIT: ulgi, rozliczenie wspólne, metoda kasowa, wyjątki | Ulgi (IP Box, B+R, internetowa), jednorazowe odliczenie straty (1 mln zł), kwartalne zaliczki, dokładne stawki ryczałtu wg PKWiU, wyjątki zaokrągleń (SIMPLIFIED), metoda kasowa, rozliczenie wspólne z małżonkiem | P1 | LEGAL_SOURCES, FE-CORE-05 | 🟡 | v0.5 |
+| FE-TAX-02 | PIT od etatu | **Kalkulator płac 2026** (`payroll.ts`): składki pracownika 9,76/1,5/2,45%, limit 30-krotności, zdrowotna 9%, koszty 250 zł, zaliczka 12%/32% narastająco z kwotą zmniejszającą (PIT-2), ulga dla młodych (do 26. urodzin, limit 85 528 zł), odcinki płacowe, przychód w roku wypłaty | Pełny kalkulator: PPK, składki pracodawcy, koszty podwyższone, kilku pracodawców, inne umowy (zlecenie, o dzieło) | PPK, składki pracodawcy (koszt pracodawcy), podwyższone koszty uzyskania (dojazd 300 zł), kilku pracodawców/PIT-2, inne tytuły (zlecenie), ulgi rodzinne, 13. pensja i premie | P1 | LEGAL_SOURCES | 🟡 | v0.5 |
+| FE-ZUS-01 | Składki społeczne JDG | Standard (5 652 zł), preferencyjne (1 441,80 zł), ulga na start, zbieg z etatem, **zawieszenie** (bez składek), **Mały ZUS Plus** (deklaracja gracza, warunki weryfikowane, coroczny przegląd 1 stycznia); płatność do 20. dnia | + wakacje składkowe, część miesiąca (proporcje), zmiany podstaw w czasie | Wakacje składkowe, składki za niepełny miesiąc, start w dowolnym dniu, MZP: podstawa dla dochodu ≥ płaca minimalna i FP/FS (DEFERRED) | P1 | LEGAL_SOURCES | 🟡 | v0.5 |
 | FE-ZUS-02 | Świadczenia z ZUS | Brak (chorobowa dobrowolna tylko jako składka) | Zasiłek chorobowy, macierzyński, emerytura (kapitał), renta | Świadczenia i okresy wyczekiwania, konto ubezpieczonego | P2 | FE-HEALTH-01 | ⬜ | v0.6 |
-| FE-ZUS-03 | Składka zdrowotna | Skala 9%, liniowy 4,9% (min. 432,54 zł), ryczałt wg 3 progów; podstawa: dochód poprzedniego miesiąca; brak rocznego rozliczenia | Pełna logika: roczne rozliczenie (dopłata/zwrot do 20 maja), wyjątek przy zbiegu z etatem, uproszczona podstawa | Roczne rozliczenie, wyjątek zbiegu, rozwiązania przy stracie | P1 | LEGAL_SOURCES | 🟡 | v0.4 |
+| FE-ZUS-03 | Składka zdrowotna | Skala 9%, liniowy 4,9% (min. 432,54 zł), ryczałt wg 3 progów; podstawa: dochód poprzedniego miesiąca; **roczne rozliczenie** (dopłata do 20 maja; nadpłata tylko na wniosek do 31 maja, wygasa bez gotówki), minimalna podstawa roczna 57 672 zł, miesiące zawieszenia pomijane | Pełna logika z wyjątkami | Wyjątek zbiegu z etatem, zwrot po terminie wniosku (niezweryfikowane), rozwiązania przy stracie | P1 | LEGAL_SOURCES | 🟡 | v0.5 |
+| FE-PLAN-01 | Planowanie finansowe | Ekran „Planowanie”: prognoza na **kopii stanu** (5+ scenariuszy: bez zmian, rezygnacja z etatu, połowa etatu, wyższe przychody, zmiana formy), jawne założenia, nic nie księguje | Rozbudowane planowanie: własne scenariusze, wrażliwość, zakupy, kredyt, cele | Własne scenariusze gracza, wykresy, porównanie wariantów formy z progami, scenariusze ryzyka (opóźnienie klienta) | P2 | FE-TAX-01 | 🟡 | v0.5 |
+| FE-REPORT-01 | Podsumowanie roku | Ekran „Podsumowanie roku”: wynik firmy (memoriał) oddzielony od przepływów właściciela, należności/zobowiązania, majątek netto | Pełne sprawozdanie: KPiR, rachunek zysków, eksport | KPiR/ewidencja ryczałtowa, eksport, porównania rok do roku | P2 | FE-BIZ-03 | 🟡 | v0.5 |
 
 ## 9. JDG, spółki i wspólnicy
 
 | ID | Mechanika | Stan obecny | Docelowe zachowanie | Brakujące funkcje | Pr. | Zależności | Status | Etap |
 |---|---|---|---|---|---|---|---|---|
-| FE-BIZ-01 | JDG | Jedna JDG, start 1. dnia miesiąca ≥ 02.2026, aktywna/zamknięta (koniec miesiąca), rachunek firmowy osoby fizycznej, wkład/pobranie; 4 profile usługowe z PKD 2025 | Wiele JDG, zawieszenie (≥ 30 dni), zmiana PKD/formy, współpraca z małżonkiem, zakończenie z rozliczeniem majątku | Zawieszenie i wznowienie, zmiana PKD/formy opodatkowania, wiele działalności, środki trwałe i amortyzacja, wyposażenie, ubezpieczenia OC | P1 | FE-TAX-01, FE-ZUS-01 | 🟡 | v0.4 |
+| FE-BIZ-01 | JDG | Jedna JDG, start 1. dnia miesiąca ≥ 02.2026, **zawieszenie/wznowienie** (od 1. dnia miesiąca, ≥ 30 dni, wyjątek lutowy; bez nowych zleceń, zobowiązania zostają), **zmiana formy od 1.01** z historią, aktywna/zamknięta, rachunek firmowy osoby fizycznej, wkład/pobranie; 4 profile usługowe z PKD 2025 | Wiele JDG, zmiana PKD, współpraca z małżonkiem, zakończenie z rozliczeniem majątku | Zmiana PKD, wiele działalności, środki trwałe i amortyzacja, wyposażenie, ubezpieczenia OC, zawieszenie z pracownikami/umowami | P1 | FE-TAX-01, FE-ZUS-01 | 🟡 | v0.5 |
 | FE-BIZ-02 | VAT | Zwolnienie podmiotowe vs czynny; limit 240 000 zł (proporcja w pełnych miesiącach); VAT należny/naliczony jako odrębne zobowiązania; stawka 23% | Pełny VAT: stawki 23/8/5/0, WDT/WNT, korekty, zwrot VAT, rozliczenie kwartalne, split payment, KSeF, JPK | Inne stawki, kwartalne rozliczenie, korekty, zwrot nadwyżki w terminach, KSeF, katalog wyłączeń art. 113 ust. 13 i ust. 2, limit po zmianie roku (utrata zwolnienia) | P1 | LEGAL_SOURCES | 🟡 | v0.4–v0.5 |
 | FE-BIZ-03 | Dokumenty | Rejestr sprzedaży/kosztów (numer, daty, netto/VAT/brutto, status płatności) — rekord symulacyjny, nie KSeF | Faktury, korekty, noty, paragony/kasa fiskalna, dokumenty kosztowe z rodzajem, ewidencje (KPiR), JPK | KPiR/ewidencja przychodów ryczałtowca, korekty, zaliczki, proformy, rodzaje kosztów (np. samochód), rozliczanie kosztów mieszanych | P2 | FE-BIZ-02 | 🟡 | v0.4–v0.5 |
 | FE-BIZ-04 | Spółki (sp. z o.o.) i wspólnicy | Brak | Spółka jako osoba prawna: kapitał, udziały, zarząd ≠ udziały ≠ dywidendy, CIT/estoński CIT, wypłaty, wspólnicy | Cała encja LegalEntity/Ownership/Mandate, CIT, dywidendy, uchwały, KRS | P1 | FE-BIZ-01, FE-TAX-01 | ⬜ | po prototypie |
@@ -115,30 +117,32 @@
 | ID | Mechanika | Stan obecny | Docelowe zachowanie | Brakujące funkcje | Pr. | Zależności | Status | Etap |
 |---|---|---|---|---|---|---|---|---|
 | FE-UI-01 | Interfejs | 3 grupy ekranów + System; responsywny; toasty; `window.confirm` do potwierdzeń | Spójny system dialogów, wykresy czasu, tabele z filtrami i eksportem, onboarding, dostępność, router i głębokie linki | Własne okna dialogowe, router (ADR-012), eksport CSV/PDF dokumentów, skróty klawiaturowe, testy komponentów, testy mobilne automatyczne | P2 | — | 🟡 | ciągle |
-| FE-SAVE-01 | Zapisy | IndexedDB, 3 sloty + autozapis, `SAVE_VERSION = 3`, migracje na realnych fixture, walidacja Zod + niezmienniki | Eksport/import pliku, synchronizacja opcjonalna, kompaktowanie historii, kopie zapasowe | Eksport/import JSON, kompaktowanie dziennej historii (~1,2–1,5 MB/10 lat), zapis synchroniczny przy zamknięciu karty | P2 | — | ✅ | v0.5 |
+| FE-SAVE-01 | Zapisy | IndexedDB, 3 sloty + autozapis, `SAVE_VERSION = 4`, migracje na realnych fixture, walidacja Zod + niezmienniki | Eksport/import pliku, synchronizacja opcjonalna, kompaktowanie historii, kopie zapasowe | Eksport/import JSON, kompaktowanie dziennej historii (~1,2–1,5 MB/10 lat), zapis synchroniczny przy zamknięciu karty | P2 | — | ✅ | v0.5 |
 | FE-PERF-01 | Wydajność | 120 miesięcy ≈ 0,9 s; miesiąc na 10-letnim stanie ≈ 13 ms; klonowanie stanu na akcję | Skalowanie do wielu podmiotów i tysięcy dokumentów | Indeksy po id (obligacje, dokumenty), Web Worker dla symulacji, kompaktowanie | P2 | FE-BIZ-04, FE-EMP-01 | ✅ | gdy potrzebne |
 | FE-TEST-01 | Testy | Jednostkowe (silnik, zapisy, migracje z realnych fixture), e2e (Playwright, Chromium) | Testy własności (property-based), testy regresji prawa na „przykładach wzorcowych” z urzędów, e2e mobilne | Property-based niezmienniki, wzorcowe przypadki podatkowe z interpretacji/kalkulatorów urzędowych, e2e telefon | P2 | FE-CORE-05 | 🟡 | ciągle |
 
-## 14. Uproszczenia v0.3 do rozwinięcia później (pełna lista)
+## 14. Uproszczenia do rozwinięcia później (pełna lista, stan po v0.4)
 
 Każde uproszczenie jest świadome i opisane w `LEGAL_SOURCES.md` lub `DECISIONS.md`. **Nie usuwać z listy bez wdrożenia.**
 
 1. **Start JDG tylko 1. dnia miesiąca, nie wcześniej niż 1.02.2026** — brak składek/zdrowotnej za niepełny miesiąc i brak zweryfikowanych kwot ryczałtowych za styczeń 2026 (FE-ZUS-01, FE-ZUS-03).
-2. **Jedna JDG naraz; brak zawieszenia** — zawieszenie wymaga weryfikacji skutków w ZUS (FE-BIZ-01).
-3. **Forma opodatkowania wybierana raz przy rejestracji** — bez zmiany w kolejnym roku (FE-TAX-01).
-4. **PIT przy równoległym etacie**: dochody z etatu nie są łączone z JDG; skala bez kwoty zmniejszającej, gdy był etat w roku (`PIT-SKALA-WITH-EMPLOYMENT`) (FE-TAX-01, FE-TAX-02).
-5. **Netto z etatu = szacunek 73% brutto**; brutto potrzebne do zbiegu tytułów (dla zapisów v1 — odwrotność szacunku) (FE-TAX-02).
+2. **Jedna JDG naraz.** ~~Brak zawieszenia~~ — zawieszenie wdrożone w v0.4 (całe miesiące od 1. dnia, ≥ 30 dni; bez pracowników/umów najmu firmowych; `SUSP-*`) (FE-BIZ-01).
+3. ~~Forma wybierana raz~~ — zmiana od 1 stycznia wdrożona w v0.4 (`PIT-FORM-CHANGE`); brak niuansów terminów zgłoszenia (liniowy do 20.02 itd. upraszczamy: zmiana zaplanowana przed 1.01) (FE-TAX-01).
+4. ~~PIT bez łączenia~~ — w v0.4 skala łączy etat i JDG w PIT-36 (kwota zmniejszająca raz); liniowy/ryczałt osobno od PIT-37 (`PIT-SKALA-WITH-EMPLOYMENT`). Brak rozliczenia wspólnego z małżonkiem (FE-TAX-01).
+5. ~~Netto = 73% brutto~~ — kalkulator płac od v0.4; wynagrodzenia sprzed migracji v3→v4 zachowują wypłaconą kwotę (`payrollFrom`, odcinki „legacy”). Brak PPK, składek pracodawcy, kilku pracodawców (FE-TAX-02).
 6. **Ryczałt: jedna stawka na profil** (zamiast wg PKWiU) i **PKD** dla 2 profilów zweryfikowane tylko częściowo (FE-TAX-01).
-7. **Brak zaokrąglania podatku do zł, strat z lat ubiegłych i ulg** (FE-TAX-01).
-8. **Rozliczenie roczne PIT jako saldo** (30.04) bez zeznania, zwrot nadpłaty z demonstracyjnym terminem 45 dni (FE-TAX-01).
-9. **Składka zdrowotna**: dochód miesiąca poprzedniego = przychód − koszty − składki społeczne; brak rocznego rozliczenia i wyjątku zbiegu (FE-ZUS-03).
-10. **ZUS**: stawka wypadkowa 1,67% dla każdego; brak Małego ZUS Plus i wakacji składkowych; dobrowolna chorobowa to tylko składka, bez świadczeń (FE-ZUS-01, FE-ZUS-02).
+7. **Zaokrąglenie do zł** wdrożone (SIMPLIFIED — oficjalny tekst nieczytelny); straty z lat ubiegłych wdrożone (5 lat/50%); **brak ulg** (IP Box, B+R, internetowa, prorodzinna) i jednorazowego odliczenia straty (FE-TAX-01).
+8. **Zeznania roczne** są rekordami (PIT-37/36/36L/28) z saldem i terminem; zwrot nadpłaty +45 dni od terminu składania (uproszczenie terminu), brak składania/korekt zeznań przez gracza (FE-TAX-01).
+9. **Składka zdrowotna**: podstawa miesięczna = dochód poprzedniego miesiąca; roczne rozliczenie wdrożone w v0.4; brak wyjątku zbiegu z etatem i zwrotu nadpłaty po terminie wniosku (FE-ZUS-03).
+10. **ZUS**: stawka wypadkowa 1,67% dla każdego; Mały ZUS Plus tylko dla zweryfikowanych warunków (opt-in); brak wakacji składkowych; dobrowolna chorobowa to tylko składka, bez świadczeń (FE-ZUS-01, FE-ZUS-02).
 11. **VAT**: jedna stawka 23%; limit proporcjonalny w pełnych miesiącach; przekroczenie limitu → kwota umowna traktowana jako netto; podatnik zwolniony nie odlicza; zwrot nadwyżki VAT naliczonego jako należność z terminem 25.; obowiązek podatkowy = data wystawienia (FE-BIZ-02).
 12. **Dokumenty** nie są fakturami KSeF; brak korekt, KPiR i ewidencji ryczałtowej (FE-BIZ-03).
 13. **Zlecenia**: oferty z szablonów, stała liczba profili (4), godziny rezerwowane każdego dnia (także w weekendy); klient zawsze płaci (z opóźnieniem 0–35 dni); brak negocjacji i reputacji (FE-BIZ-05, FE-BIZ-06).
 14. **Zakaz zleceń od pracodawców gracza** zamiast modelowania utraty ulg (FE-BIZ-05, `PIT-EMPLOYER-RESTRICTION`).
 15. **Zakończenie działalności tylko na koniec miesiąca**, po zakończeniu zleceń; brak wyrejestrowania ZUS/VAT-Z jako zdarzeń (FE-BIZ-01).
-16. **Lata po 2026**: reguły przenoszone z 2026 r. z flagą `carriedForward` (FE-CORE-05).
+16. **Lata po 2026**: reguły przenoszone z 2026 r. z flagą `carriedForward` (FE-CORE-05); **brak parametrów prawnych na 2027+ — model nie przełącza się automatycznie na 2027** (wymaga weryfikacji źródeł).
+17. **Odłożone w v0.4 (świadomie, nie zapomniane):** zaawansowane wyjątki podatkowe (np. ulgi, IP Box, składka zdrowotna a zbieg), **KSeF**, złożony VAT (stawki obniżone, kwartalnie, korekty, WDT/WNT), szczególne przypadki zatrudnienia (zlecenie, o dzieło, kilku pracodawców, PPK), kontrole skarbowe/ZUS, zaawansowane świadczenia i ulgi (rodzinne, chorobowe), brakujące lata parametrów prawnych (2027+).
+18. **Planowanie** to prognoza ze stałymi założeniami (stała sprzedaż, brak zdarzeń losowych i opóźnień klientów, 150 zł/h domyślnie); nie optymalizuje i nie zna przyszłych zmian przepisów (FE-PLAN-01).
 
 ## 15. Pomysły na przyszłość (zachowane)
 

@@ -20,7 +20,8 @@ test('praca: aplikacja pojawia się na liście i dostaje decyzję pracodawcy', a
   await startGame(page, 'e2e-v02');
   await nav(page, 'Oferty pracy');
   await expect(page.getByTestId('current-job')).toContainText('Pracownik biurowy');
-  await expect(page.getByTestId('current-job')).toContainText('szacunek'); // netto oznaczone jako szacunek
+  await expect(page.getByTestId('current-job')).toContainText('kalkulator'); // netto z kalkulatora płac (v0.4)
+  await expect(page.getByTestId('current-job')).toContainText('4 947,01');
   // brak kompetencji = brak szans, przycisk dalej działa (decyzja będzie odmowna)
   await page.getByTestId('apply-job:handlowiec').click();
   await expect(page.getByTestId('applications')).toContainText('w rozpatrywaniu');

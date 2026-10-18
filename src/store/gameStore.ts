@@ -7,7 +7,7 @@ import type { Grosze } from '../engine/money.ts';
 import { createNewGame, NewGameInputSchema } from '../engine/newGame.ts';
 import type { NewGameInput } from '../engine/newGame.ts';
 import { advanceOneDay, advanceToNextMonth } from '../engine/simulate.ts';
-import type { GameState, Lifestyle } from '../engine/state.ts';
+import type { GameState, Lifestyle, TaxForm } from '../engine/state.ts';
 import type { TimePlan } from '../engine/time.ts';
 import { createIndexedDbRepository, createMemoryRepository, createResilientRepository } from '../persistence/repository.ts';
 import type { SaveListItem, SaveRepository } from '../persistence/repository.ts';
@@ -17,6 +17,7 @@ export type Screen =
   | 'dashboard' | 'character' | 'finances' | 'calendar' | 'events'
   | 'jobs' | 'housing' | 'lifestyle' | 'time' | 'savings' | 'decisions'
   | 'bizRegister' | 'bizOverview' | 'bizOrders' | 'bizFinance' | 'bizTax' | 'bizDocs' | 'bizCalendar'
+  | 'bizSettlement' | 'bizReport' | 'planning'
   | 'game';
 
 export interface Notice {
@@ -69,6 +70,12 @@ interface GameStore {
   resolveLifeEvent: (eventId: string, optionId: string) => boolean;
   registerBusiness: (input: RegisterInput) => boolean;
   closeBusiness: () => boolean;
+  suspendBusiness: () => boolean;
+  resumeBusiness: (date: string) => boolean;
+  planTaxFormChange: (form: TaxForm) => boolean;
+  declareMalyZusPlus: () => boolean;
+  resignMalyZusPlus: () => boolean;
+  claimHealthRefund: (settlementId: string) => boolean;
   acceptServiceOffer: (offerId: string, hoursPerDay: number) => boolean;
   declineServiceOffer: (offerId: string) => boolean;
   saveToSlot: (slot: string) => Promise<void>;
@@ -165,6 +172,12 @@ export const useGameStore = create<GameStore>((set, get) => {
       return done;
     },
     closeBusiness: () => exec((g) => commands.closeBusiness(g)),
+    suspendBusiness: () => exec((g) => commands.suspendBusiness(g)),
+    resumeBusiness: (date) => exec((g) => commands.resumeBusiness(g, date)),
+    planTaxFormChange: (form) => exec((g) => commands.planTaxFormChange(g, form)),
+    declareMalyZusPlus: () => exec((g) => commands.declareMalyZusPlus(g)),
+    resignMalyZusPlus: () => exec((g) => commands.resignMalyZusPlus(g)),
+    claimHealthRefund: (id) => exec((g) => commands.claimHealthRefund(g, id)),
     acceptServiceOffer: (offerId, hoursPerDay) => exec((g) => commands.acceptServiceOffer(g, offerId, hoursPerDay)),
     declineServiceOffer: (offerId) => exec((g) => commands.declineServiceOffer(g, offerId)),
 

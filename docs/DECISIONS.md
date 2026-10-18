@@ -147,3 +147,25 @@ Statusy: *Zaakceptowana* · *Proponowana* (czeka na zatwierdzenie) · *Zastąpio
 
 ## ADR-032 · Rejestr rozwoju mechanik jako obowiązkowy dokument — *Zaakceptowana* (polecenie właściciela)
 **Decyzja:** `docs/FEATURE_EVOLUTION.md` porównuje mechaniki z docelowym zachowaniem; `AGENTS.md` wymaga sprawdzenia go przed zadaniem i aktualizacji tylko dotkniętych pozycji; pozycje i pomysły nie są usuwane. **Konsekwencje:** każde nowe uproszczenie musi trafić do §14.
+
+## ADR-033 · Kalkulator płac i `payrollFrom` (zgodność wsteczna) — *Zaakceptowana*
+**Decyzja:** netto z etatu liczy `payroll.ts` (składki, koszty, zaliczka narastająco, PIT-2, ulga dla młodych) zamiast szacunku 73%. Odcinki płacowe (`payslips`) są częścią stanu; przychód PIT liczy się w roku wypłaty. Zapisy v3: wynagrodzenia naliczone do dnia migracji zachowują wypłaconą kwotę (`settings.payrollFrom`, odcinki „legacy” materializowane leniwie) — historia się nie zmienia.
+**Konsekwencje:** zmiana netto dla nowych miesięcy; testy wzorcowe (4 806 zł → 3 605,85 zł).
+
+## ADR-034 · Rozliczenie roczne: łączny PIT-36 dla skali, osobne zeznania dla liniowego i ryczałtu — *Zaakceptowana*
+**Decyzja:** 31 grudnia powstają rekordy zeznań (`taxReturns`) z rozróżnieniem zaliczek pracodawcy, zaliczek własnych i zobowiązania rocznego; kwota zmniejszająca 3 600 zł raz. Dopłata (30.04) i zwrot (+45 dni) to obligacje; zwrot nie wpływa automatycznie „od razu”. Zaokrąglenie podstawy i podatku do zł (SIMPLIFIED).
+
+## ADR-035 · Straty podatkowe jako odrębny rejestr — *Zaakceptowana*
+**Decyzja:** `taxLosses` (rok, forma, kwota, odliczenia); 5 lat, ≤ 50% rocznie; strata podatkowa ≠ księgowa ≠ ujemny przepływ. Jednorazowe odliczenie 1 mln zł — DEFERRED.
+
+## ADR-036 · Roczna składka zdrowotna i wnioski o zwrot — *Zaakceptowana*
+**Decyzja:** dopłata jako zobowiązanie do 20 maja; nadpłata nie jest księgowana automatycznie — gracz składa wniosek (komenda) do 31 maja, inaczej wygasa. Powód: przepis wymaga wniosku; unikamy fikcyjnej gotówki.
+
+## ADR-037 · Zawieszenie, zmiana formy i Mały ZUS Plus jako jawne komendy — *Zaakceptowana*
+**Decyzja:** zawieszenie w całych miesiącach (≥ 30 dni), zmiana formy tylko od 1 stycznia z planem do anulowania i historią form, Mały ZUS Plus tylko przez deklarację gracza z weryfikacją warunków (nie „po cichu”). Niezweryfikowane warianty — DEFERRED (rejestr reguł).
+
+## ADR-038 · Planowanie jako prognoza na kopii stanu — *Zaakceptowana*
+**Decyzja:** `planning.ts` klonuje stan, wstrzykuje założone dokumenty i uruchamia ten sam silnik; nigdy nie zmienia stanu gry (test na równość snapshotu). UI oznacza wynik jako prognozę.
+
+## ADR-039 · SAVE_VERSION 4 i migracja v3 → v4 — *Zaakceptowana*
+**Decyzja:** `migrateV3ToV4` dodaje puste kolekcje (payslips, taxReturns, taxLosses, healthSettlements), historię formy, pola zawieszeń/MZP oraz `payrollFrom`; test na prawdziwym zapisie z v0.3 (fixture `save-v3.json`).

@@ -120,6 +120,10 @@ Sprawdzane w testach po każdym miesiącu symulacji oraz przy wczytywaniu zapisu
 
 **Wydarzenia życiowe.** ADR-023. Prawdopodobieństwa miesięczne (bazowe, w pkt bazowych): awaria 700 (jest najem, brak w ostatnich 60 dniach), niespodziewany wydatek 900, premia 500×wydajność (staż w firmie ≥ 60 dni, wydajność ≥ 70%), awans 300 (staż w firmie i na stanowisku ≥ 180 dni, wydajność ≥ 80%, bez awansu w 12 mies.), utrata pracy = suma czynników z `labor.ts` (wydajność 40/150, trudna sytuacja pracodawcy 50, recesja 50; 0 bez czynników; staż w firmie ≥ 90 dni — ADR-025), zlecenie 700 (mieści się 2 godz. dziennie przez 14 dni), kurs 400 (≥ 1 400 zł na rachunkach, mieści się 2 godz. dziennie przez 30 dni). Wszystkie wartości przykładowe.
 
+## 8a. Mechaniki v0.4 — płace, rozliczenia roczne, planowanie (skrót; ADR-033–039)
+
+Moduły: `payroll.ts` (kalkulator brutto → netto, odcinki płacowe), `annual.ts` (31.12: zeznania PIT-37/36/36L/28, straty, roczna zdrowotna, wnioski o zwrot), `business.ts` (zawieszenie, zmiana formy od 1.01, Mały ZUS Plus), `planning.ts` (prognoza na klonie stanu), `report.ts` (podsumowanie roku). Zaokrąglenia: składki do grosza, podstawa i podatek do zł. Dzienne przetwarzanie: `processDay` → płace → JDG (`closeMonth`) → `processAnnual` (31.12). Wszystkie operacje idempotentne (klucze `processed`).
+
 ## 8b. Mechaniki v0.3 — JDG (skrót; szczegóły i źródła: `LEGAL_SOURCES.md`, ADR-026–030)
 
 - **Ewidencja.** Zobowiązania mają `scope` (personal/business); JDG ma rachunek `type: 'business'` należący do osoby. Przelewy prywatne↔firma to `transferFunds`.
