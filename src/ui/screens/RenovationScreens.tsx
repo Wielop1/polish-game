@@ -17,6 +17,7 @@ import { businessLiquidity } from '../../engine/selectors.ts';
 import { liquidityForecast, teamLoad } from '../../engine/profitability.ts';
 import { activeEmployments, monthlyEmployerCost, wageOn } from '../../engine/workforce.ts';
 import { vehicleDef } from '../../engine/fleet.ts';
+import { subPrice } from '../../engine/subcontractors.ts';
 import { useGameStore } from '../../store/gameStore.ts';
 import { ProgressBar } from '../components/charts.tsx';
 import { Badge, Button, Card, Empty, Money, ScreenHeader, StatCard, cx, moneyTone } from '../components/ui.tsx';
@@ -250,6 +251,18 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   const num = (v: string) => (v.trim() === '' ? NaN : Number(v.replace(',', '.')));
   const setMarkup = (bps: number) => { const net = Math.round((p.planned.total * (10_000 + bps)) / 10_000 / 1_000) * 1_000; setPriceText(String(net / 100)); };
   const field = 'w-full rounded-xl border border-ink-600 bg-ink-900/80 px-3 py-2 text-slate-100 focus:border-sky focus:outline-none';
+  // podwykonawcy gotowi wziąć całe zlecenie (poziom jakości ≥ trudność), z ceną za 100% zakresu
+  const subLevel = (quality: number) => Math.max(1, Math.min(5, Math.round((quality - 40) / 10)));
+  const subOptions = game.ops.subcontractors.filter((x) => x.services.includes(enq.serviceId)).map((x) => ({ sub: x, price: subPrice(x, enq.serviceId, enq.units, enq.complexity, 10_000), fits: subLevel(x.quality) >= p.difficulty }));
+  const soleSub = q.teamId?.startsWith('sub:') ? q.teamId.slice(4) : null;
+  const ownerBlocked = !soleSub && (!q.teamId || !!game.ops.teams.find((tm) => tm.id === q.teamId)?.members.some((m) => m.kind === 'owner')) && p.errors.some((e) => /umiejętności|specjalizacji|sprzęt/i.test(e));
+  /** Zlecenie całości podwykonawcy jednym kliknięciem; jeśli cena nie pokrywa kosztów, ustawia ją z narzutem 25%. */
+  const outsource = (subId: string) => {
+    const next: QuoteInput = { ...q, teamId: `sub:${subId}`, supervision: 'supervise', priceNet: price ?? 0 };
+    set({ teamId: next.teamId, supervision: 'supervise' });
+    const np = previewQuote(game, next);
+    if (price === null || np.planned.total > next.priceNet) setPriceText(String(Math.round((np.planned.total * 12_500) / 10_000 / 1_000) * 10));
+  };
   return (
     <Card title={`Wycena: ${def.label}, ${enq.units} ${def.unit} (${enq.location})`} action={<Button variant="ghost" onClick={() => select(null)}>Zamknij</Button>}>
       <div className="grid gap-5 lg:grid-cols-2" data-testid="quote-builder">
@@ -269,12 +282,33 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
             <div><label htmlFor="q-term" className="mb-1 block text-xs text-slate-400">Termin płatności reszty (dni)</label><input id="q-term" className={field} value={q.paymentTermDays} onChange={(e) => set({ paymentTermDays: num(e.target.value) })} inputMode="numeric" /></div>
           </div>
           <div className="grid grid-cols-2 gap-3" data-testid="quote-crew">
-            <div><label htmlFor="q-team" className="mb-1 block text-xs text-slate-400">Wykonawcy</label><select id="q-team" className={field} value={q.teamId ?? ''} onChange={(e) => set({ teamId: e.target.value || null })}><option value="">Właściciel samodzielnie</option>{game.ops.teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}</select></div>
+            <div><label htmlFor="q-team" className="mb-1 block text-xs text-slate-400">Wykonawcy</label><select id="q-team" className={field} value={q.teamId ?? ''} onChange={(e) => set({ teamId: e.target.value || null })}><option value="">Właściciel samodzielnie</option>{game.ops.teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}{subOptions.length > 0 && <optgroup label="Zleć całość podwykonawcy">{subOptions.map(({ sub, price: sp, fits }) => <option key={sub.id} value={`sub:${sub.id}`} disabled={!fits}>{sub.name} — {formatPLN(sp, { round: true })} netto{fits ? '' : ' (za niski poziom)'}</option>)}</optgroup>}</select></div>
             <div><label htmlFor="q-veh" className="mb-1 block text-xs text-slate-400">Pojazd</label><select id="q-veh" className={field} value={q.vehicleId ?? ''} onChange={(e) => set({ vehicleId: e.target.value || null })}><option value="">bez pojazdu</option>{game.ops.vehicles.map((v) => <option key={v.id} value={v.id}>{vehicleDef(v).label}</option>)}</select></div>
             {q.teamId && !game.ops.teams.find((tm) => tm.id === q.teamId)?.members.some((m) => m.kind === 'owner') && (
               <div className="col-span-2"><label htmlFor="q-sup" className="mb-1 block text-xs text-slate-400">Nadzór właściciela</label><select id="q-sup" className={field} value={q.supervision ?? 'supervise'} onChange={(e) => set({ supervision: e.target.value as 'supervise' | 'hands-off' })}><option value="supervise">nadzoruje (1 godz. dziennie)</option><option value="hands-off">pełne delegowanie (bez godzin, większe ryzyko)</option></select></div>
             )}
           </div>
+          {(ownerBlocked || soleSub) && (
+            <div className="rounded-xl border border-gold/40 bg-gold/5 p-3 text-xs" data-testid="outsource-box">
+              {soleSub ? (
+                <p className="text-slate-300">Całość wykona podwykonawca. Po podpisaniu umowy dostaniesz jego ofertę do zaakceptowania w „Podwykonawcy” (oferta ważna 5 dni; zaliczka, jeśli ją stosuje, to przedpłata, nie koszt). Twoja rola: nadzór (1 godz. dziennie) albo pełne delegowanie.</p>
+              ) : (
+                <>
+                  <p className="mb-2 font-semibold text-gold">Nie możesz wykonać tego sam — zleć podwykonawcy, żeby nie stracić zlecenia:</p>
+                  {subOptions.filter((o) => o.fits).length === 0 ? <p className="text-slate-400">Żaden podwykonawca z puli nie ma wystarczających kompetencji do tego zakresu.</p> : (
+                    <ul className="space-y-1.5">
+                      {subOptions.filter((o) => o.fits).map(({ sub, price: sp }) => (
+                        <li key={sub.id} className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-slate-300">{sub.name} <span className="text-slate-500">· jakość {sub.quality}, niezawodność {Math.round(sub.reliabilityBps / 100)}%</span> · <strong>{formatPLN(sp, { round: true })}</strong> netto</span>
+                          <Button variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => outsource(sub.id)} data-testid={`outsource-${sub.id}`}>Zleć i wyceń</Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2 text-xs"><span className="self-center text-slate-400">Cena = koszt + narzut:</span>{[1_500, 2_500, 3_500].map((m) => <Button key={m} variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => setMarkup(m)}>{m / 100}%</Button>)}</div>
         </div>
         <div className="space-y-3 text-sm" data-testid="quote-preview">

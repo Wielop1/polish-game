@@ -17,7 +17,7 @@ import type { MaterialStandard as Std, ServiceDef } from './renovationCatalog.ts
 import { inventoryValue, equipmentValue } from './selectors.ts';
 import { budgetFor, firstOverload, performanceBps } from './time.ts';
 import { vehicleDef, useVehicle } from './fleet.ts';
-import { describeConflict, releaseJob, reserve, resourceBusy } from './teams.ts';
+import { describeConflict, ensureSubTeam, releaseJob, reserve, resourceBusy } from './teams.ts';
 import { ACTIVE_SUB, processSubcontracts, requestSubOffer, settleJobSubcontracts, subById, subPrice, subSpeedBps, subcontractsOfJob } from './subcontractors.ts';
 import { employmentActiveOn, employmentById, hoursPerWorkday, personById, personLevel, personName, personPerformanceBps } from './workforce.ts';
 import type {
@@ -262,7 +262,20 @@ export interface QuotePreview {
 }
 
 
+/** Wirtualny wykonawca „samego podwykonawcy”: `sub:<id>` — zlecenie całości firmie B2B bez zakładania ekipy w grze (ekipa powstaje dopiero przy wysłaniu oferty). */
+export const SOLE_SUB_PREFIX = 'sub:';
+export const soleSubId = (teamId: string | null | undefined): string | null => (teamId && teamId.startsWith(SOLE_SUB_PREFIX) ? teamId.slice(SOLE_SUB_PREFIX.length) : null);
+
 export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: boolean } = {}): QuotePreview {
+  const subId = soleSubId(i.teamId);
+  if (!subId) return previewQuoteInner(s, i, opts);
+  if (!s.ops.subcontractors.some((x) => x.id === subId)) return previewQuoteInner(s, { ...i, teamId: 'team:missing' }, opts);
+  // tymczasowa ekipa tylko do wyliczenia podglądu (usuwana w finally — stan gry po wywołaniu jest bez zmian)
+  s.ops.teams.push({ id: i.teamId!, name: 'podgląd', members: [{ kind: 'sub', id: subId }], createdOn: s.clock.today });
+  try { return previewQuoteInner(s, i, opts); } finally { s.ops.teams.pop(); }
+}
+
+function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boolean } = {}): QuotePreview {
   const def = SERVICE_BY_ID.get(i.serviceId);
   if (!def) throw new CommandError('Nieznana usługa.');
   const b = activeBusiness(s);
@@ -580,6 +593,8 @@ export function sendQuote(s: GameState, enquiryId: string, input: QuoteInput): s
   if (input.serviceId !== enq.serviceId || input.units !== enq.units || input.complexity !== enq.complexity) throw new CommandError('Oferta musi dotyczyć zakresu z zapytania.');
   const p = previewQuote(s, input, { forSending: true });
   if (p.errors.length) throw new CommandError(p.errors[0]!);
+  const soleSub = soleSubId(input.teamId);
+  if (soleSub) input = { ...input, teamId: ensureSubTeam(s, soleSub) };
   const n = nextCounter(s, 'reno:quote');
   const id = `quote:${n}`;
   const today = s.clock.today;
@@ -812,8 +827,24 @@ export function signContract(s: GameState, quoteId: string): string {
   setupCrew(s, job, order);
   reno(s).jobs.push(job);
   q.status = 'signed';
+  // wykonawcy-podwykonawcy: oferta od razu trafia do ekranu „Podwykonawcy” (gracz ją akceptuje; bez tego kontrakt nie ruszy)
+  const subMsgs = requestCrewSubOffers(s, job, team, ownerWorks);
   logEvent(s, { id: `reno.contract:${jobId}`, date: today, type: 'reno.contract', tone: 'positive', title: `Podpisano umowę: ${order.title}`, detail: `${enq.clientName} · ${formatPLN(q.priceNet)} netto · start ${formatDatePL(start)}, termin ${formatDatePL(deadline)} · ${advanceNet > 0 ? `zaliczka ${formatPLN(advanceNet)} netto (przychód po wykonaniu usługi)` : 'bez zaliczki'} · ${team ? `ekipa „${team.name}”` : 'wykonuje właściciel'} · kara za zwłokę ${DELAY_PENALTY_BPS_PER_WEEK / 100}% za każdy rozpoczęty tydzień (max ${DELAY_PENALTY_CAP_BPS / 100}%)`, amount: null, category: null });
-  return `Umowa podpisana. Prace od ${formatDatePL(start)}, termin ${formatDatePL(deadline)}. Kup materiały przed rozpoczęciem.`;
+  return `Umowa podpisana. Prace od ${formatDatePL(start)}, termin ${formatDatePL(deadline)}. Kup materiały przed rozpoczęciem.${subMsgs.length ? ` Podwykonawca przysłał ofertę — zaakceptuj ją w „Podwykonawcy”: ${subMsgs.join(' ')}` : ''}`;
+}
+
+/** Ekipa z podwykonawcami: dla każdego podwykonawcy w składzie bez aktywnej umowy prosimy o ofertę (do zaakceptowania w ekranie „Podwykonawcy”). */
+function requestCrewSubOffers(s: GameState, job: RenoJob, team: { members: { kind: string; id: string }[] } | undefined, ownerWorks: boolean): string[] {
+  const msgs: string[] = [];
+  for (const m of team?.members ?? []) {
+    if (m.kind !== 'sub') continue;
+    if (s.ops.subcontracts.some((c) => c.jobId === job.id && c.subId === m.id && ['offered', ...ACTIVE_SUB].includes(c.status))) continue;
+    const sub = subById(s, m.id)!;
+    if (!sub.services.includes(job.serviceId)) continue;
+    const workers = (team?.members ?? []).filter((x) => x.kind !== 'owner').length + (ownerWorks ? 1 : 0);
+    msgs.push(requestSubOffer(s, m.id, job.id, clamp(Math.floor(10_000 / Math.max(1, workers) / 500) * 500, 1_000, 10_000)));
+  }
+  return msgs;
 }
 
 /** Zmiana wykonawców kontraktu przed rozpoczęciem prac: ekipa (albo właściciel samodzielnie), nadzór i pojazd. */
@@ -830,16 +861,7 @@ export function assignCrew(s: GameState, jobId: string, teamId: string | null, s
   job.hoursPerDay = ownerWorks ? clamp(ownerHoursPerDay ?? (job.hoursPerDay || 4), 1, 8) : 1;
   order.hoursPerDay = job.hoursPerDay;
   setupCrew(s, job, order);
-  // ekipa z podwykonawcami: dla każdego podwykonawcy w składzie bez aktywnej umowy prosimy o ofertę (do zaakceptowania w ekranie „Podwykonawcy”)
-  const msgs: string[] = [];
-  for (const m of team?.members ?? []) {
-    if (m.kind !== 'sub') continue;
-    if (s.ops.subcontracts.some((c) => c.jobId === job.id && c.subId === m.id && ['offered', ...ACTIVE_SUB].includes(c.status))) continue;
-    const sub = subById(s, m.id)!;
-    if (!sub.services.includes(job.serviceId)) continue;
-    const workers = (team?.members ?? []).filter((x) => x.kind !== 'owner').length + (ownerWorks ? 1 : 0);
-    msgs.push(requestSubOffer(s, m.id, job.id, clamp(Math.floor(10_000 / Math.max(1, workers) / 500) * 500, 1_000, 10_000)));
-  }
+  const msgs = requestCrewSubOffers(s, job, team, ownerWorks);
   logEvent(s, { id: `crew.assignment:${job.id}:${s.clock.today}:${teamId ?? 'owner'}`, date: s.clock.today, type: 'crew.assignment', tone: 'neutral', title: `Przydzielono wykonawców: ${job.clientName.split(' (')[0]}`, detail: team ? `Ekipa „${team.name}”, nadzór: ${job.crew.supervision === 'worker' ? 'właściciel pracuje' : job.crew.supervision === 'supervise' ? 'nadzoruje (1 godz./dzień)' : 'bez nadzoru'}` : 'Właściciel wykonuje samodzielnie', amount: null, category: null });
   return `Wykonawcy przydzieleni${msgs.length ? `. ${msgs.join(' ')}` : '.'}`;
 }

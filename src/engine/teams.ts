@@ -83,6 +83,17 @@ export function createTeam(s: GameState, name: string, members: TeamMember[]): s
   return `Ekipa „${n}” utworzona (${members.length} osób).`;
 }
 
+/** Ekipa złożona wyłącznie z jednego podwykonawcy (zlecenie całości); tworzona przy pierwszym użyciu. Zwraca id ekipy. */
+export function ensureSubTeam(s: GameState, subId: string): string {
+  const existing = s.ops.teams.find((t) => t.members.length === 1 && t.members[0]!.kind === 'sub' && t.members[0]!.id === subId);
+  if (existing) return existing.id;
+  const sub = s.ops.subcontractors.find((x) => x.id === subId);
+  if (!sub) throw new CommandError('Nieznany podwykonawca.');
+  const name = `Zlecenie: ${sub.name}`.slice(0, 60);
+  createTeam(s, s.ops.teams.some((t) => t.name.toLowerCase() === name.toLowerCase()) ? `${name.slice(0, 55)} (2)` : name, [{ kind: 'sub', id: subId }]);
+  return s.ops.teams.at(-1)!.id;
+}
+
 export function updateTeam(s: GameState, teamId: string, members: TeamMember[]): string {
   requireBusiness(s);
   const t = s.ops.teams.find((x) => x.id === teamId);

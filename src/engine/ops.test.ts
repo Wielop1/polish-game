@@ -585,3 +585,42 @@ const businessSummaries0 = (s: GameState, month: string) => {
   return rev;
 };
 void personById;
+
+describe('11. zlecenie całości podwykonawcy z poziomu wyceny (za niski poziom / brak specjalizacji)', () => {
+  const panele = (s: GameState) => {
+    const enq = craftEnquiry(s, { serviceId: 'panele', units: 40, complexity: 'standard', maxDays: 60 });
+    return { enq, q: { ...defaultQuoteInput(s, enq), startDate: addDays(s.clock.today, 10), durationDays: 40 } };
+  };
+
+  it('bez specjalizacji właściciel samodzielnie nie wyśle oferty, ale „sub:<id>” przechodzi bez zakładania ekipy w podglądzie', () => {
+    const s = opsGame();
+    const { q } = panele(s);
+    expect(previewQuote(s, q).errors.join(' ')).toMatch(/specjalizacji/);
+    const subId = s.ops.subcontractors.find((x) => x.services.includes('panele') && x.quality >= 75)!.id;
+    const teamsBefore = s.ops.teams.length;
+    const p = previewQuote(s, { ...q, teamId: `sub:${subId}`, priceNet: zl(9_000) });
+    expect(p.errors).toEqual([]);
+    expect(p.planned.labor).toBeGreaterThan(0);
+    expect(s.ops.teams.length).toBe(teamsBefore); // podgląd nie zmienia stanu
+  });
+
+  it('wysłanie oferty tworzy jednoosobową ekipę podwykonawcy (raz), a podpisanie umowy zamawia jego ofertę', () => {
+    const s0 = opsGame();
+    const { q } = panele(s0);
+    const subId = s0.ops.subcontractors.find((x) => x.services.includes('panele') && x.quality >= 75)!.id;
+    const { s, job } = contract(s0, { enquiry: { serviceId: 'panele', units: 40, complexity: 'standard', maxDays: 60 }, quote: { ...q, teamId: `sub:${subId}`, priceNet: zl(14_000), supervision: 'supervise' } });
+    const team = s.ops.teams.find((t) => t.id === job.crew.teamId)!;
+    expect(team.members).toEqual([{ kind: 'sub', id: subId }]);
+    expect(s.ops.subcontracts.some((c) => c.jobId === job.id && c.subId === subId && c.status === 'offered')).toBe(true);
+    // druga oferta z tym samym podwykonawcą używa tej samej ekipy
+    const again = contract(s, { enquiry: { serviceId: 'panele', units: 40, complexity: 'standard', maxDays: 60 }, quote: { ...q, startDate: addDays(s.clock.today, 70), teamId: `sub:${subId}`, priceNet: zl(14_000) }, sign: false });
+    expect(again.s.ops.teams.filter((t) => t.members.length === 1 && t.members[0]!.id === subId).length).toBe(1);
+    expect(checkInvariants(s)).toEqual([]);
+  });
+
+  it('nieznany podwykonawca daje błąd, nie wyjątek', () => {
+    const s = opsGame();
+    const { q } = panele(s);
+    expect(previewQuote(s, { ...q, teamId: 'sub:sub:nie-ma', priceNet: zl(9_000) }).errors.join(' ')).toMatch(/ekipy/);
+  });
+});
