@@ -1,3 +1,5 @@
+import './industries.ts';
+import { processAccounting } from './accounting.ts';
 import { addDays, ageOn, diffDays, firstOfNextMonth, formatDatePL } from './date.ts';
 import type { IsoDate } from './date.ts';
 import { accountById, createObligation, logEvent, partyName, periodLabel, postTransaction, recordHistory } from './core.ts';
@@ -208,6 +210,7 @@ export function processDay(s: GameState, date: IsoDate): void {
   applyScheduledOccurrences(s, date);
   rollLifeEvents(s, date);
   processBusiness(s, date);
+  for (const b of s.businesses) if (b.status === 'active' && date >= b.startDate) processAccounting(s, b, date);
   processAnnual(s, date);
   settleDueObligations(s, date);
   updateFatigue(s, date);

@@ -137,3 +137,20 @@ export function migrateV3ToV4(raw: unknown): unknown {
   s.healthSettlements = [];
   return s;
 }
+
+/**
+ * v4 → v5: moduł branżowy (remonty) i księgowość. Dokumenty dotychczas wystawione to „całość” (nie zaliczki),
+ * zlecenia v0.3 to zwykłe zlecenia szablonowe; nowe kolekcje są puste. Historia finansowa pozostaje nietknięta.
+ */
+export function migrateV4ToV5(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) throw new Error('Zapis v4 ma nieprawidłową strukturę stanu.');
+  const s = structuredClone(raw) as Json;
+  for (const d of s.documents as Json[]) d.part = 'full';
+  for (const o of s.serviceOrders as Json[]) o.kind = 'service';
+  s.reno = {
+    specializations: [], skillXp: {}, advertising: { level: 'none', since: null, paidMonth: null }, enquiries: [], quotes: [], jobs: [],
+    equipment: [], stock: {}, stockMoves: [], reviews: [], complaints: [],
+  };
+  s.accounting = { office: null, history: [], lastFeeMonth: null, suggestions: [] };
+  return s;
+}

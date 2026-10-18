@@ -36,6 +36,10 @@ export interface YearReport {
   netWorthEnd: Grosze;
   netWorthChange: Grosze;
   taxLossCreated: Grosze;
+  /** Zmiana wartości zapasów materiałów w roku (zakupy − zużycie; moduł branżowy). */
+  inventoryChange: Grosze;
+  /** Wynik ekonomiczny = wynik firmy + zmiana zapasów (zakup materiałów jest kosztem podatkowym od razu, kosztem ekonomicznym dopiero przy zużyciu). */
+  economicResult: Grosze;
   ruleIds: string[];
 }
 
@@ -58,7 +62,7 @@ export function yearReport(s: GameState, year: number): YearReport {
   const r: YearReport = {
     year, asOf, complete: s.clock.today >= yEnd, hasBusiness: s.businesses.length > 0, revenue: 0, costs: 0, income: 0, zus: 0, pit: 0, result: 0,
     customerPayments: 0, cashOut: 0, ownerContributions: 0, ownerWithdrawals: 0, vatPaidNet: 0, receivables: 0, payables: 0, businessCash: 0,
-    salaryNet: 0, privateExpenses: 0, netWorthStart: 0, netWorthEnd: 0, netWorthChange: 0, taxLossCreated: 0, ruleIds: [],
+    salaryNet: 0, privateExpenses: 0, netWorthStart: 0, netWorthEnd: 0, netWorthChange: 0, taxLossCreated: 0, inventoryChange: 0, economicResult: 0, ruleIds: [],
   };
   for (const o of s.obligations) {
     if (o.scope === 'business') {
@@ -93,6 +97,8 @@ export function yearReport(s: GameState, year: number): YearReport {
   }
   r.income = r.revenue - r.costs;
   r.result = r.income - r.zus - r.pit;
+  r.inventoryChange = s.reno.stockMoves.filter((m) => inYear(m.date) && m.date <= asOf).reduce((a, m) => a + m.value, 0);
+  r.economicResult = r.result + r.inventoryChange;
   r.taxLossCreated = s.taxLosses.filter((l) => l.year === year).reduce((a, l) => a + l.amount, 0);
   r.ruleIds = [...new Set(s.taxReturns.filter((x) => x.year === year).flatMap((x) => x.ruleIds))].sort();
   const pts = s.history;

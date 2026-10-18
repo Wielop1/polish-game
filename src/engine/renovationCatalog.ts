@@ -1,0 +1,193 @@
+import { zl } from './money.ts';
+import type { Grosze } from './money.ts';
+
+/**
+ * Katalog branży remontowo-wykończeniowej (v0.5).
+ * WSZYSTKIE ceny, stawki, normy czasu i zużycia materiałów to PARAMETRY SYMULACYJNE (placeholder) — nie oficjalny
+ * cennik remontów w Polsce i nie dane rynkowe. Po zawarciu umowy warunki są kopiowane do stanu (kontrakt, wycena),
+ * więc zmiana tego pliku nie zmienia istniejących zapisów.
+ */
+
+export type MaterialStandard = 'eko' | 'std' | 'premium';
+export type Complexity = 'standard' | 'trudne';
+
+export const STANDARDS: Record<MaterialStandard, { label: string; priceBps: number; quality: number; /** Poziom wymagań klienta, który ten standard zaspokaja (1–3). */ level: number }> = {
+  eko: { label: 'Ekonomiczny', priceBps: 8_000, quality: -7, level: 1 },
+  std: { label: 'Standard', priceBps: 10_000, quality: 0, level: 2 },
+  premium: { label: 'Premium', priceBps: 13_500, quality: 7, level: 3 },
+};
+
+export const QUALITY_REQ_LABEL: Record<number, string> = { 1: 'podstawowe', 2: 'dobre', 3: 'wysokie' };
+/** Minimalny wynik jakości (0–100), którego klient oczekuje przy danym poziomie wymagań. */
+export const QUALITY_THRESHOLD: Record<number, number> = { 1: 55, 2: 68, 3: 80 };
+
+export const COMPLEXITY_LABEL: Record<Complexity, string> = { standard: 'standardowe', trudne: 'trudne (nierówne podłoże, utrudniony dostęp)' };
+/** Mnożnik normy czasu (pkt bazowe) i dodatkowy poziom wymaganych umiejętności. */
+export const COMPLEXITY_HOURS_BPS: Record<Complexity, number> = { standard: 10_000, trudne: 12_500 };
+
+export interface MaterialDef {
+  id: string;
+  label: string;
+  unit: string;
+  /** Cena netto jednostki w standardzie „Standard”. */
+  priceNet: Grosze;
+}
+
+export const MATERIALS: readonly MaterialDef[] = [
+  { id: 'farba', label: 'Farba do ścian i sufitów', unit: 'l', priceNet: zl(24) },
+  { id: 'tasma-folia', label: 'Taśma i folia ochronna (zestaw)', unit: 'kpl.', priceNet: zl(18) },
+  { id: 'gladz', label: 'Gładź szpachlowa', unit: 'kg', priceNet: zl(1.6) },
+  { id: 'grunt', label: 'Grunt', unit: 'l', priceNet: zl(9) },
+  { id: 'papier', label: 'Papier ścierny i siatki (opak.)', unit: 'opak.', priceNet: zl(22) },
+  { id: 'panele', label: 'Panele podłogowe', unit: 'm²', priceNet: zl(55) },
+  { id: 'podklad', label: 'Podkład pod panele', unit: 'm²', priceNet: zl(7) },
+  { id: 'listwy', label: 'Listwy przypodłogowe', unit: 'mb', priceNet: zl(9) },
+  { id: 'drobne', label: 'Drobne materiały montażowe (zestaw)', unit: 'kpl.', priceNet: zl(40) },
+];
+export const MATERIAL_BY_ID = new Map(MATERIALS.map((m) => [m.id, m]));
+
+export interface EquipmentDef {
+  id: string;
+  label: string;
+  category: 'ręczne' | 'elektronarzędzia' | 'specjalistyczny' | 'transport';
+  priceNet: Grosze;
+  /** Trwałość: liczba godzin pracy do zużycia (stan techniczny 100% → 0%). */
+  durabilityHours: number;
+  /** Koszt konserwacji (przywraca 30 pkt proc. stanu). */
+  maintenanceNet: Grosze;
+  /** Wpływ na wydajność wybranych usług (pkt bazowe) — dla pozostałych 0. */
+  speedBps: Record<string, number>;
+  /** Dodatek do jakości (punkty) — dla usług z mapy, `*` = wszystkie. */
+  quality: Record<string, number>;
+  /** Redukcja kosztu dojazdu/transportu (pkt bazowe). */
+  transportSaveBps?: number;
+}
+
+export const EQUIPMENT: readonly EquipmentDef[] = [
+  { id: 'hand-tools', label: 'Zestaw narzędzi ręcznych', category: 'ręczne', priceNet: zl(900), durabilityHours: 2_500, maintenanceNet: zl(90), speedBps: {}, quality: {} },
+  { id: 'paint-basic', label: 'Zestaw malarski (wałki, pędzle, drabina)', category: 'ręczne', priceNet: zl(650), durabilityHours: 2_000, maintenanceNet: zl(65), speedBps: {}, quality: {} },
+  { id: 'trowel-set', label: 'Zestaw szpachli, pac i mieszadło', category: 'ręczne', priceNet: zl(700), durabilityHours: 2_000, maintenanceNet: zl(70), speedBps: {}, quality: {} },
+  { id: 'panel-kit', label: 'Zestaw do paneli (dobijaki, ściągi, klocki)', category: 'ręczne', priceNet: zl(450), durabilityHours: 2_000, maintenanceNet: zl(45), speedBps: {}, quality: {} },
+  { id: 'drill', label: 'Wkrętarka akumulatorowa', category: 'elektronarzędzia', priceNet: zl(500), durabilityHours: 1_800, maintenanceNet: zl(50), speedBps: { '*': 800 }, quality: {} },
+  { id: 'laser', label: 'Poziomica laserowa', category: 'elektronarzędzia', priceNet: zl(350), durabilityHours: 3_000, maintenanceNet: zl(35), speedBps: {}, quality: { '*': 3 } },
+  { id: 'sander', label: 'Szlifierka do gipsu z odciągiem', category: 'specjalistyczny', priceNet: zl(2_400), durabilityHours: 1_500, maintenanceNet: zl(240), speedBps: { gladzie: 2_500 }, quality: { gladzie: 6 } },
+  { id: 'sprayer', label: 'Agregat malarski natryskowy', category: 'specjalistyczny', priceNet: zl(3_800), durabilityHours: 1_200, maintenanceNet: zl(380), speedBps: { malowanie: 3_500 }, quality: { malowanie: 4 } },
+  { id: 'miter-saw', label: 'Ukośnica do cięcia listew i paneli', category: 'specjalistyczny', priceNet: zl(1_400), durabilityHours: 1_800, maintenanceNet: zl(140), speedBps: { panele: 2_500 }, quality: { panele: 4 } },
+  { id: 'roof-rack', label: 'Bagażnik dachowy i wózek transportowy', category: 'transport', priceNet: zl(700), durabilityHours: 3_000, maintenanceNet: zl(70), speedBps: {}, quality: {}, transportSaveBps: 3_000 },
+  { id: 'trailer', label: 'Przyczepka towarowa', category: 'transport', priceNet: zl(5_500), durabilityHours: 4_000, maintenanceNet: zl(400), speedBps: {}, quality: {}, transportSaveBps: 5_500 },
+];
+export const EQUIPMENT_BY_ID = new Map(EQUIPMENT.map((e) => [e.id, e]));
+
+export interface ServiceDef {
+  id: string;
+  label: string;
+  description: string;
+  /** Jednostka rozliczeniowa. */
+  unit: 'm²' | 'godz.';
+  /** Norma czasu: setne godziny na jednostkę (pracy w standardowej wydajności). */
+  normCentiPerUnit: number;
+  /** 1 = łatwe … 3 = trudne; poziom umiejętności wymagany do przyjęcia zlecenia = trudność + (trudne ? 1 : 0). */
+  difficulty: 1 | 2 | 3;
+  /** Zużycie materiałów na 100 jednostek (w jednostkach materiału; zawiera typowy odpad). */
+  materialsPer100: { materialId: string; qty: number }[];
+  requiredEquipment: string[];
+  /** Orientacyjna cena rynkowa netto za jednostkę (materiały + robocizna + marża) — PARAMETR SYMULACYJNY. */
+  referencePerUnit: Grosze;
+  qtyRange: [number, number];
+  risks: string[];
+  /** Typowa dzienna stawka dojazdu/transportu (netto). */
+  transportPerDay: Grosze;
+}
+
+export const SERVICES: readonly ServiceDef[] = [
+  {
+    id: 'malowanie', label: 'Malowanie ścian i sufitów', description: 'Zabezpieczenie, gruntowanie i dwukrotne malowanie pomieszczeń.',
+    unit: 'm²', normCentiPerUnit: 30, difficulty: 1,
+    materialsPer100: [{ materialId: 'farba', qty: 32 }, { materialId: 'tasma-folia', qty: 7 }],
+    requiredEquipment: ['paint-basic'], referencePerUnit: zl(34), qtyRange: [30, 140], transportPerDay: zl(35),
+    risks: ['nierówne podłoże wymagające dodatkowego gruntowania', 'zmiana koloru przez klienta', 'wilgoć na ścianach'],
+  },
+  {
+    id: 'gladzie', label: 'Gładzie i szpachlowanie', description: 'Dwuwarstwowe gładzie gipsowe ze szlifowaniem, przygotowanie ścian pod malowanie.',
+    unit: 'm²', normCentiPerUnit: 55, difficulty: 2,
+    materialsPer100: [{ materialId: 'gladz', qty: 250 }, { materialId: 'grunt', qty: 15 }, { materialId: 'papier', qty: 5 }],
+    requiredEquipment: ['trowel-set'], referencePerUnit: zl(48), qtyRange: [25, 120], transportPerDay: zl(35),
+    risks: ['ukryte ubytki i pęknięcia tynku', 'kurz i konieczność dodatkowego sprzątania', 'zbyt wilgotne podłoże'],
+  },
+  {
+    id: 'panele', label: 'Montaż paneli podłogowych', description: 'Rozłożenie podkładu, montaż paneli i listew przypodłogowych.',
+    unit: 'm²', normCentiPerUnit: 40, difficulty: 2,
+    materialsPer100: [{ materialId: 'panele', qty: 108 }, { materialId: 'podklad', qty: 105 }, { materialId: 'listwy', qty: 60 }],
+    requiredEquipment: ['panel-kit'], referencePerUnit: zl(118), qtyRange: [15, 80], transportPerDay: zl(45),
+    risks: ['nierówna wylewka', 'błędy cięcia i większy odpad', 'opóźniona dostawa paneli'],
+  },
+  {
+    id: 'drobne', label: 'Drobne prace wykończeniowe', description: 'Montaż listew, uszczelnienia, drobne poprawki i naprawy — rozliczane godzinowo.',
+    unit: 'godz.', normCentiPerUnit: 100, difficulty: 1,
+    materialsPer100: [{ materialId: 'drobne', qty: 12 }],
+    requiredEquipment: ['hand-tools'], referencePerUnit: zl(95), qtyRange: [6, 40], transportPerDay: zl(30),
+    risks: ['zakres rozszerzany w trakcie prac', 'brak dostępu do lokalu w umówionym terminie'],
+  },
+];
+export const SERVICE_BY_ID = new Map(SERVICES.map((s) => [s.id, s]));
+
+/** Szkolenie dla dodatkowej specjalizacji (wydatek firmy). */
+export const SPECIALIZATION_COURSE: Grosze = zl(1_800);
+
+/** Progi umiejętności (godziny efektywnej pracy) dla poziomów 3, 4, 5; poziom 2 = start specjalizacji. */
+export const SKILL_THRESHOLD_CENTI = [20_000, 50_000, 110_000] as const;
+export const SKILL_START_CENTI = 4_000;
+export const SKILL_SPEED_BPS = [0, 8_500, 10_000, 11_200, 12_200, 13_000] as const;
+export const SKILL_QUALITY = [0, 52, 64, 72, 80, 87] as const;
+
+export const DISTRICTS = ['Śródmieście', 'Zatorze', 'Jaroty', 'Nagórki', 'Pieczewo', 'Kortowo', 'Dajtki', 'Podleśna', 'Likusy', 'Mazurskie'] as const;
+export const CLIENT_NAMES = ['Anna W.', 'Marek K.', 'Ewa N.', 'Piotr Z.', 'Joanna S.', 'Tomasz B.', 'Karolina M.', 'Paweł D.', 'Magdalena L.', 'Robert G.', 'Agnieszka T.', 'Krzysztof R.'] as const;
+
+export interface AdvertisingDef { id: 'none' | 'local' | 'intensive'; label: string; monthlyNet: Grosze; leadBps: number }
+export const ADVERTISING: readonly AdvertisingDef[] = [
+  { id: 'none', label: 'Bez reklamy (polecenia i wizytówki)', monthlyNet: 0, leadBps: 10_000 },
+  { id: 'local', label: 'Reklama lokalna (ogłoszenia, social media)', monthlyNet: zl(400), leadBps: 16_000 },
+  { id: 'intensive', label: 'Reklama intensywna (kampania + portale)', monthlyNet: zl(1_100), leadBps: 23_000 },
+];
+
+/** Sezonowość popytu (miesiąc 1–12), pkt bazowe. PARAMETR SYMULACYJNY. */
+export const SEASONALITY_BPS = [0, 7_000, 8_000, 9_500, 11_000, 11_500, 10_500, 10_000, 10_000, 11_500, 12_000, 9_500, 7_000] as const;
+
+/** Bazowa dzienna szansa na nowe zapytanie (pkt bazowe, przed modyfikatorami). */
+export const BASE_ENQUIRY_BPS = 900;
+export const MAX_OPEN_ENQUIRIES = 6;
+
+export const OWN_LABOR_RATE_DEFAULT: Grosze = zl(60);
+export const OTHER_COSTS_BPS = 400;
+export const DELAY_PENALTY_BPS_PER_WEEK = 200;
+export const DELAY_PENALTY_CAP_BPS = 1_500;
+export const COMPLAINT_WINDOW_DAYS = 14;
+export const CANCEL_AFTER_DEADLINE_DAYS = 45;
+
+/** Plany obsługi księgowej (oferty biur rachunkowych — FIKCYJNE, parametry symulacyjne). */
+export interface AccountingPlan {
+  id: string;
+  office: string;
+  label: string;
+  monthlyNet: Grosze;
+  description: string;
+  features: { reminders: boolean; gaps: boolean; autoClaim: boolean; formComparison: boolean };
+}
+export const ACCOUNTING_PLANS: readonly AccountingPlan[] = [
+  {
+    id: 'start', office: 'Biuro Rachunkowe „Łyna” (fikcyjne)', label: 'Pakiet Start', monthlyNet: zl(280),
+    description: 'Prowadzenie ewidencji i przypomnienia o terminach ZUS, PIT i VAT.',
+    features: { reminders: true, gaps: false, autoClaim: false, formComparison: false },
+  },
+  {
+    id: 'standard', office: 'Biuro Rachunkowe „Łyna” (fikcyjne)', label: 'Pakiet Standard', monthlyNet: zl(520),
+    description: 'Start + powiadomienia o brakach (brak środków na zobowiązania, zaległe należności, brak materiałów) + wnioski o zwrot nadpłaty składki zdrowotnej w terminie.',
+    features: { reminders: true, gaps: true, autoClaim: true, formComparison: false },
+  },
+  {
+    id: 'plus', office: 'Centrum Księgowe „Kormoran” (fikcyjne)', label: 'Pakiet Plus', monthlyNet: zl(890),
+    description: 'Standard + coroczne porównanie form opodatkowania przed końcem roku (obliczenia silnika gry — informacja, nie doradztwo podatkowe).',
+    features: { reminders: true, gaps: true, autoClaim: true, formComparison: true },
+  },
+];
+export const ACCOUNTING_PLAN_BY_ID = new Map(ACCOUNTING_PLANS.map((p) => [p.id, p]));

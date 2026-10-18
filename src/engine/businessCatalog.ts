@@ -29,10 +29,23 @@ export interface BusinessProfile {
   pkdName: string;
   ryczaltRateBps: number;
   ryczaltCategory: string;
+  /** Moduł branżowy (v0.5) obsługujący profil — zamiast szablonów zleceń v0.3. */
+  industry?: string;
   templates: ServiceTemplate[];
 }
 
 export const BUSINESS_PROFILES: readonly BusinessProfile[] = [
+  {
+    id: 'remonty',
+    label: 'Usługi remontowo-wykończeniowe',
+    description: 'Malowanie, gładzie, montaż paneli i drobne prace wykończeniowe dla klientów indywidualnych. Moduł branżowy: zapytania, wyceny, negocjacje, kontrakty, materiały, sprzęt, reputacja.',
+    pkd: '43.34.Z',
+    pkdName: 'Malowanie i szklenie',
+    ryczaltRateBps: 550,
+    ryczaltCategory: 'roboty budowlane',
+    industry: 'renovation',
+    templates: [],
+  },
   {
     id: 'it-programowanie',
     label: 'Programowanie i tworzenie oprogramowania',

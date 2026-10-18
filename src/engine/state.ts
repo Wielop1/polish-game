@@ -245,6 +245,16 @@ export const EventTypeSchema = z.enum([
   'tax.return',
   'tax.health',
   'tax.loss',
+  'reno.enquiry',
+  'reno.quote',
+  'reno.contract',
+  'reno.work',
+  'reno.issue',
+  'reno.review',
+  'reno.complaint',
+  'reno.stock',
+  'accounting.notice',
+  'accounting.contract',
 ]);
 
 export const GameEventSchema = z.object({
@@ -466,6 +476,8 @@ export const ServiceOrderSchema = z.object({
   commitmentId: IdSchema,
   /** Czy zlecenie zakończono po terminie (kara umowna zmniejszyła wartość). */
   late: z.boolean(),
+  /** `renovation` = kontrakt branżowy (v0.5), realizowany przez moduł branżowy; `service` = szablonowe zlecenie v0.3. */
+  kind: z.enum(['service', 'renovation']),
 });
 
 /** Rekord sprzedaży/kosztu. UWAGA: to symulacyjny rekord, nie faktura w rozumieniu KSeF. */
@@ -489,6 +501,8 @@ export const DocumentSchema = z.object({
   obligationIds: z.array(IdSchema),
   /** Kwota stanowiąca przychód (sprzedaż) albo koszt uzyskania przychodu (koszt) dla podatku dochodowego. */
   taxAmount: PositiveGroszeSchema,
+  /** `advance` = zaliczka (odrębny dokument), `final` = rozliczenie końcowe pomniejszone o zaliczkę, `full` = całość. */
+  part: z.enum(['full', 'advance', 'final']),
 });
 
 /** Miesięczne rozliczenie podatkowo-składkowe JDG (ślad obliczeń dla ekranu „Podatki i ZUS”). */
@@ -605,6 +619,217 @@ export const HealthSettlementSchema = z.object({
   carriedForward: z.boolean(),
 });
 
+
+/* ---------- Branża remontowa (v0.5) ---------- */
+
+export const MaterialStandardSchema = z.enum(['eko', 'std', 'premium']);
+export const ComplexitySchema = z.enum(['standard', 'trudne']);
+
+export const RenoEnquirySchema = z.object({
+  id: IdSchema,
+  businessId: IdSchema,
+  clientId: IdSchema,
+  clientName: z.string().min(1).max(80),
+  location: z.string().min(1).max(60),
+  serviceId: z.string().min(1),
+  units: z.number().int().min(1),
+  complexity: ComplexitySchema,
+  qualityReq: z.number().int().min(1).max(3),
+  desiredStart: IsoDateSchema,
+  /** Maksymalny oczekiwany czas realizacji (dni od rozpoczęcia). */
+  maxDays: z.number().int().min(1),
+  /** Szacowany budżet klienta (brutto — kwota, którą klient jest gotów zapłacić). */
+  budgetGross: PositiveGroszeSchema,
+  /** Cena, powyżej której klient odrzuci ofertę (ukryta przed graczem w UI). */
+  walkAwayGross: PositiveGroszeSchema,
+  haggler: z.boolean(),
+  flexDays: z.number().int().min(0),
+  receivedOn: IsoDateSchema,
+  respondBy: IsoDateSchema,
+  status: z.enum(['open', 'quoted', 'won', 'lost', 'expired', 'declined']),
+});
+
+export const RenoCostPlanSchema = z.object({
+  materials: NonNegGroszeSchema,
+  labor: NonNegGroszeSchema,
+  transport: NonNegGroszeSchema,
+  other: NonNegGroszeSchema,
+  total: NonNegGroszeSchema,
+});
+
+export const RenoQuoteSchema = z.object({
+  id: IdSchema,
+  enquiryId: IdSchema,
+  businessId: IdSchema,
+  serviceId: z.string().min(1),
+  units: z.number().int().min(1),
+  complexity: ComplexitySchema,
+  standard: MaterialStandardSchema,
+  /** Cena ofertowa netto (bez VAT). */
+  priceNet: PositiveGroszeSchema,
+  /** Stawka VAT obowiązująca w chwili wysłania oferty (0 = zwolnienie podmiotowe). */
+  vatRateBps: z.number().int().min(0).max(10_000),
+  advanceBps: z.number().int().min(0).max(5_000),
+  paymentTermDays: z.number().int().min(0).max(30),
+  startDate: IsoDateSchema,
+  durationDays: z.number().int().min(1),
+  hoursPerDay: z.number().int().min(1).max(8),
+  laborRate: NonNegGroszeSchema,
+  planned: RenoCostPlanSchema,
+  plannedCenti: z.number().int().min(1),
+  sentOn: IsoDateSchema,
+  decideOn: IsoDateSchema,
+  status: z.enum(['sent', 'counter', 'accepted', 'rejected', 'declined', 'signed', 'expired']),
+  counter: z.object({ kind: z.enum(['discount', 'deadline']), discountBps: z.number().int().min(0), newStart: IsoDateSchema.nullable(), newDuration: z.number().int().nullable() }).nullable(),
+  held: z.boolean(),
+  note: z.string().max(200),
+  acceptedOn: IsoDateSchema.nullable(),
+  signBy: IsoDateSchema.nullable(),
+  /** Dni od zapytania do wysłania oferty (komunikacja). */
+  replyDays: z.number().int().min(0),
+});
+
+export const RenoJobSchema = z.object({
+  id: IdSchema,
+  orderId: IdSchema,
+  quoteId: IdSchema,
+  businessId: IdSchema,
+  clientId: IdSchema,
+  clientName: z.string(),
+  location: z.string(),
+  serviceId: z.string().min(1),
+  units: z.number().int().min(1),
+  complexity: ComplexitySchema,
+  difficulty: z.number().int().min(1).max(4),
+  standard: MaterialStandardSchema,
+  qualityReq: z.number().int().min(1).max(3),
+  budgetGross: PositiveGroszeSchema,
+  priceNet: PositiveGroszeSchema,
+  vatRateBps: z.number().int().min(0),
+  advanceNet: NonNegGroszeSchema,
+  advanceDocId: IdSchema.nullable(),
+  finalDocId: IdSchema.nullable(),
+  paymentTermDays: z.number().int().min(0),
+  planned: RenoCostPlanSchema,
+  plannedCenti: z.number().int().min(1),
+  /** Stawka własnej robocizny przyjęta w wycenie (do porównania planu z wykonaniem). */
+  laborRate: NonNegGroszeSchema,
+  /** Ostatni przetworzony dzień pracy (idempotencja). */
+  lastDay: IsoDateSchema.nullable(),
+  /** Do tego dnia (włącznie) prace są wstrzymane z powodu problemów organizacyjnych. */
+  pauseUntil: IsoDateSchema.nullable(),
+  /** Norma pracy w setnych godziny (bez uwzględnienia wydajności wykonawcy). */
+  normCenti: z.number().int().min(1),
+  /** Dodatkowa praca (problemy, poprawki) w setnych godziny normy. */
+  extraCenti: z.number().int().min(0),
+  progressCenti: z.number().int().min(0),
+  hoursPerDay: z.number().int().min(1).max(8),
+  startDate: IsoDateSchema,
+  deadline: IsoDateSchema,
+  signedOn: IsoDateSchema,
+  stage: z.enum(['preparation', 'materials', 'execution', 'handover', 'settlement', 'done', 'cancelled']),
+  /** Zapotrzebowanie materiałowe: klucz zapasu (`materiał:standard`) → ilość. */
+  need: z.record(z.string(), z.number().int().min(0)),
+  consumed: z.record(z.string(), z.object({ qty: z.number().int().min(0), value: NonNegGroszeSchema })),
+  /** Koszty rzeczywiste (ekonomiczne): zużyte materiały, transport, inne, poprawki. */
+  actual: z.object({ materials: NonNegGroszeSchema, transport: NonNegGroszeSchema, other: NonNegGroszeSchema, rework: NonNegGroszeSchema }),
+  workedDays: z.number().int().min(0),
+  blockedDays: z.number().int().min(0),
+  perfSumBps: z.number().int().min(0),
+  perfDays: z.number().int().min(0),
+  issues: z.array(z.object({ id: IdSchema, date: IsoDateSchema, kind: z.enum(['techniczny', 'organizacyjny']), title: z.string(), addedCenti: z.number().int().min(0), delayDays: z.number().int().min(0) })),
+  reworkDone: z.boolean(),
+  quality: z.number().int().min(0).max(100).nullable(),
+  finishedOn: IsoDateSchema.nullable(),
+  handoverOn: IsoDateSchema.nullable(),
+  settledOn: IsoDateSchema.nullable(),
+  lateDays: z.number().int().min(0),
+  penaltyNet: NonNegGroszeSchema,
+  /** Początek okresu bezczynności z powodu braków/awarii — do opisu w harmonogramie. */
+  blockedReason: z.string().max(120).nullable(),
+});
+
+export const EquipmentItemSchema = z.object({
+  id: IdSchema,
+  catalogId: z.string().min(1),
+  purchasedOn: IsoDateSchema,
+  /** Kwota zakupu (podstawa kosztu podatkowego — koszt jednorazowo w dacie zakupu, PARAMETR/SIMPLIFIED). */
+  cost: PositiveGroszeSchema,
+  docId: IdSchema,
+  /** Stan techniczny 0–10 000 pkt bazowych; wartość księgowa = cost × stan. */
+  conditionBps: z.number().int().min(0).max(10_000),
+  usedCenti: z.number().int().min(0),
+});
+
+export const StockMoveSchema = z.object({
+  id: IdSchema,
+  date: IsoDateSchema,
+  key: z.string().min(1),
+  /** Ze znakiem: dodatnia = przyjęcie, ujemna = zużycie. */
+  qty: z.number().int().refine((v) => v !== 0),
+  /** Ze znakiem: wartość zapasu (netto/koszt podatkowy dokumentu). */
+  value: z.number().int(),
+  kind: z.enum(['purchase', 'use']),
+  jobId: IdSchema.nullable(),
+  docId: IdSchema.nullable(),
+});
+
+export const RenoReviewSchema = z.object({
+  id: IdSchema,
+  jobId: IdSchema,
+  date: IsoDateSchema,
+  /** Ocena w dziesiątych gwiazdki (10–50). */
+  rating10: z.number().int().min(10).max(50),
+  parts: z.object({ quality: z.number().int(), punctuality: z.number().int(), conformity: z.number().int(), price: z.number().int(), communication: z.number().int() }),
+  comment: z.string().max(200),
+});
+
+export const RenoComplaintSchema = z.object({
+  id: IdSchema,
+  jobId: IdSchema,
+  raisedOn: IsoDateSchema,
+  deadline: IsoDateSchema,
+  severity: z.number().int().min(1).max(3),
+  description: z.string().max(200),
+  status: z.enum(['pending', 'open', 'repairing', 'resolved', 'refunded', 'escalated']),
+  commitmentId: IdSchema.nullable(),
+  costDocId: IdSchema.nullable(),
+  resolvedOn: IsoDateSchema.nullable(),
+  /** Korekta oceny po rozwiązaniu (dziesiąte gwiazdki). */
+  ratingDelta10: z.number().int(),
+});
+
+export const RenovationStateSchema = z.object({
+  specializations: z.array(z.string()),
+  /** Doświadczenie (setne godziny efektywnej pracy) per usługa — rośnie wyłącznie od wykonanej pracy. */
+  skillXp: z.record(z.string(), z.number().int().min(0)),
+  advertising: z.object({ level: z.enum(['none', 'local', 'intensive']), since: IsoDateSchema.nullable(), paidMonth: z.string().nullable() }),
+  enquiries: z.array(RenoEnquirySchema),
+  quotes: z.array(RenoQuoteSchema),
+  jobs: z.array(RenoJobSchema),
+  equipment: z.array(EquipmentItemSchema),
+  stock: z.record(z.string(), z.object({ qty: z.number().int().min(0), value: NonNegGroszeSchema })),
+  stockMoves: z.array(StockMoveSchema),
+  reviews: z.array(RenoReviewSchema),
+  complaints: z.array(RenoComplaintSchema),
+});
+
+/* ---------- Księgowość (v0.5) ---------- */
+
+export const AccountingSchema = z.object({
+  office: z.object({ planId: z.string().min(1), since: IsoDateSchema, endsOn: IsoDateSchema.nullable() }).nullable(),
+  history: z.array(z.object({ planId: z.string(), from: IsoDateSchema, to: IsoDateSchema })),
+  lastFeeMonth: z.string().nullable(),
+  suggestions: z.array(z.object({
+    year: z.number().int(),
+    date: IsoDateSchema,
+    current: TaxFormSchema,
+    best: TaxFormSchema,
+    rows: z.array(z.object({ form: TaxFormSchema, tax: NonNegGroszeSchema, health: NonNegGroszeSchema, total: NonNegGroszeSchema })),
+    basis: z.string().max(200),
+  })),
+});
+
 /* ---------- Stan gry ---------- */
 
 export const GameStateSchema = z.object({
@@ -647,6 +872,9 @@ export const GameStateSchema = z.object({
   taxReturns: z.array(TaxReturnSchema),
   taxLosses: z.array(TaxLossSchema),
   healthSettlements: z.array(HealthSettlementSchema),
+  /** Moduł branży remontowej (v0.5). Pusty, dopóki gracz nie prowadzi takiej działalności. */
+  reno: RenovationStateSchema,
+  accounting: AccountingSchema,
 });
 
 export type Person = z.infer<typeof PersonSchema>;
@@ -679,6 +907,18 @@ export type Payslip = z.infer<typeof PayslipSchema>;
 export type TaxReturn = z.infer<typeof TaxReturnSchema>;
 export type TaxLoss = z.infer<typeof TaxLossSchema>;
 export type HealthSettlement = z.infer<typeof HealthSettlementSchema>;
+export type RenoEnquiry = z.infer<typeof RenoEnquirySchema>;
+export type RenoQuote = z.infer<typeof RenoQuoteSchema>;
+export type RenoJob = z.infer<typeof RenoJobSchema>;
+export type RenoCostPlan = z.infer<typeof RenoCostPlanSchema>;
+export type EquipmentItem = z.infer<typeof EquipmentItemSchema>;
+export type StockMove = z.infer<typeof StockMoveSchema>;
+export type RenoReview = z.infer<typeof RenoReviewSchema>;
+export type RenoComplaint = z.infer<typeof RenoComplaintSchema>;
+export type RenovationState = z.infer<typeof RenovationStateSchema>;
+export type Accounting = z.infer<typeof AccountingSchema>;
+export type MaterialStandard = z.infer<typeof MaterialStandardSchema>;
+export type Complexity = z.infer<typeof ComplexitySchema>;
 export type LedgerEntry = z.infer<typeof LedgerEntrySchema>;
 export type Obligation = z.infer<typeof ObligationSchema>;
 export type GameEvent = z.infer<typeof GameEventSchema>;

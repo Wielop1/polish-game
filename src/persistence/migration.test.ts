@@ -14,6 +14,8 @@ import expectV2 from './fixtures/save-v2.expect.json';
 import rawV2 from './fixtures/save-v2.json?raw';
 import expectV3 from './fixtures/save-v3.expect.json';
 import rawV3 from './fixtures/save-v3.json?raw';
+import expectV4 from './fixtures/save-v4.expect.json';
+import rawV4 from './fixtures/save-v4.json?raw';
 import { SAVE_VERSION, parseSave, serializeSave } from './save.ts';
 
 const NOW = '2026-10-18T12:00:00.000Z';
@@ -27,9 +29,9 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
   if (!result.ok) throw new Error(`fixture v1 nie wczytał się: ${result.error}`);
   const migrated = result.state;
 
-  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 4', () => {
+  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 5', () => {
     expect(JSON.parse(rawV1).version).toBe(1);
-    expect(SAVE_VERSION).toBe(4);
+    expect(SAVE_VERSION).toBe(5);
   });
 
   it('historia finansowa zostaje nietknięta: salda, majątek netto, rejestr, zobowiązania, zdarzenia', () => {
@@ -106,9 +108,9 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
     expect(cash(s)).toBe(cash(before));
   });
 
-  it('zmigrowany zapis zapisuje się jako v4 i wczytuje identycznie', () => {
+  it('zmigrowany zapis zapisuje się jako v5 i wczytuje identycznie', () => {
     const json = serializeSave(migrated, NOW);
-    expect(JSON.parse(json).version).toBe(4);
+    expect(JSON.parse(json).version).toBe(5);
     const again = parseSave(json);
     expect(again.ok && again.state).toEqual(migrated);
   });
@@ -230,7 +232,7 @@ describe('migracja zapisu v2 → v3 (prawdziwy zapis wygenerowany przez v0.2.1)'
     let s = ok(commands.registerBusiness(migrated, { name: 'Ewa Nowicka — usługi', profileId: 'jezyki', taxForm: 'ryczalt', vatStatus: 'active', startDate: '2026-10-01', zusStart: 'standard', sickness: true }));
     s = advanceDays(s, 80);
     const json = serializeSave(s, NOW);
-    expect(JSON.parse(json).version).toBe(4);
+    expect(JSON.parse(json).version).toBe(5);
     const again = parseSave(json);
     expect(again.ok && again.state).toEqual(s);
     if (!again.ok) return;
@@ -268,7 +270,7 @@ describe('migracja zapisu v3 → v4 (prawdziwy zapis wygenerowany przez v0.3, z 
     expect(migrated.ledger).toHaveLength(expectV3.ledgerCount);
     expect(migrated.ledger).toEqual(old.ledger);
     expect(migrated.obligations).toEqual(old.obligations);
-    expect(migrated.documents).toEqual(old.documents);
+    expect(migrated.documents.map(({ part, ...d }) => d)).toEqual(old.documents); // jedyna zmiana: pole `part` (v5)
     expect(migrated.events).toEqual(old.events);
     expect(migrated.taxPeriods).toHaveLength(expectV3.taxPeriods);
     expect(migrated.taxPeriods.map((p) => ({ ...p, form: undefined }))).toEqual(old.taxPeriods.map((p: object) => ({ ...p, form: undefined })));
@@ -338,3 +340,101 @@ describe('migracja zapisu v3 → v4 (prawdziwy zapis wygenerowany przez v0.3, z 
     expect(parseSave(JSON.stringify(bad)).ok).toBe(false);
   });
 });
+
+describe('migracja zapisu v4 → v5 (prawdziwy zapis wygenerowany przez v0.4, z JDG i rozliczeniem rocznym)', () => {
+  const result = parseSave(rawV4);
+  if (!result.ok) throw new Error(`fixture v4 nie wczytał się: ${result.error}`);
+  const migrated = result.state;
+  const old = JSON.parse(rawV4).state;
+
+  it('historia finansowa, dokumenty, rozliczenia podatkowe i zlecenia zostają nietknięte', () => {
+    expect(JSON.parse(rawV4).version).toBe(4);
+    expect(migrated.clock.today).toBe(expectV4.today);
+    expect(cash(migrated)).toBe(expectV4.cash);
+    expect(netWorth(migrated)).toBe(expectV4.netWorth);
+    expect(migrated.ledger).toEqual(old.ledger);
+    expect(migrated.obligations).toEqual(old.obligations);
+    expect(migrated.events).toEqual(old.events);
+    expect(migrated.taxPeriods).toEqual(old.taxPeriods);
+    expect(migrated.taxReturns).toEqual(old.taxReturns);
+    expect(migrated.payslips).toEqual(old.payslips);
+    expect(migrated.documents.map(({ part, ...d }) => d)).toEqual(old.documents); // jedyna zmiana: pole `part`
+    expect(migrated.serviceOrders.map(({ kind, ...o }) => o)).toEqual(old.serviceOrders);
+    expect(migrated.documents).toHaveLength(expectV4.documents);
+    expect(migrated.taxReturns).toHaveLength(expectV4.taxReturns);
+    expect(checkInvariants(migrated)).toEqual([]);
+  });
+
+  it('dokumenty to „całość”, zlecenia to szablonowe zlecenia v0.3; moduł remontowy i księgowość są puste', () => {
+    expect(migrated.documents.every((d) => d.part === 'full')).toBe(true);
+    expect(migrated.serviceOrders.every((o) => o.kind === 'service')).toBe(true);
+    expect(migrated.reno).toMatchObject({ specializations: [], enquiries: [], quotes: [], jobs: [], equipment: [], stockMoves: [], reviews: [], complaints: [] });
+    expect(migrated.reno.stock).toEqual({});
+    expect(migrated.accounting).toEqual({ office: null, history: [], lastFeeMonth: null, suggestions: [] });
+    expect(netWorth(migrated)).toBe(expectV4.netWorth); // brak zapasów i sprzętu nie zmienia majątku
+  });
+
+  it('po migracji gra toczy się dalej bez dubli: biuro rachunkowe, kolejne rozliczenia, historia na początku bez zmian', () => {
+    let s = ok(commands.hireAccountingOffice(migrated, 'start'));
+    s = advanceDays(s, 120);
+    expect(checkInvariants(s)).toEqual([]);
+    expect(s.ledger.slice(0, expectV4.ledgerCount)).toEqual(migrated.ledger);
+    expect(s.documents.slice(0, expectV4.documents).map((d) => d.id)).toEqual(migrated.documents.map((d) => d.id));
+    expect(s.documents.filter((d) => d.description.startsWith('Obsługa księgowa')).length).toBeGreaterThanOrEqual(3);
+    expect(new Set(s.obligations.map((o) => o.id)).size).toBe(s.obligations.length);
+  });
+
+  it('po zamknięciu starej firmy IT można założyć firmę remontową i prowadzić ją dalej (stare zapisy nie blokują nowej branży)', () => {
+    let s = migrated;
+    const biz = s.businesses[0]!;
+    s = { ...s, serviceOrders: s.serviceOrders.map((o) => (o.status === 'in_progress' ? { ...o, status: 'completed' as const, completedOn: s.clock.today } : o)) };
+    s = ok(commands.closeBusiness(s));
+    s = advanceDays(s, 40);
+    expect(s.businesses[0]!.status).toBe('closed');
+    expect(biz.profileId).toBe('it-programowanie');
+    s = ok(commands.registerBusiness(s, { name: 'Remonty po migracji', profileId: 'remonty', taxForm: 'ryczalt', vatStatus: 'exempt', startDate: s.clock.today.slice(0, 7) === '2027-05' ? '2027-06-01' : '2027-06-01', zusStart: 'standard', sickness: false, specialization: 'gladzie' }));
+    expect(s.reno.specializations).toEqual(['gladzie']);
+    s = advanceDays(s, 60);
+    expect(checkInvariants(s)).toEqual([]);
+  });
+
+  it('zapis v5: round-trip identyczny, ponowne przetworzenie dnia niczego nie dubluje', () => {
+    const s = advanceDays(ok(commands.hireAccountingOffice(migrated, 'standard')), 90);
+    const json = serializeSave(s, NOW);
+    expect(JSON.parse(json).version).toBe(5);
+    const again = parseSave(json);
+    expect(again.ok && again.state).toEqual(s);
+    if (!again.ok) return;
+    const r = structuredClone(again.state);
+    const counts = [r.ledger.length, r.obligations.length, r.documents.length, r.events.length];
+    processDay(r, r.clock.today);
+    expect([r.ledger.length, r.obligations.length, r.documents.length, r.events.length]).toEqual(counts);
+  });
+
+  it('łańcuch v1/v2/v3 → v5 daje spójne zapisy; zmanipulowany magazyn lub zaliczka są odrzucane', () => {
+    for (const raw of [rawV1, rawV2, rawV3]) {
+      const p = parseSave(raw);
+      expect(p.ok).toBe(true);
+      if (p.ok) expect(p.state.reno.jobs).toEqual([]);
+    }
+    const base = advanceDays(ok(commands.registerBusiness(createNewGameWithCash(), { name: 'Remonty zapis', profileId: 'remonty', taxForm: 'skala', vatStatus: 'exempt', startDate: '2026-02-01', zusStart: 'ulga', sickness: false, specialization: 'malowanie' })), 40);
+    let s = ok(commands.transferFunds(base, base.playerAccountId, base.businesses[0]!.accountId, zl(3_000)));
+    s = ok(commands.buyMaterial(s, 'farba:std', 10));
+    const raw = JSON.parse(serializeSave(s, NOW));
+    expect(parseSave(JSON.stringify(raw)).ok).toBe(true);
+    raw.state.reno.stock['farba:std'].value += 100;
+    expect(parseSave(JSON.stringify(raw)).ok).toBe(false);
+  });
+});
+
+function createNewGameWithCash(): GameState {
+  const s = createNewGame({ firstName: 'Jan', lastName: 'Kowalski', seed: 'mig-v5', lifeEvents: false });
+  const n = 1;
+  s.accounts[s.playerAccountId]!.balance += zl(20_000);
+  s.openingCash += zl(20_000);
+  s.ledger.push({ id: `tx:test-fund:${n}`, date: s.clock.today, accountId: s.playerAccountId, amount: zl(20_000), category: 'kapital_poczatkowy', description: 'test', counterpartyId: null, obligationId: null, transferId: null, eventId: `test-fund:${n}` });
+  s.processed[`tx:test-fund:${n}`] = true;
+  s.history[s.history.length - 1]!.cash += zl(20_000);
+  s.history[s.history.length - 1]!.netWorth += zl(20_000);
+  return s;
+}

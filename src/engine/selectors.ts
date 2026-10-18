@@ -2,6 +2,7 @@ import { LIFESTYLE_QOL, STANDARD_QOL } from './config.ts';
 import { activeLeases, currentLease, employmentStatus } from './contracts.ts';
 import { addDays as addDaysIso, addMonthsToKey, ageOn, monthKey } from './date.ts';
 import type { IsoDate } from './date.ts';
+import { roundDiv } from './money.ts';
 import type { Grosze } from './money.ts';
 import { NON_FLOW_CATEGORIES } from './categories.ts';
 import { projectedAmount } from './schedule.ts';
@@ -36,6 +37,16 @@ export function businessBalance(s: GameState): Grosze {
   return Object.values(s.accounts).filter((a) => a.type === 'business').reduce((a, acc) => a + acc.balance, 0);
 }
 
+/** Zapasy materiałów w cenie nabycia (aktywo; koszt ekonomiczny powstaje przy zużyciu). */
+export function inventoryValue(s: GameState): Grosze {
+  return Object.values(s.reno.stock).reduce((a, x) => a + x.value, 0);
+}
+
+/** Wartość księgowa sprzętu: koszt zakupu × stan techniczny (zużycie obniża wartość, nie jest wydatkiem gotówkowym). */
+export function equipmentValue(s: GameState): Grosze {
+  return s.reno.equipment.reduce((a, e) => a + roundDiv(e.cost * e.conditionBps, 10_000), 0);
+}
+
 export function heldDeposits(s: GameState): Grosze {
   return s.assets.filter((a) => a.status === 'held').reduce((a, x) => a + x.amount, 0);
 }
@@ -49,6 +60,10 @@ export interface NetWorthBreakdown {
   business: Grosze;
   /** Kaucje zwrotne (aktywa) przechowywane przez wynajmujących. */
   deposits: Grosze;
+  /** Zapasy materiałów firmy (aktywo). */
+  inventory: Grosze;
+  /** Wartość księgowa sprzętu firmy (aktywo). */
+  equipment: Grosze;
   /** Otwarte należności gracza (np. naliczona, niewypłacona pensja). */
   receivables: Grosze;
   /** Otwarte zobowiązania gracza (np. naliczony, nieopłacony czynsz). */
@@ -60,7 +75,7 @@ export function openObligations(s: GameState, direction?: Obligation['direction'
   return s.obligations.filter((o) => o.status === 'open' && (!direction || o.direction === direction));
 }
 
-/** Majątek netto = rachunki + kaucje (aktywa) + otwarte należności − otwarte zobowiązania. */
+/** Majątek netto = rachunki + kaucje + zapasy + sprzęt (aktywa) + otwarte należności − otwarte zobowiązania. */
 export function netWorthBreakdown(s: GameState): NetWorthBreakdown {
   let receivables = 0;
   let payables = 0;
@@ -73,7 +88,9 @@ export function netWorthBreakdown(s: GameState): NetWorthBreakdown {
   const sv = savingsBalance(s);
   const dep = heldDeposits(s);
   const biz = businessBalance(s);
-  return { cash: c, savings: sv, business: biz, deposits: dep, receivables, payables, netWorth: c + sv + biz + dep + receivables - payables };
+  const inv = inventoryValue(s);
+  const eq = equipmentValue(s);
+  return { cash: c, savings: sv, business: biz, deposits: dep, inventory: inv, equipment: eq, receivables, payables, netWorth: c + sv + biz + dep + inv + eq + receivables - payables };
 }
 
 export function netWorth(s: GameState): Grosze {

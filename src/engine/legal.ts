@@ -12,7 +12,7 @@ export type LegalStatus = 'VERIFIED' | 'SIMPLIFIED' | 'DEFERRED';
 
 export interface LegalRule {
   id: string;
-  scope: 'PIT' | 'ETAT' | 'ZUS' | 'ZDROWOTNA' | 'VAT' | 'REJESTRACJA';
+  scope: 'PIT' | 'ETAT' | 'ZUS' | 'ZDROWOTNA' | 'VAT' | 'REJESTRACJA' | 'BRANZA' | 'KSIEGOWOSC';
   title: string;
   validFrom: string;
   validTo: string | null;
@@ -50,6 +50,12 @@ const ZUS_EMP = 'https://www.zus.pl/en/-/nowe-wysoko%C5%9Bci-sk%C5%82adek-na-ube
 const ZUS_30 = 'https://www.zus.pl/en/firmy/rozliczenia-z-zus/30-krotnosc';
 const ZUS_HEALTH_BASE = 'https://www.zus.pl/en/pracujacy/ubezpieczenie-zdrowotne-w-polsce/podstawa-wymiaru-skladek-na-ubezpieczenie-zdrowotne';
 const ORD63 = 'https://www.podatki.gov.pl/media/g5ebnm2e/broszura-do-pit-38-za-2025-r.pdf';
+
+const RENO_RYCZALT = 'https://podatki-arch.mf.gov.pl/pit/abc-pit/ryczalt-od-przychodow-ewidencjonowanych/';
+const RENO_ADVANCE = 'https://podatki-arch.mf.gov.pl/glos-podatnika-szczegoly-zgloszenia?application=113330';
+const RENO_FIXED_ASSETS = 'https://eureka.mf.gov.pl/informacje/podglad/479460';
+const RENO_PKD = 'https://www.biznes.gov.pl/pl/portal/092243';
+const ACC_ADVISORY = 'https://api.sejm.gov.pl/eli/acts/DU/2005/66/text/U/D20050066Lj.pdf';
 
 const r = (id: string, scope: LegalRule['scope'], title: string, status: LegalStatus, source: string, note: string, validFrom = '2026-01-01', validTo: string | null = '2026-12-31'): LegalRule => ({
   id, scope, title, validFrom, validTo, source, verifiedOn: V, status, note,
@@ -115,6 +121,20 @@ export const LEGAL_RULES: readonly LegalRule[] = [
   r('SUSP-RULES', 'REJESTRACJA', 'Zawieszenie działalności (CEIDG): min. 30 dni (wyjątek: luty), od dowolnej daty; w okresie zawieszenia nie wolno prowadzić działalności ani osiągać bieżących przychodów, wolno przyjmować należności i regulować zobowiązania sprzed zawieszenia', 'VERIFIED', BG_SUSP, 'Zawieszenie możliwe tylko bez pracowników. SIMPLIFIED: pełne miesiące (od 1. do ostatniego dnia), bez zleceń w toku (konserwatywnie), brak dobrowolnych ubezpieczeń i NFZ.', '2026-01-01', null),
   r('SUSP-CONTRIBUTIONS', 'REJESTRACJA', 'W pełnych miesiącach zawieszenia nie płaci się składek społecznych ani zdrowotnej z działalności; nie wpłaca się zaliczek PIT; zawieszenie nie przerywa biegu ulgi na start (6 mies.) ani składek preferencyjnych (24 mies.)', 'VERIFIED', BG_SUSP, 'Zawieszenie w trakcie miesiąca (składki proporcjonalnie, zdrowotna za cały miesiąc) — DEFERRED (symulator zawiesza tylko od 1. dnia miesiąca). Rozliczenie roczne PIT nadal obowiązuje.', '2026-01-01', null),
   r('REG-CLOSURE', 'REJESTRACJA', 'Zakończenie działalności: ostatnia zaliczka do 20. dnia następnego miesiąca; zeznanie roczne do 30 kwietnia', 'SIMPLIFIED', BG_CLOSE, 'Zakończenie tylko na koniec miesiąca, bez trwających zleceń; wyrejestrowanie ZUS/VAT-Z nie jest modelowane.', '2026-01-01', null),
+  // --- v0.5: branża remontowa i księgowość ---
+  r('RENO-RYCZALT-RATE', 'PIT', 'Ryczałt 5,5% od przychodów z robót budowlanych (art. 12 ust. 1 pkt 6 lit. a ustawy o ryczałcie)', 'SIMPLIFIED', RENO_RYCZALT, 'Stawka 5,5% dla robót budowlanych potwierdzona w materiałach podatki.gov.pl; ustawa nie definiuje „robót budowlanych” (odwołanie do Prawa budowlanego), a klasyfikacja zależy od rodzaju prac i materiałów (np. materiał powierzony — rozbieżne interpretacje). Gra stosuje 5,5% dla całego profilu remontowego.'),
+  r('RENO-VAT-EXEMPTION', 'VAT', 'Zwolnienie podmiotowe z VAT w usługach remontowo-wykończeniowych', 'SIMPLIFIED', VAT_EX, 'Zweryfikowane źródła wskazują wyłączenia m.in. dla dostaw budynków, budowli i terenów budowlanych; usług budowlanych nie wymieniają wprost, ale pełny katalog z art. 113 ust. 13 nie został odczytany w tekście ustawy (por. VAT-EXEMPTION-EXCLUSIONS). Gra dopuszcza zwolnienie i pokazuje to ograniczenie.'),
+  r('RENO-VAT-REDUCED', 'VAT', 'Obniżona stawka VAT 8% dla remontów w budownictwie mieszkaniowym', 'DEFERRED', VAT_BASE, 'Warunki zastosowania (rodzaj obiektu, powierzchnia, zakres usługi z materiałem) nie zostały zweryfikowane — NIE wdrożone. Czynny podatnik stosuje w grze 23%, co bywa mniej korzystne niż w rzeczywistości.'),
+  r('RENO-VAT-REVERSE-CHARGE', 'VAT', 'Odwrotne obciążenie przy usługach budowlanych świadczonych jako podwykonawca', 'DEFERRED', VAT_BASE, 'Dotyczy podwykonawców (załącznik 14 do ustawy o VAT); gra obsługuje wyłącznie klientów indywidualnych, więc mechanizm nie występuje. Podwykonawstwo — przyszłe rozszerzenie.'),
+  r('RENO-ADVANCE-VAT', 'VAT', 'Zaliczka na poczet usługi: obowiązek podatkowy w VAT w dacie otrzymania zaliczki (art. 19a ust. 8)', 'SIMPLIFIED', RENO_ADVANCE, 'Wniosek z interpretacji MF/KIS (wyniki wyszukiwania, nie pełny tekst ustawy). Gra: zaliczka to odrębny dokument sprzedaży z VAT (dla czynnego podatnika), rozliczenie końcowe obejmuje resztę ceny; wyjątki z art. 19a ust. 5 pkt 4 nie dotyczą usług remontowych. Faktury zaliczkowe w rozumieniu KSeF nie są modelowane.'),
+  r('RENO-ADVANCE-PIT', 'PIT', 'Zaliczka od klienta jako przychód podatkowy', 'SIMPLIFIED', RENO_ADVANCE, 'Zasady art. 14 ust. 1c, 1e i ust. 3 pkt 1 ustawy o PIT (moment powstania przychodu przy zaliczkach) nie zostały odczytane w tekście ustawy. Gra uznaje zaliczkę za przychód w dacie wystawienia jej dokumentu (jak każdą sprzedaż); rozliczenie końcowe = cena − zaliczka − kara umowna.'),
+  r('RENO-EQUIPMENT-EXPENSING', 'PIT', 'Wydatki na sprzęt o wartości do 10 000 zł: koszt w miesiącu oddania do używania (art. 22d ust. 1)', 'SIMPLIFIED', RENO_FIXED_ASSETS, 'Próg 10 000 zł potwierdzony w interpretacji MF cytującej ustawę. Gra: cały sprzęt (każda pozycja < 10 000 zł) to koszt podatkowy jednorazowo w dacie zakupu, bez amortyzacji i ewidencji środków trwałych; osobno liczona jest wartość księgowa (aktywo ekonomiczne) wg stanu technicznego. Pojazdy i środki trwałe > 10 000 zł — DEFERRED.'),
+  r('RENO-MATERIALS-TAX-COST', 'PIT', 'Koszt podatkowy materiałów w dacie zakupu (bez spisu z natury)', 'SIMPLIFIED', PIT_COSTS, 'Zakup materiałów jest kosztem podatkowym w dacie dokumentu zakupu; gra nie modeluje spisu z natury ani korekty kosztów o zapas końcowy. Zapas materiałów jest osobno aktywem (wartość ekonomiczna), a zużycie nie tworzy drugiego kosztu podatkowego.'),
+  r('RENO-COMPLAINT-CORRECTION', 'PIT', 'Rabat lub zwrot z tytułu reklamacji zamiast faktury korygującej', 'SIMPLIFIED', RENO_ADVANCE, 'W rzeczywistości zmniejsza przychód (faktura korygująca); gra ujmuje rabat i zwrot zaliczki po rozwiązaniu umowy jako koszt działalności. Korekty dokumentów — DEFERRED (FE-BIZ-03).'),
+  r('RENO-CONSUMER-RIGHTS', 'REJESTRACJA', 'Prawa konsumenta: rękojmia, reklamacje, spory z klientem indywidualnym', 'DEFERRED', RENO_PKD, 'Reklamacje w grze to mechanika ekonomiczna (poprawki / rabat / odmowa) bez terminów i skutków prawnych rękojmi, sporów sądowych ani odpowiedzialności za szkody. Nie przedstawiać jako zgodnych z prawem konsumenckim.'),
+  r('RENO-PKD', 'REJESTRACJA', 'Kody PKD 2025 branży remontowej', 'SIMPLIFIED', RENO_PKD, '43.34.Z „Malowanie i szklenie” potwierdzony w PKD 2025 (biznes.gov.pl); 43.31.Z (tynkowanie), 43.33.Z (posadzkarstwo, tapetowanie), 43.39.Z (pozostałe roboty wykończeniowe) — potwierdzone tylko częściowo (nazwy, bez pełnych opisów w PKD 2025). Profil rejestruje główny PKD 43.34.Z.'),
+  r('ACC-ADVISORY', 'KSIEGOWOSC', 'Usługi księgowe a regulowane doradztwo podatkowe (art. 2 ust. 1 ustawy o doradztwie podatkowym)', 'SIMPLIFIED', ACC_ADVISORY, 'Wg opracowań: porady, opinie i wyjaśnienia podatkowe to czynności zastrzeżone, a prowadzenie ksiąg i sporządzanie deklaracji mogą wykonywać także biura rachunkowe. W grze biuro prowadzi ewidencję, pilnuje terminów i zgłasza braki; porównanie form opodatkowania to wynik obliczeń silnika (informacja), nie porada. Indywidualne doradztwo podatkowe — DEFERRED.'),
+  r('ACC-RESPONSIBILITY', 'KSIEGOWOSC', 'Odpowiedzialność za rozliczenia przy outsourcingu księgowości', 'SIMPLIFIED', ACC_ADVISORY, 'Przedsiębiorca odpowiada za prawidłowość rozliczeń; gra nie symuluje błędów biura, odpowiedzialności odszkodowawczej ani zmiany księgowego (DEFERRED). Biuro nie liczy podatków — liczy je wspólny silnik.'),
 ];
 
 export const LEGAL_BY_ID = new Map(LEGAL_RULES.map((x) => [x.id, x]));

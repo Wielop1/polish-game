@@ -6,6 +6,9 @@ import type { RegisterInput } from './business.ts';
 import { applyForJob, resignFromJob, respondToJobOffer } from './jobs.ts';
 import { resolveLifeEvent } from './lifeEvents.ts';
 import { signLease } from './housing.ts';
+import { addSpecialization, buyEquipment, buyMaterial, buyMissingForJob, declineEnquiry, maintainEquipment, resolveComplaint, respondToCounter, sendQuote, setAdvertising, signContract, terminateJob } from './renovation.ts';
+import type { QuoteInput } from './renovation.ts';
+import { hireAccountingOffice, terminateAccountingOffice } from './accounting.ts';
 import { transferFunds } from './savings.ts';
 import type { Grosze } from './money.ts';
 import type { GameState, Lifestyle, TaxForm } from './state.ts';
@@ -89,4 +92,20 @@ export const commands = {
   declareMalyZusPlus: (state: GameState) => runCommand(state, (d) => declareMalyZusPlus(d)),
   resignMalyZusPlus: (state: GameState) => runCommand(state, (d) => resignMalyZusPlus(d)),
   claimHealthRefund: (state: GameState, settlementId: string) => runCommand(state, (d) => claimHealthRefund(d, settlementId)),
+  // v0.5 — branża remontowa
+  buyEquipment: (state: GameState, catalogId: string) => runCommand(state, (d) => buyEquipment(d, catalogId)),
+  maintainEquipment: (state: GameState, itemId: string) => runCommand(state, (d) => maintainEquipment(d, itemId)),
+  buyMaterial: (state: GameState, key: string, qty: number) => runCommand(state, (d) => buyMaterial(d, key, qty)),
+  buyMissingForJob: (state: GameState, jobId: string) => runCommand(state, (d) => buyMissingForJob(d, jobId)),
+  setAdvertising: (state: GameState, level: 'none' | 'local' | 'intensive') => runCommand(state, (d) => setAdvertising(d, level)),
+  addSpecialization: (state: GameState, serviceId: string) => runCommand(state, (d) => addSpecialization(d, serviceId)),
+  declineEnquiry: (state: GameState, enquiryId: string) => runCommand(state, (d) => declineEnquiry(d, enquiryId)),
+  sendQuote: (state: GameState, enquiryId: string, input: QuoteInput) => runCommand(state, (d) => sendQuote(d, enquiryId, input)),
+  respondToCounter: (state: GameState, quoteId: string, action: 'accept' | 'decline' | 'hold') => runCommand(state, (d) => respondToCounter(d, quoteId, action)),
+  signContract: (state: GameState, quoteId: string) => runCommand(state, (d) => signContract(d, quoteId)),
+  terminateJob: (state: GameState, jobId: string) => runCommand(state, (d) => terminateJob(d, jobId)),
+  resolveComplaint: (state: GameState, complaintId: string, action: 'repair' | 'discount' | 'reject') => runCommand(state, (d) => resolveComplaint(d, complaintId, action)),
+  // v0.5 — księgowość
+  hireAccountingOffice: (state: GameState, planId: string) => runCommand(state, (d) => hireAccountingOffice(d, planId)),
+  terminateAccountingOffice: (state: GameState) => runCommand(state, (d) => terminateAccountingOffice(d)),
 };

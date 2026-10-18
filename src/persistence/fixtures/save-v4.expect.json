@@ -1,0 +1,16 @@
+{
+  "today": "2027-03-15",
+  "cash": 1969629,
+  "business": 1099074,
+  "netWorth": 3174949,
+  "ledgerCount": 126,
+  "obligationCount": 125,
+  "eventCount": 287,
+  "documents": 6,
+  "taxPeriods": 12,
+  "taxReturns": 1,
+  "payslips": 14,
+  "orders": 3,
+  "lastTxId": "tx:settle:obl:rule:utilities@2027-03-05",
+  "taxForm": "liniowy"
+}

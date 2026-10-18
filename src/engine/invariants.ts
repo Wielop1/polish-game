@@ -95,9 +95,10 @@ export function checkInvariants(s: GameState): string[] {
   }
 
   // 4. Tożsamość księgowa: majątek netto (rachunki + kaucje + należności − zobowiązania)
-  //    = kapitał początkowy + naliczone przychody − naliczone koszty. Przelewy własne i kaucje jej nie zmieniają.
+  //    = kapitał początkowy + naliczone przychody − naliczone koszty + wartość zapasów i sprzętu (aktywa nabyte za koszty).
+//    Przelewy własne i kaucje jej nie zmieniają.
   const nw = netWorthBreakdown(s);
-  const expectedNetWorth = s.openingCash + accruedIncome - accruedExpense;
+  const expectedNetWorth = s.openingCash + accruedIncome - accruedExpense + nw.inventory + nw.equipment;
   if (nw.netWorth !== expectedNetWorth) {
     fail(`majątek netto ${nw.netWorth} ≠ kapitał + przychody − koszty (${expectedNetWorth})`);
   }
@@ -254,5 +255,78 @@ export function checkInvariants(s: GameState): string[] {
     if (periodKeys.has(k)) fail(`zduplikowane rozliczenie miesiąca ${k}`);
     periodKeys.add(k);
   }
+
+  // 7. Branża remontowa (v0.5): zapasy, sprzęt, kontrakty, zaliczki, reklamacje i opinie.
+  const docById = new Map(s.documents.map((d) => [d.id, d]));
+  const moveIds = new Set<string>();
+  const stockSums: Record<string, { qty: number; value: number }> = {};
+  const usedByJob = new Map<string, { qty: number; value: number }>();
+  for (const m of s.reno.stockMoves) {
+    if (moveIds.has(m.id)) fail(`zduplikowany ruch magazynowy ${m.id}`);
+    moveIds.add(m.id);
+    const acc = (stockSums[m.key] ??= { qty: 0, value: 0 });
+    acc.qty += m.qty;
+    acc.value += m.value;
+    if (m.kind === 'purchase') {
+      const d = m.docId ? docById.get(m.docId) : undefined;
+      if (!d || d.kind !== 'cost' || d.taxAmount !== m.value) fail(`zakup magazynowy ${m.id}: brak dokumentu kosztowego o wartości ${m.value}`);
+      if (m.qty <= 0 || m.value <= 0) fail(`zakup magazynowy ${m.id}: nieprawidłowa ilość lub wartość`);
+    } else {
+      if (m.qty >= 0 || m.value > 0) fail(`zużycie ${m.id}: nieprawidłowy znak`);
+      const k = `${m.jobId}:${m.key}`;
+      const u = usedByJob.get(k) ?? { qty: 0, value: 0 };
+      usedByJob.set(k, { qty: u.qty - m.qty, value: u.value - m.value });
+    }
+  }
+  for (const [key, st] of Object.entries(s.reno.stock)) {
+    if (st.qty < 0 || st.value < 0) fail(`zapas ${key}: ujemna ilość lub wartość`);
+    const sum = stockSums[key] ?? { qty: 0, value: 0 };
+    if (sum.qty !== st.qty || sum.value !== st.value) fail(`zapas ${key}: ${st.qty}/${st.value} ≠ suma ruchów ${sum.qty}/${sum.value} (podwójne zużycie lub zakup?)`);
+  }
+  for (const key of Object.keys(stockSums)) if (!s.reno.stock[key]) fail(`ruchy magazynowe bez zapasu ${key}`);
+  for (const e of s.reno.equipment) {
+    if (e.conditionBps < 0 || e.conditionBps > 10_000) fail(`sprzęt ${e.id}: stan poza zakresem`);
+    const d = docById.get(e.docId);
+    if (!d || d.kind !== 'cost' || d.taxAmount !== e.cost) fail(`sprzęt ${e.id}: brak dokumentu zakupu o wartości ${e.cost}`);
+  }
+  const jobIds = new Set<string>();
+  const orderById = new Map(s.serviceOrders.map((o) => [o.id, o]));
+  for (const j of s.reno.jobs) {
+    if (jobIds.has(j.id)) fail(`zduplikowany kontrakt ${j.id}`);
+    jobIds.add(j.id);
+    const order = orderById.get(j.orderId);
+    if (!order || order.kind !== 'renovation') fail(`kontrakt ${j.id}: brak zlecenia typu renovation`);
+    if (j.progressCenti > j.normCenti + j.extraCenti) fail(`kontrakt ${j.id}: postęp ponad zakres`);
+    const advanceDocs = s.documents.filter((d) => d.orderId === j.orderId && d.part === 'advance');
+    const finalDocs = s.documents.filter((d) => d.orderId === j.orderId && d.kind === 'sales' && d.part !== 'advance');
+    if (advanceDocs.length > (j.advanceNet > 0 ? 1 : 0)) fail(`kontrakt ${j.id}: wielokrotnie zaksięgowana zaliczka`);
+    if (j.advanceNet > 0 && advanceDocs[0]?.net !== j.advanceNet) fail(`kontrakt ${j.id}: zaliczka ${advanceDocs[0]?.net} ≠ ${j.advanceNet}`);
+    if (finalDocs.length > (j.stage === 'done' ? 1 : 0)) fail(`kontrakt ${j.id}: ${finalDocs.length} dokumentów rozliczenia końcowego`);
+    if (j.stage === 'done') {
+      const f = finalDocs[0];
+      if (!f || f.id !== j.finalDocId) fail(`kontrakt ${j.id}: brak dokumentu rozliczenia`);
+      else if (advanceDocs.reduce((a, d) => a + d.net, 0) + f.net !== j.priceNet - j.penaltyNet) fail(`kontrakt ${j.id}: zaliczka + rozliczenie ≠ cena − kara`);
+      if (order && order.status !== 'completed') fail(`kontrakt ${j.id}: zlecenie nie jest zakończone`);
+    }
+    for (const [key, c] of Object.entries(j.consumed)) {
+      const u = usedByJob.get(`${j.id}:${key}`) ?? { qty: 0, value: 0 };
+      if (u.qty !== c.qty || u.value !== c.value) fail(`kontrakt ${j.id}: zużycie ${key} ${c.qty}/${c.value} ≠ ruchy ${u.qty}/${u.value}`);
+    }
+    const consumedValue = Object.values(j.consumed).reduce((a, c) => a + c.value, 0);
+    if (consumedValue !== j.actual.materials) fail(`kontrakt ${j.id}: koszt materiałów ${j.actual.materials} ≠ zużycie ${consumedValue}`);
+  }
+  for (const o of s.serviceOrders) if (o.kind === 'renovation' && !jobIds.has(s.reno.jobs.find((j) => j.orderId === o.id)?.id ?? '')) fail(`zlecenie ${o.id}: brak kontraktu remontowego`);
+  const complained = new Set<string>();
+  for (const c of s.reno.complaints) {
+    if (complained.has(c.jobId)) fail(`kontrakt ${c.jobId}: zduplikowana reklamacja`);
+    complained.add(c.jobId);
+    if (!jobIds.has(c.jobId)) fail(`reklamacja ${c.id}: nieznany kontrakt`);
+  }
+  const reviewed = new Set<string>();
+  for (const r of s.reno.reviews) {
+    if (reviewed.has(r.jobId)) fail(`kontrakt ${r.jobId}: zduplikowana opinia`);
+    reviewed.add(r.jobId);
+  }
+  if (s.accounting.office && !s.accounting.office.planId) fail('księgowość: brak planu');
   return errors;
 }

@@ -8,6 +8,8 @@ import { RULES_2026 as R, carriedForward } from './legal.ts';
 import { formatPLN, mulBps, roundDiv, zl } from './money.ts';
 import type { Grosze } from './money.ts';
 import { createRng } from './rng.ts';
+import { industryOf } from './industry.ts';
+import { SERVICE_BY_ID } from './renovationCatalog.ts';
 import { periodLabel } from './core.ts';
 import type { Business, BusinessDocument, GameState, ServiceOffer, ServiceOrder, TaxForm, TaxPeriod, ZusStart } from './state.ts';
 import { grossOf } from './payroll.ts';
@@ -129,6 +131,10 @@ interface DocInput {
   description: string;
   net: Grosze;
   termDays: number;
+  /** Zaliczka / rozliczenie końcowe po zaliczce (domyślnie całość). */
+  part?: 'full' | 'advance' | 'final';
+  /** Bez losowego opóźnienia płatności klienta (np. zaliczka płatna przy podpisaniu umowy). */
+  noDelay?: boolean;
 }
 
 /** Wystawia rekord sprzedaży/kosztu i księguje go przez wspólny silnik zobowiązań (rachunek firmowy). */
@@ -157,7 +163,7 @@ export function issueDocument(s: GameState, b: Business, input: DocInput): Busin
     id, businessId: b.id, kind: input.kind, number, issueDate: input.issueDate, saleDate: input.issueDate,
     counterpartyId: input.counterpartyId, orderId: input.orderId, description: input.description,
     net: input.net, vatRateBps: taxed ? R.vat.rateBps : 0, vat, gross, vatTreatment: taxed ? 'taxed' : 'exempt', termDate,
-    obligationIds: [], taxAmount: input.kind === 'sales' ? input.net : taxed ? input.net : gross,
+    obligationIds: [], taxAmount: input.kind === 'sales' ? input.net : taxed ? input.net : gross, part: input.part ?? 'full',
   };
   const base = { ruleId: `doc:${id}`, issueDate: input.issueDate, accountId: b.accountId, scope: 'business' as const };
   const vatDue = dueNextMonth(input.issueDate, R.vat.dueDay);
@@ -166,7 +172,7 @@ export function issueDocument(s: GameState, b: Business, input: DocInput): Busin
     if (ob) doc.obligationIds.push(ob.id);
   };
   if (input.kind === 'sales') {
-    const due = addDays(termDate, paymentDelayDays(s.seed, id));
+    const due = addDays(termDate, input.noDelay ? 0 : paymentDelayDays(s.seed, id));
     make('net', { direction: 'receivable', counterpartyId: input.counterpartyId, amount: input.net, dueDate: due, category: BUSINESS_CATEGORIES.revenue, description: `${number}: ${input.description}` });
     if (taxed) {
       make('vat-client', { direction: 'receivable', counterpartyId: input.counterpartyId, amount: vat, dueDate: due, category: BUSINESS_CATEGORIES.vatFromClient, description: `${number}: VAT od kontrahenta` });
@@ -199,6 +205,8 @@ export interface RegisterInput {
   startDate: IsoDate;
   zusStart: ZusStart;
   sickness: boolean;
+  /** Wymagana dla profili branżowych (np. remonty): pierwsza specjalizacja. */
+  specialization?: string;
 }
 
 /** Dozwolone daty startu: 1. dni miesięcy po dzisiejszym dniu (nie wcześniej niż MIN_BUSINESS_START), do ~4 miesięcy w przód. */
@@ -216,7 +224,9 @@ export function validateRegistration(s: GameState, i: RegisterInput): string | n
   if (activeBusiness(s)) return 'Prowadzisz już działalność (w v0.3 można prowadzić jedną JDG).';
   const name = i.name.trim();
   if (name.length < 2 || name.length > 60) return 'Nazwa działalności: od 2 do 60 znaków.';
-  if (!PROFILE_BY_ID.has(i.profileId)) return 'Wybierz profil działalności.';
+  const prof = PROFILE_BY_ID.get(i.profileId);
+  if (!prof) return 'Wybierz profil działalności.';
+  if (prof.industry === 'renovation' && !(i.specialization && SERVICE_BY_ID.has(i.specialization))) return 'Wybierz specjalizację (pierwszą usługę, którą będziesz wykonywać).';
   if (!['skala', 'liniowy', 'ryczalt'].includes(i.taxForm)) return 'Wybierz formę opodatkowania.';
   if (!['exempt', 'active'].includes(i.vatStatus)) return 'Wybierz status VAT.';
   if (!isValidIsoDate(i.startDate) || !allowedBusinessStarts(s).includes(i.startDate)) return 'Działalność może rozpocząć się tylko 1. dnia jednego z najbliższych miesięcy (nie wcześniej niż luty 2026).';
@@ -244,6 +254,7 @@ export function registerBusiness(s: GameState, i: RegisterInput): string {
     suspensions: [], taxFormPlan: null, taxFormHistory: [{ form: i.taxForm, from: i.startDate }],
   };
   s.businesses.push(b);
+  industryOf(b)?.onRegister?.(s, b, { specialization: i.specialization });
   logEvent(s, {
     id: `business.registered:${id}`, date: s.clock.today, type: 'business.registered', tone: 'positive',
     title: `Zarejestrowano działalność: ${b.name}`,
@@ -283,6 +294,10 @@ export function previewRegistration(s: GameState, i: Pick<RegisterInput, 'profil
   }
   if (i.taxForm === 'ryczalt') warnings.push(`Ryczałt: stawka ${profile.ryczaltRateBps / 100}% (${profile.ryczaltCategory}) to przypisanie do profilu — w rzeczywistości zależy od PKWiU usługi.`);
   if (i.taxForm === 'skala' && hasEmploymentInYear(s, parseIso(i.startDate).year)) warnings.push('Skala przy równoległym etacie: symulator nie łączy dochodów z etatu z JDG i nie stosuje kwoty zmniejszającej 3 600 zł do dochodu z JDG.');
+  if (profile.industry === 'renovation') {
+    warnings.push('Usługi remontowe: gra stosuje 23% VAT dla czynnego podatnika albo zwolnienie podmiotowe. Obniżona stawka 8% dla remontów mieszkań i odwrotne obciążenie podwykonawców NIE są obsługiwane (warunki niezweryfikowane — rejestr reguł RENO-VAT-REDUCED).');
+    warnings.push('Zwolnienie podmiotowe w tej branży: pełny katalog wyłączeń z art. 113 ust. 13 nie został zweryfikowany w tekście ustawy (VAT-EXEMPTION-EXCLUSIONS) — to ograniczenie symulacji.');
+  }
   if (covered) warnings.push('Masz etat z wynagrodzeniem ≥ minimalnego: składek społecznych z JDG nie płacisz, ale składka zdrowotna z JDG jest wymagana.');
   else if (currentEmployment(s)) warnings.push('Etat poniżej minimalnego wynagrodzenia: składki społeczne z JDG są wymagane.');
   if (!eligible) warnings.push('Ulga na start i składki preferencyjne są niedostępne (działalność w ostatnich 60 miesiącach).');
@@ -337,7 +352,7 @@ export function acceptServiceOffer(s: GameState, offerId: string, hoursPerDay: n
   const order: ServiceOrder = {
     id, offerId: offer.id, clientId: offer.clientId, title: offer.title, netValue: offer.netValue, hoursTotal: offer.hoursTotal, progressCentiHours: 0,
     hoursPerDay, costNet: offer.costNet, paymentTermDays: offer.paymentTermDays, latePenaltyBps: offer.latePenaltyBps, acceptedOn: today,
-    startDate: start, deadline, status: 'in_progress', completedOn: null, salesDocumentId: null, commitmentId, late: false,
+    startDate: start, deadline, status: 'in_progress', completedOn: null, salesDocumentId: null, commitmentId, late: false, kind: 'service',
   };
   s.serviceOrders.push(order);
   offer.status = 'accepted';
@@ -362,7 +377,7 @@ const FAIL_AFTER_DEADLINE_DAYS = 30;
 
 function progressOrders(s: GameState, b: Business, date: IsoDate): void {
   for (const o of s.serviceOrders) {
-    if (o.status !== 'in_progress' || date < o.startDate) continue;
+    if (o.kind !== 'service' || o.status !== 'in_progress' || date < o.startDate) continue;
     const c = s.commitments.find((x) => x.id === o.commitmentId);
     o.progressCentiHours += roundDiv(o.hoursPerDay * 100 * performanceBps(s.life.fatigue), 10_000);
     if (o.progressCentiHours >= o.hoursTotal * 100) {
@@ -404,6 +419,7 @@ function manageOffers(s: GameState, b: Business, date: IsoDate): void {
   const rng = createRng(s.seed, id);
   if (rng.int(0, 99) >= 75) return;
   const profile = profileOf(b);
+  if (profile.templates.length === 0) return; // profile branżowe (v0.5) mają własne zapytania
   const tpl = profile.templates[rng.int(0, profile.templates.length - 1)]!;
   const net = tpl.netMin + rng.int(0, Math.floor((tpl.netMax - tpl.netMin) / zl(50))) * zl(50);
   const cost = tpl.costMax > tpl.costMin ? tpl.costMin + rng.int(0, Math.floor((tpl.costMax - tpl.costMin) / zl(10))) * zl(10) : tpl.costMin;
@@ -723,6 +739,7 @@ export function processBusiness(s: GameState, date: IsoDate): void {
     if (!isSuspendedOn(b, date)) {
       manageOffers(s, b, date);
       progressOrders(s, b, date);
+      industryOf(b)?.processDay(s, b, date);
     }
     const { year, month, day } = parseIso(date);
     if (day === daysInMonth(year, month)) closeMonth(s, b, date);
