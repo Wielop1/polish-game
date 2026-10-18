@@ -41,9 +41,10 @@ Wygląd ekranów sprawdzony ręcznie na zrzutach (desktop 1360 px, telefon 390 p
 
 ## Wdrożenie (Vercel)
 
-- Repozytorium `Wielop1/polish-game`, gałąź `main`, połączone z Vercel. Konfiguracja: `vercel.json` (framework vite, `dist`, fallback SPA). Brak sekretów i zmiennych środowiskowych.
-- Lokalnie: `npm run build` ✅, podgląd (`vite preview`) obsługuje e2e ✅.
-- Wynik wdrożenia na Vercel: patrz sekcja „Wdrożenie — wynik” poniżej (uzupełniana po pushu).
+- Kod jest wypchnięty na `main` repozytorium `Wielop1/polish-game`. Konfiguracja: `vercel.json` (framework vite, `dist`, fallback SPA); brak sekretów i zmiennych środowiskowych.
+- Lokalnie: `npm run build` ✅, `vite preview` obsługuje e2e ✅, `npm run dev` ✅. Aplikacja jest **gotowa do wdrożenia jako statyczny frontend**.
+- **Połączenie z Vercel NIE zostało potwierdzone.** Sprawdzenie (2026-10-18) przez Vercel MCP: konto ma tylko projekty `fizjo-radar`, `x1gold`, `x1factory`, `busik-warmia` — **żaden nie jest podpięty do `Wielop1/polish-game`**, więc po pushu nie powstało wdrożenie. Zgodnie ze specyfikacją nie utworzono nowego projektu Vercel. Wymagana akcja właściciela: zaimportować repo w Vercel (Framework: Vite, bez zmiennych środowiskowych) albo wskazać istniejący projekt do podpięcia.
+- Po podpięciu: sprawdzić pierwszy build i otworzyć wdrożony adres (nowa gra → miesiąc → zapis → przeładowanie).
 
 ## Znane problemy i uproszczenia
 
