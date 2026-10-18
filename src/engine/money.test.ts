@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertGrosze, mulBps, roundDiv, sum, zl } from './money.ts';
+import { assertGrosze, formatPLN, mulBps, roundDiv, sum, zl } from './money.ts';
 import { createRng } from './rng.ts';
 
 describe('pieniądze', () => {
@@ -23,6 +23,15 @@ describe('pieniądze', () => {
     expect(mulBps(zl(300), 1500)).toBe(zl(45));
     expect(mulBps(zl(300), -1500)).toBe(-zl(45));
     expect(mulBps(1, 5000)).toBe(1); // 0,5 grosza -> 1
+  });
+});
+
+describe('formatowanie', () => {
+  it('grupuje tysiące także w liczbach 4-cyfrowych i zawsze pokazuje grosze', () => {
+    expect(formatPLN(zl(5_000))).toMatch(/^5\s000,00\szł$/);
+    expect(formatPLN(zl(1_234_567.89))).toMatch(/^1\s234\s567,89\szł$/);
+    expect(formatPLN(-zl(300))).toMatch(/^-300,00\szł$/);
+    expect(formatPLN(zl(5_000), { round: true })).toMatch(/^5\s000\szł$/);
   });
 });
 

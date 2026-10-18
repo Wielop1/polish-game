@@ -41,17 +41,22 @@ export function sum(values: readonly Grosze[]): Grosze {
   return total;
 }
 
+// useGrouping: 'always' — polski locale domyślnie nie grupuje liczb 4-cyfrowych („5000 zł”),
+// a w interfejsie gry spójne „5 000 zł” czyta się znacznie lepiej.
+const groupingAlways = { useGrouping: 'always' } as unknown as Intl.NumberFormatOptions;
 const plnFormat = new Intl.NumberFormat('pl-PL', {
   style: 'currency',
   currency: 'PLN',
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
+  ...groupingAlways,
 });
 const plnFormatRound = new Intl.NumberFormat('pl-PL', {
   style: 'currency',
   currency: 'PLN',
   minimumFractionDigits: 0,
   maximumFractionDigits: 0,
+  ...groupingAlways,
 });
 
 /** Formatowanie wyłącznie do wyświetlania (nie do obliczeń). */

@@ -89,11 +89,12 @@ export function scheduledItems(s: GameState, from: IsoDate, to: IsoDate): Schedu
         const { year, month } = monthKeyToYm(key);
         const issueDate = dateInMonth(year, month, rule.issueDay);
         if (!isIssueDay(rule, issueDate) || issueDate <= today) continue;
-        if (issueDate >= start && issueDate <= to) {
+        const dueDate = computeDueDate(issueDate, rule.due);
+        // Naliczenie i płatność tego samego dnia to jedno zdarzenie z perspektywy gracza: płatność.
+        if (dueDate !== issueDate && issueDate >= start && issueDate <= to) {
           items.push({ date: issueDate, kind: 'issue', ruleId: rule.id, title: rule.description, amount: sign * amount, approximate, category: rule.category });
         }
-        const dueDate = computeDueDate(issueDate, rule.due);
-        if (dueDate >= start && dueDate <= to && dueDate !== issueDate) {
+        if (dueDate >= start && dueDate <= to) {
           items.push({ date: dueDate, kind: 'due', ruleId: rule.id, title: rule.description, amount: sign * amount, approximate, category: rule.category });
         }
       }

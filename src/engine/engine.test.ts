@@ -322,6 +322,11 @@ describe('harmonogram (projekcja)', () => {
     expect(items.every((i) => i.date > '2026-01-01')).toBe(true);
     expect(s).toEqual(before);
   });
+  it('koszt płatny w dniu naliczenia jest jedną pozycją „termin płatności”', () => {
+    const items = scheduledItems(newGame(), '2026-01-02', '2026-01-31').filter((i) => i.category === 'zywnosc');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ date: '2026-01-03', kind: 'due', amount: -E.groceries.amount });
+  });
   it('projekcja zgadza się z tym, co faktycznie się wydarzy', () => {
     const s = newGame();
     const items = scheduledItems(s, '2026-01-02', '2026-03-31').filter((i) => i.kind === 'due' && !i.approximate);
