@@ -60,12 +60,12 @@ test('wszystkie ekrany się renderują', async ({ page }) => {
     ['Historia zdarzeń', 'Historia zdarzeń'],
     ['Pulpit', 'Pulpit gracza'],
   ] as const) {
-    await page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name: nav }).click();
+    await page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name: nav, exact: true }).click();
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
   }
-  await page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name: 'Postać' }).click();
+  await page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name: 'Postać', exact: true }).click();
   await expect(page.getByTestId('character-name')).toHaveText('Jan Kowalski');
-  await page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name: 'Kalendarz' }).click();
+  await page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name: 'Kalendarz', exact: true }).click();
   await expect(page.getByTestId('calendar-grid')).toBeVisible();
   await page.getByRole('button', { name: 'Poprzedni miesiąc' }).click(); // kalendarz pokazuje luty
   await page.getByRole('button', { name: /^10 stycznia 2026/ }).click();

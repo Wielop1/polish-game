@@ -115,3 +115,35 @@ Statusy: *Zaakceptowana* · *Proponowana* (czeka na zatwierdzenie) · *Zastąpio
 1. Ryzyko zwolnienia (`layoffRisk`, `src/engine/labor.ts`) jest sumą czynników; bez czynników wynosi 0: wydajność/absencje z wyczerpania (+150 pkt bazowych/mies. przy wydajności < 60%, +40 przy < 80%), trudna sytuacja pracodawcy (+50; 15% lat), recesja (+50; 15% lat). Klimat gospodarczy i kondycja pracodawcy są losowane deterministycznie z (seed, rok) i (seed, pracodawca, rok), niezależnie od działań gracza. Okres próbny: bez ryzyka przy stażu w firmie < 90 dni. Wydarzenie podaje przyczynę (największy czynnik); ekran „Oferty pracy” pokazuje poziom ryzyka i czynniki.
 2. Staż w firmie = ciągłość zatrudnienia u tego samego pracodawcy: łańcuch umów, w którym każda następna zaczyna się dzień po końcu poprzedniej, a poprzednia zakończyła się zmianą warunków (`terminatedBy: null`), nie wypowiedzeniem. Staż na stanowisku = od początku bieżącej umowy. Premia i ryzyko zwolnienia używają stażu w firmie; awans wymaga obu (≥ 180 dni w firmie i na stanowisku) oraz 12 miesięcy od poprzedniego.
 **Konsekwencje:** brak zmian schematu i migracji — łańcuch wynika z istniejących pól, więc zapisy v1 i v2 działają bez zmian (awanse z v0.2 mają `terminatedBy: null`). Pomiar na 60 seedach × 5 lat: bierna gra traci pracę w ok. 8% przypadków (przyczyny zewnętrzne), wyczerpujący plan dnia w ok. 53%. Bez absencji jako osobnej mechaniki — „absencje” to opis niskiej wydajności z wyczerpania. Wartości są przykładowe.
+
+---
+
+# v0.3 — pierwsza działalność gospodarcza (JDG)
+
+## ADR-026 · JDG jako ewidencja osoby fizycznej: rachunek firmowy + `scope: 'business'` — *Zaakceptowana*
+**Kontekst:** JDG nie jest osobą prawną (wymóg specyfikacji); nie wolno modelować jej jako spółki z własnym właścicielem.
+**Decyzja:** `Business` należy do osoby gracza (`ownerId`); ma własny rachunek `type: 'business'` (własność osoby fizycznej) i odrębną ewidencję: zobowiązania/należności z `scope: 'business'` rozliczane z rachunku firmowego. Majątek netto obejmuje saldo firmowe. Prywatne podsumowania miesięczne pomijają ewidencję firmową; firmowe (`businessSummaries`) pomijają VAT jako przepływ przelotowy. Finansowanie działalności to zwykłe przelewy własne (`transferFunds`: wkład/pobranie) — nie przychód ani koszt. Niezmienniki wymuszają: rachunek firmowy należy do właściciela-osoby, ewidencja zgodna z rachunkiem.
+**Konsekwencje:** brak równoległego systemu pieniędzy; składki, podatek i VAT z rachunku firmowego → brak środków = zaległość (gracz musi finansować firmę). Jedna aktywna JDG; start tylko 1. dnia miesiąca (≥ 1.02.2026), zakończenie na koniec miesiąca.
+
+## ADR-027 · Rejestr reguł prawnych ze statusami i źródłami; 2026 zweryfikowane, później przenoszone z flagą — *Zaakceptowana*
+**Decyzja:** `src/engine/legal.ts` zawiera `LEGAL_RULES` (id, zakres, daty, źródło urzędowe, data weryfikacji, `VERIFIED`/`SIMPLIFIED`/`DEFERRED`, ograniczenia) oraz `RULES_2026` (wartości w groszach/pkt bazowych). `docs/LEGAL_SOURCES.md` jest generowany z rejestru. Kalkulatory (`tax.ts`) są czyste. Rozliczenia zapisują identyfikatory użytych reguł (`taxPeriods.ruleIds`) i flagę `carriedForward` dla lat po 2026. Testy sprawdzają zweryfikowane przykłady liczbowe.
+**Konsekwencje:** reguł niezweryfikowanych (Mały ZUS Plus, wakacje składkowe, zawieszenie, roczna zdrowotna, KSeF, straty/ulgi) nie ma w silniku, a UI je pokazuje jako „odłożone”. Weryfikacja kolejnych lat = nowy zestaw wartości, nie nadpisanie.
+
+## ADR-028 · Rozliczenia podatkowo-składkowe na koniec miesiąca, metoda narastająca — *Zaakceptowana*
+**Decyzja:** ostatniego dnia miesiąca `closeMonth` tworzy zobowiązania: składki społeczne (reżim: ulga → 24 mies. preferencyjnych → standard, albo „pokryte etatem” przy zbiegu), składkę zdrowotną i zaliczkę PIT — termin 20. dnia następnego miesiąca. Zaliczka = podatek narastający od początku roku − dotychczasowe zaliczki; ≤ 1 000 zł nie jest wpłacana i kumuluje się; odliczane są tylko **zapłacone** składki. Grudzień (lub zakończenie działalności) tworzy saldo roczne do 30 kwietnia. Klucze idempotencji (`processed`) chronią przed ponownym naliczeniem po wczytaniu zapisu. (Test wykrył i naprawił błąd: klucz rozliczenia rocznego kolidował z `occurrenceId` zobowiązania.)
+**Konsekwencje:** brak odsetek za nieterminowe płatności i kwartalnych rozliczeń; zaokrąglanie do zł niewdrożone.
+
+## ADR-029 · VAT i dokumenty przez wspólny silnik zobowiązań — *Zaakceptowana*
+**Decyzja:** dokument sprzedaży/kosztu (`Document`) nie jest fakturą KSeF; przy czynnym VAT rozbijany jest na zobowiązania: netto (przychód/koszt), VAT od/dla kontrahenta oraz VAT należny/naliczony wobec US (termin 25. następnego miesiąca). Kategorie VAT są przepływem przelotowym (poza wynikiem firmy; tożsamość księgowa zachowana). Zwolnienie podmiotowe: dokument bez VAT, koszt brutto. Limit 240 000 zł (rok startu: proporcjonalnie do pełnych miesięcy); przekroczenie → status czynny od tej czynności, jej kwota traktowana jako netto + 23%.
+**Konsekwencje:** nadwyżka VAT naliczonego trafia jako należność od US z terminem 25. (uproszczenie); brak korekt, metody kasowej, innych stawek.
+
+## ADR-030 · Zlecenia usługowe korzystają z budżetu czasu i wydajności — *Zaakceptowana*
+**Decyzja:** przyjęcie zlecenia rezerwuje wybraną liczbę godzin dziennie jako `commitment` i jest walidowane na każdy dzień do terminu (te same godziny nie służą etatowi, snu i zleceniu naraz). Postęp dzienny = godziny × wydajność (zmęczenie), więc wyczerpany wykonawca kończy po terminie i płaci karę umowną (zmniejsza fakturę); po terminie + 30 dni zlecenie przepada. Przychód (dokument w dniu wykonania), należność i wpływ gotówki są odrębnymi zdarzeniami; klient płaci po terminie umownym z deterministycznym opóźnieniem 0–35 dni. Zlecenia od pracodawców gracza są blokowane (ochrona ulg i form opodatkowania).
+**Konsekwencje:** brak negocjacji, reputacji i wyceny przez gracza (FEATURE_EVOLUTION: FE-BIZ-05/06).
+
+## ADR-031 · SAVE_VERSION 3 i migracja v2 → v3 — *Zaakceptowana*
+**Decyzja:** `migrateV2ToV3` dodaje puste kolekcje JDG i `scope: 'personal'` do istniejących zobowiązań; niczego nie zmyśla. Test używa **prawdziwego zapisu v2 wygenerowanego kodem v0.2.1** (`fixtures/save-v2.json`, wygenerowany przez `git worktree` na commicie 6a6485a) obok fixture v1; łańcuch v1 → v2 → v3 jest testowany.
+**Konsekwencje:** zapisy v1 i v2 wczytują się bez resetu; kolejne migracje dopisujemy do `MIGRATIONS`, fixture’ów nie usuwamy.
+
+## ADR-032 · Rejestr rozwoju mechanik jako obowiązkowy dokument — *Zaakceptowana* (polecenie właściciela)
+**Decyzja:** `docs/FEATURE_EVOLUTION.md` porównuje mechaniki z docelowym zachowaniem; `AGENTS.md` wymaga sprawdzenia go przed zadaniem i aktualizacji tylko dotkniętych pozycji; pozycje i pomysły nie są usuwane. **Konsekwencje:** każde nowe uproszczenie musi trafić do §14.

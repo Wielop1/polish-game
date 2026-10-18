@@ -33,6 +33,12 @@ export function TimeBar() {
             <dt className="text-[11px] tracking-wider text-slate-400 uppercase">Oszczędności</dt>
             <dd data-testid="hud-savings" className="text-base font-semibold text-violet"><Money value={nw.savings} /></dd>
           </div>
+          {game.businesses.some((b) => b.status === 'active') && (
+            <div>
+              <dt className="text-[11px] tracking-wider text-slate-400 uppercase">Firma</dt>
+              <dd data-testid="hud-business" className="text-base font-semibold text-gold"><Money value={nw.business} /></dd>
+            </div>
+          )}
           <div>
             <dt className="text-[11px] tracking-wider text-slate-400 uppercase">Majątek netto</dt>
             <dd data-testid="hud-networth" className="text-base font-semibold text-sky"><Money value={nw.netWorth} /></dd>

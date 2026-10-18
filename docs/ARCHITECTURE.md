@@ -56,7 +56,11 @@ Brak backendu, bazy zewnętrznej, logowania, płatnych API, generatywnego AI. Pa
 | `jobs.ts` · `housing.ts` · `savings.ts` | Kariera (aplikacje, umowy, rezygnacja, awans), najem (podgląd, umowa, kaucja), przelewy i odsetki |
 | `time.ts` | Budżet czasu, zmęczenie, wydajność, walidacja planu |
 | `lifeEvents.ts` · `pending.ts` | Katalog wydarzeń życiowych (losowanie, decyzje, wygaśnięcie); wykonywanie akcji zaplanowanych |
-| `contracts.ts` | Pomocnicze zapytania o umowy (aktualna praca/najem, status zatrudnienia) |
+| `contracts.ts` | Pomocnicze zapytania o umowy (aktualna praca/najem, status zatrudnienia, staż w firmie i na stanowisku) |
+| `labor.ts` | Klimat gospodarczy i kondycja pracodawcy; ryzyko zwolnienia z czynników |
+| `legal.ts` | **Rejestr reguł prawnych** (`LEGAL_RULES`: źródła, statusy) i wartości 2026 (`RULES_2026`) |
+| `tax.ts` | Czyste kalkulatory ZUS, składki zdrowotnej, PIT, limitu VAT (grosze) |
+| `business.ts` · `businessCatalog.ts` | JDG: rejestracja, dokumenty (VAT), zlecenia, miesięczne i roczne rozliczenia; profile usługowe z PKD 2025 |
 | `simulate.ts` | naliczenia z reguł, rozliczenia, zmęczenie, `processDay`, `advanceDays`, `advanceToNextMonth` |
 | `schedule.ts` | Reguły dnia, termin płatności, urodziny, **projekcja** przyszłych zdarzeń (kalendarz, „najbliższe płatności”) |
 | `selectors.ts` | `netWorthBreakdown`, `monthlySummaries`, zaległości, wiek |
@@ -72,7 +76,8 @@ advanceToNextMonth(state): GameState
 checkInvariants(state): string[]                                  // [] = spójny
 scheduledItems(state, from, to): ScheduledItem[]                  // projekcja, nic nie księguje
 commands.applyForJob | respondToJobOffer | resignFromJob | signLease | setLifestyle
-        | setTimePlan | transferFunds | resolveLifeEvent  (state, …) → { ok, state, message } | { ok:false, error }
+        | setTimePlan | transferFunds | resolveLifeEvent
+        | registerBusiness | closeBusiness | acceptServiceOffer | declineServiceOffer  (state, …) → { ok, state, message } | { ok:false, error }
 
 // Zapis
 serializeSave(state, savedAt): string                             // odmawia niespójnego stanu
@@ -91,7 +96,7 @@ interface SaveRepository { list(); get(slot); put(slot, json, savedAt, meta); re
 
 - **Magazyn:** IndexedDB (baza `polski-tycoon`, store `saves`, klucz `slot`). Rekord: `{slot, savedAt, meta, json}`. Sloty: `autosave`, `slot-1`, `slot-2`, `slot-3`. Gdy IndexedDB jest niedostępne, store przełącza się na magazyn w pamięci i UI pokazuje ostrzeżenie.
 - **Koperta zapisu (JSON):** `{ format: "polski-tycoon-save", version, savedAt, meta, state }`.
-- **Wersjonowanie:** `SAVE_VERSION = 2` (migracja v1 → v2 w `src/persistence/migrations.ts`, ADR-024). Zmiana kształtu `GameState` ⇒ `SAVE_VERSION + 1` + `MIGRATIONS[n]` (stan v n → n+1). Zapis z nowszej wersji jest odrzucany z czytelnym komunikatem.
+- **Wersjonowanie:** `SAVE_VERSION = 3` (migracje v1 → v2 → v3 w `src/persistence/migrations.ts`, ADR-024/031). Zmiana kształtu `GameState` ⇒ `SAVE_VERSION + 1` + `MIGRATIONS[n]` (stan v n → n+1). Zapis z nowszej wersji jest odrzucany z czytelnym komunikatem.
 - **Walidacja przy wczytaniu** (`parseSave`): poprawny JSON → koperta → migracje → **schemat Zod całego stanu** → **`checkInvariants`**. Dopiero wtedy stan trafia do gry. Błąd = komunikat w UI, bieżąca gra nietknięta.
 - **Walidacja przy zapisie** (`serializeSave`): odmowa zapisu stanu naruszającego niezmienniki.
 - **Autozapis:** po każdym przesunięciu czasu i po starcie nowej gry (asynchroniczny, bez blokowania UI; błąd → komunikat).
@@ -100,7 +105,7 @@ interface SaveRepository { list(); get(slot); put(slot, json, savedAt, meta); re
 ## 6. UI
 
 - Brak routera: aktualny ekran to pole `screen` w store (SPA bez adresów podstron). `vercel.json` ma mimo to fallback na `index.html` pod przyszły routing.
-- Ekrany: Pulpit, Postać, Finanse, Kalendarz, Historia zdarzeń; od v0.2 grupa „Życie”: Oferty pracy, Mieszkanie, Styl życia, Budżet czasu, Oszczędności, Decyzje i wydarzenia (plakietka z liczbą oczekujących); Nowa gra/Wczytaj. Na telefonie dolny pasek ma 3 skróty + „Więcej”. Komunikaty to toasty (prawy dolny róg). Pasek HUD (data, gotówka, majątek, sterowanie czasem) nad każdym ekranem gry; nawigacja boczna (desktop) / dolna (telefon).
+- Ekrany: Pulpit, Postać, Finanse, Kalendarz, Historia zdarzeń; od v0.2 grupa „Życie” (Oferty pracy, Mieszkanie, Styl życia, Budżet czasu, Oszczędności, Decyzje i wydarzenia z plakietką) oraz grupa **„Firma (JDG)”** (Rejestracja JDG, Moja działalność, Oferty i kontrakty, Finanse firmy, Podatki i ZUS, Dokumenty, Kalendarz obowiązków; wszystkie z banerem „Symulacja — nie porada prawna/podatkowa”); Nowa gra/Wczytaj. Na telefonie dolny pasek ma 3 skróty + „Więcej”. Komunikaty to toasty (prawy dolny róg). Pasek HUD (data, gotówka, majątek, sterowanie czasem) nad każdym ekranem gry; nawigacja boczna (desktop) / dolna (telefon).
 - Wykresy: własne komponenty SVG (`LineChart`, `BarChart`, `Donut`, `ProgressBar`) — bez biblioteki wykresów.
 - Wartości przykładowe oznaczone badge „przykładowe”.
 - Dostępność: role/aria dla grup przycisków, wykresów (`role="img"` + `aria-label`), komunikatów (`role="alert"`), `prefers-reduced-motion`.

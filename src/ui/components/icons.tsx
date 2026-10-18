@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 export type IconName =
   | 'dashboard' | 'user' | 'wallet' | 'calendar' | 'list' | 'save' | 'step' | 'fast' | 'alert'
-  | 'chevronLeft' | 'chevronRight' | 'home' | 'briefcase' | 'trend' | 'heart' | 'clock' | 'coins' | 'bell' | 'menu';
+  | 'chevronLeft' | 'chevronRight' | 'home' | 'briefcase' | 'trend' | 'heart' | 'clock' | 'coins' | 'bell' | 'menu' | 'building' | 'receipt' | 'shield' | 'file';
 
 const PATHS: Record<IconName, ReactNode> = {
   dashboard: <><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></>,
@@ -24,6 +24,10 @@ const PATHS: Record<IconName, ReactNode> = {
   coins: <><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" /></>,
   bell: <><path d="M6 17V11a6 6 0 0 1 12 0v6l2 2H4l2-2Z" /><path d="M10 21a2 2 0 0 0 4 0" /></>,
   menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+  building: <><path d="M5 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16M15 9h3a1 1 0 0 1 1 1v11M3 21h18" /><path d="M9 8h2M9 12h2M9 16h2" /></>,
+  receipt: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" /><path d="M9 8h6M9 12h6" /></>,
+  shield: <><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></>,
+  file: <><path d="M7 3h7l4 4v14H7V3Z" /><path d="M14 3v4h4M10 12h5M10 16h5" /></>,
 };
 
 export function Icon({ name, className = 'size-5' }: { name: IconName; className?: string }) {

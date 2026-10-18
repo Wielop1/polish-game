@@ -54,9 +54,10 @@ Znane uproszczenie: mniejsze, późniejsze zobowiązanie może zostać opłacone
 1. `runPendingActions` — jednorazowe akcje zaplanowane na ten dzień (v0.2; kolejność data → id).
 2. `applyScheduledOccurrences` — naliczenia z reguł (także kapitalizacja odsetek), w kolejności `rule.id`.
 3. `rollLifeEvents` — losowanie wydarzeń życiowych (v0.2).
-4. `settleDueObligations` — rozliczenia (pkt 2.3), każde z rachunku wskazanego w zobowiązaniu.
-5. `updateFatigue` — zmiana zmęczenia z budżetu godzin (v0.2, idempotentna po `life.fatigueDate`).
-6. `recordHistory` — migawka `{data, rachunek bieżący, oszczędności, majątek netto}` (jedna na dzień).
+4. `processBusiness` — JDG (v0.3): oferty (1. i 16.), postęp i zakończenie zleceń, przegląd VAT w nowym roku, zamknięcie miesiąca (ostatniego dnia).
+5. `settleDueObligations` — rozliczenia (pkt 2.3), każde z rachunku wskazanego w zobowiązaniu.
+6. `updateFatigue` — zmiana zmęczenia z budżetu godzin (v0.2, idempotentna po `life.fatigueDate`).
+7. `recordHistory` — migawka `{data, rachunek bieżący, oszczędności, majątek netto}` (jedna na dzień).
 
 ## 4. Mechanizm zdarzeń
 
@@ -119,6 +120,14 @@ Sprawdzane w testach po każdym miesiącu symulacji oraz przy wczytywaniu zapisu
 
 **Wydarzenia życiowe.** ADR-023. Prawdopodobieństwa miesięczne (bazowe, w pkt bazowych): awaria 700 (jest najem, brak w ostatnich 60 dniach), niespodziewany wydatek 900, premia 500×wydajność (staż w firmie ≥ 60 dni, wydajność ≥ 70%), awans 300 (staż w firmie i na stanowisku ≥ 180 dni, wydajność ≥ 80%, bez awansu w 12 mies.), utrata pracy = suma czynników z `labor.ts` (wydajność 40/150, trudna sytuacja pracodawcy 50, recesja 50; 0 bez czynników; staż w firmie ≥ 90 dni — ADR-025), zlecenie 700 (mieści się 2 godz. dziennie przez 14 dni), kurs 400 (≥ 1 400 zł na rachunkach, mieści się 2 godz. dziennie przez 30 dni). Wszystkie wartości przykładowe.
 
+## 8b. Mechaniki v0.3 — JDG (skrót; szczegóły i źródła: `LEGAL_SOURCES.md`, ADR-026–030)
+
+- **Ewidencja.** Zobowiązania mają `scope` (personal/business); JDG ma rachunek `type: 'business'` należący do osoby. Przelewy prywatne↔firma to `transferFunds`.
+- **Dokumenty i VAT.** `issueDocument` tworzy dokument i zobowiązania: sprzedaż — należność netto (przychód), a przy czynnym VAT także należność z VAT od klienta i zobowiązanie VAT należny (25. następnego miesiąca); koszt — zobowiązanie netto/brutto (zwolniony: brutto), przy czynnym VAT także VAT naliczony jako należność od US. Opóźnienie płatności klienta: `paymentDelayDays(seed, dokument)`.
+- **Miesiąc JDG** (ostatniego dnia): składki społeczne wg reżimu (`zusRegimeFor`: ulga 6 mies. → preferencyjne 24 → standard; zbieg z etatem ≥ 4 806 zł brutto → brak), składka zdrowotna (skala/liniowy: % dochodu poprzedniego miesiąca z minimum 432,54 zł; ryczałt: progi 60/300 tys. zł przychodu narastająco) i zaliczka PIT metodą narastającą (próg 1 000 zł, tylko zapłacone składki; liniowy: odliczenie zdrowotnej do 14 100 zł; ryczałt: przychód − społeczne − 50% zdrowotnej). Termin 20. następnego miesiąca. Grudzień/zakończenie: saldo roczne do 30 kwietnia.
+- **Zlecenia.** Przyjęcie rezerwuje godziny (`commitment`) walidowane na każdy dzień; postęp = godziny × wydajność; po terminie kara umowna; dokument sprzedaży w dniu wykonania.
+- **Niezmienniki dodatkowe:** jedna aktywna JDG, rachunek firmowy należy do osoby, ewidencja zgodna z rachunkiem, dokumenty (netto + VAT = brutto, powiązane zobowiązania, unikalne numery), zlecenia, unikalność rozliczeń miesięcznych.
+
 ## 9. Strategia testowania silnika
 
 Pliki: `src/engine/*.test.ts`, `src/persistence/persistence.test.ts` (Vitest, środowisko Node).
@@ -142,7 +151,8 @@ Pliki: `src/engine/*.test.ts`, `src/persistence/persistence.test.ts` (Vitest, ś
 | Czas i styl życia (v0.2) | 24 h (dzień roboczy/weekend), walidacja planu, zmęczenie i wydajność, idempotencja; styl życia zmienia kwoty przez zobowiązania; jakość życia ≠ majątek |
 | Oszczędności (v0.2) | przelew neutralny dla majątku i przepływów, walidacje, odsetki (jedno zaokrąglenie), osobny podatek, idempotencja kapitalizacji, historia |
 | Wydarzenia (v0.2) | determinizm i niezależność od ścieżki, każda opcja decyzji, brak podwójnego skutku, domyślne wygaśnięcie, premia/awans/utrata pracy/zlecenie/kurs, decyzja niewykonalna bez zmiany stanu, 12 miesięcy aktywnego zarządzania |
-| Migracja (v0.2) | prawdziwy zapis v1 → v2: historia nietknięta, nowe pola bez zgadywania, dalsza gra bez dubli, nowe mechaniki na zmigrowanym zapisie, uszkodzony zapis odrzucony |
+| JDG i prawo (v0.3) | zweryfikowane przykłady ZUS (1 926,76 / 456,18 zł), zdrowotnej (progi ryczałtu, minimum), PIT (skala, liniowy z limitem 14 100 zł, ryczałt), limit VAT (220 000 zł przy starcie 1.02), zbieg z etatem, ulga na start i oś czasu składek, zaliczki narastająco i próg 1 000 zł, rozliczenie roczne, zlecenia i konflikt godzin, opóźnienia płatności, dokumenty, terminy 20./25., rejestr reguł, 24 miesiące z JDG |
+| Migracja (v0.2–v0.3) | prawdziwy zapis v1 → v2: historia nietknięta, nowe pola bez zgadywania, dalsza gra bez dubli, nowe mechaniki na zmigrowanym zapisie, uszkodzony zapis odrzucony |
 | Harmonogram | projekcja przyszłych zdarzeń zgodna z tym, co faktycznie się wydarzy |
 
 Wymóg: każda nowa mechanika dodaje niezmienniki i testy zachowania; nie wystarczy, że „kompiluje się”.

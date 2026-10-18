@@ -18,7 +18,10 @@
 | **Person** (osoba) | Osoba fizyczna: imię, nazwisko, data urodzenia, miasto. Gracz i (później) NPC: pracownicy, wspólnicy, członkowie rodziny. | ✅ `person` (tylko gracz) |
 | **Household** (gospodarstwo domowe) | Zbiór osób dzielących budżet i mieszkanie; wspólne koszty. | ❌ (gracz = jednoosobowe) |
 | **LegalEntity** (podmiot prawny) | Wspólna abstrakcja: osoba fizyczna, JDG (jako tryb działania osoby), spółka. Źródło prawdy o *statusie prawnym*. | ❌ |
-| **Enterprise** (przedsiębiorstwo) | Działalność gospodarcza (JDG albo spółki): branża, pracownicy, kontrakty, ewidencja. | ❌ |
+| **Enterprise** (przedsiębiorstwo) | Działalność gospodarcza (JDG albo spółki): branża, pracownicy, kontrakty, ewidencja. | 🟡 `businesses` — tylko JDG (v0.3): profil/PKD, forma opodatkowania, VAT, reżim ZUS, rachunek firmowy |
+| **ServiceOffer / ServiceOrder** | Oferta i zlecenie usługowe: klient, wartość, godziny, koszty, termin wykonania i płatności, kara za zwłokę. | ✅ `serviceOffers`, `serviceOrders` (v0.3) |
+| **Document** (dokument) | Rekord sprzedaży/kosztu JDG: numer, daty, netto/VAT/brutto, powiązane zobowiązania. Nie jest fakturą KSeF. | ✅ `documents` (v0.3) |
+| **TaxPeriod** (rozliczenie miesiąca) | Składki ZUS, zdrowotna, zaliczka PIT, wartości narastające i użyte reguły prawne. | ✅ `taxPeriods` (v0.3) |
 | **Party** (strona zewnętrzna) | Pracodawca, wynajmujący, dostawca, bank, urząd. W v0.1 bierna i zawsze wypłacalna. | ✅ `parties` |
 | **Account** (rachunek) | Rachunek pieniężny należący do podmiotu; saldo = suma wpisów w rejestrze. Typy: bieżący, oszczędnościowy (z zasadami odsetek). | ✅ `accounts` (bieżący + oszczędnościowy, v0.2) |
 | **LedgerEntry** (wpis w rejestrze) | Niezmienny zapis zmiany salda: data, rachunek, kwota ze znakiem, kategoria, kontrahent, powiązane zobowiązanie, id zdarzenia. | ✅ `ledger` |
@@ -40,7 +43,7 @@
 
 ```
 Person ──(jest)──────────────► LegalEntity(osoba fizyczna)
-Person ──(prowadzi)──────────► Enterprise(JDG)           ← ten sam podmiot prawny!
+Person ──(prowadzi)──────────► Enterprise(JDG)           ← ten sam podmiot prawny! (v0.3: Business.ownerId = person; rachunek firmowy należy do osoby)
 Person ──(udziałowiec)───────► LegalEntity(spółka)  via Ownership(udziały %)
 Person ──(członek zarządu)───► LegalEntity(spółka)  via Mandate(reprezentacja)   ≠ udziały
 LegalEntity ──(posiada)──────► Account*, Asset*, Contract*
@@ -68,7 +71,7 @@ Contract(lease)  ──Rule:rent──► Obligation(payable, issue: 1., due: 10
 
 ## 4. Majątek netto
 
-`majątek netto = rachunki (bieżący + oszczędności) + kaucje + otwarte należności − otwarte zobowiązania` (v0.2). Docelowo: + wartość aktywów wg wyceny − pasywa. **Tożsamość kontrolna** (sprawdzana w `checkInvariants`):
+`majątek netto = rachunki (bieżący + oszczędności + firmowy) + kaucje + otwarte należności − otwarte zobowiązania` (v0.3; JDG nie jest osobną osobą prawną, więc jej środki to majątek właściciela). Docelowo: + wartość aktywów wg wyceny − pasywa. **Tożsamość kontrolna** (sprawdzana w `checkInvariants`):
 
 `majątek netto = kapitał początkowy + Σ naliczone przychody − Σ naliczone koszty`
 

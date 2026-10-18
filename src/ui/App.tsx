@@ -12,6 +12,7 @@ import { JobsScreen } from './screens/JobsScreen.tsx';
 import { LifestyleScreen } from './screens/LifestyleScreen.tsx';
 import { SavingsScreen } from './screens/SavingsScreen.tsx';
 import { TimeScreen } from './screens/TimeScreen.tsx';
+import { BizCalendarScreen, BizDocsScreen, BizFinanceScreen, BizOrdersScreen, BizOverviewScreen, BizRegisterScreen, BizTaxScreen } from './screens/BusinessScreens.tsx';
 import { CharacterScreen } from './screens/CharacterScreen.tsx';
 import { DashboardScreen } from './screens/DashboardScreen.tsx';
 import { EventsScreen } from './screens/EventsScreen.tsx';
@@ -47,6 +48,18 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { id: 'decisions', label: 'Decyzje i wydarzenia', icon: 'bell' },
     ],
   },
+  {
+    title: 'Firma (JDG)',
+    items: [
+      { id: 'bizRegister', label: 'Rejestracja JDG', icon: 'building' },
+      { id: 'bizOverview', label: 'Moja działalność', icon: 'briefcase' },
+      { id: 'bizOrders', label: 'Oferty i kontrakty', icon: 'file' },
+      { id: 'bizFinance', label: 'Finanse firmy', icon: 'trend' },
+      { id: 'bizTax', label: 'Podatki i ZUS', icon: 'shield' },
+      { id: 'bizDocs', label: 'Dokumenty', icon: 'receipt' },
+      { id: 'bizCalendar', label: 'Kalendarz obowiązków', icon: 'calendar' },
+    ],
+  },
   { title: 'System', items: [{ id: 'game', label: 'Nowa gra / Wczytaj', icon: 'save' }] },
 ];
 const ALL_NAV = NAV_GROUPS.flatMap((g) => g.items);
@@ -78,6 +91,13 @@ function renderScreen(screen: Screen) {
     case 'time': return <TimeScreen />;
     case 'savings': return <SavingsScreen />;
     case 'decisions': return <DecisionsScreen />;
+    case 'bizRegister': return <BizRegisterScreen />;
+    case 'bizOverview': return <BizOverviewScreen />;
+    case 'bizOrders': return <BizOrdersScreen />;
+    case 'bizFinance': return <BizFinanceScreen />;
+    case 'bizTax': return <BizTaxScreen />;
+    case 'bizDocs': return <BizDocsScreen />;
+    case 'bizCalendar': return <BizCalendarScreen />;
     case 'game': return <GameScreen />;
   }
 }
@@ -133,7 +153,7 @@ export function App() {
             </div>
           ))}
         </nav>
-        <p className="text-[11px] leading-relaxed text-slate-500">v0.2 · decyzje i życie prywatne. Wszystkie parametry finansowe są przykładowe.</p>
+        <p className="text-[11px] leading-relaxed text-slate-500">v0.3 · pierwsza działalność (JDG). Symulacja — nie porada prawna ani podatkowa.</p>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

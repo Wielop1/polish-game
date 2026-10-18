@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ZodError } from 'zod';
+import type { RegisterInput } from '../engine/business.ts';
 import { commands } from '../engine/commands.ts';
 import type { CommandResult } from '../engine/commands.ts';
 import type { Grosze } from '../engine/money.ts';
@@ -12,7 +13,11 @@ import { createIndexedDbRepository, createMemoryRepository, createResilientRepos
 import type { SaveListItem, SaveRepository } from '../persistence/repository.ts';
 import { loadGame, saveGame } from '../persistence/service.ts';
 
-export type Screen = 'dashboard' | 'character' | 'finances' | 'calendar' | 'events' | 'jobs' | 'housing' | 'lifestyle' | 'time' | 'savings' | 'decisions' | 'game';
+export type Screen =
+  | 'dashboard' | 'character' | 'finances' | 'calendar' | 'events'
+  | 'jobs' | 'housing' | 'lifestyle' | 'time' | 'savings' | 'decisions'
+  | 'bizRegister' | 'bizOverview' | 'bizOrders' | 'bizFinance' | 'bizTax' | 'bizDocs' | 'bizCalendar'
+  | 'game';
 
 export interface Notice {
   kind: 'info' | 'success' | 'error';
@@ -62,6 +67,10 @@ interface GameStore {
   setTimePlan: (plan: TimePlan) => boolean;
   transferFunds: (fromId: string, toId: string, amount: Grosze) => boolean;
   resolveLifeEvent: (eventId: string, optionId: string) => boolean;
+  registerBusiness: (input: RegisterInput) => boolean;
+  closeBusiness: () => boolean;
+  acceptServiceOffer: (offerId: string, hoursPerDay: number) => boolean;
+  declineServiceOffer: (offerId: string) => boolean;
   saveToSlot: (slot: string) => Promise<void>;
   loadFromSlot: (slot: string) => Promise<void>;
   deleteSlot: (slot: string) => Promise<void>;
@@ -150,6 +159,14 @@ export const useGameStore = create<GameStore>((set, get) => {
     setTimePlan: (plan) => exec((g) => commands.setTimePlan(g, plan)),
     transferFunds: (fromId, toId, amount) => exec((g) => commands.transferFunds(g, fromId, toId, amount)),
     resolveLifeEvent: (eventId, optionId) => exec((g) => commands.resolveLifeEvent(g, eventId, optionId)),
+    registerBusiness: (input) => {
+      const done = exec((g) => commands.registerBusiness(g, input));
+      if (done) set({ screen: 'bizOverview' }); // zachowuje komunikat o sukcesie
+      return done;
+    },
+    closeBusiness: () => exec((g) => commands.closeBusiness(g)),
+    acceptServiceOffer: (offerId, hoursPerDay) => exec((g) => commands.acceptServiceOffer(g, offerId, hoursPerDay)),
+    declineServiceOffer: (offerId) => exec((g) => commands.declineServiceOffer(g, offerId)),
 
     saveToSlot: async (slot) => {
       const game = get().game;

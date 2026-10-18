@@ -11,7 +11,9 @@ Język dokumentacji i interfejsu: **polski**. Kod i identyfikatory: angielski/po
 2. `docs/PROJECT_STATUS.md` — co działa, co nie, jakie jest następne zadanie
 3. `docs/IMPLEMENTATION_PLAN.md` — zakres bieżącego etapu
 4. `docs/DECISIONS.md` — decyzje, których nie wolno cicho łamać
-5. `docs/ARCHITECTURE.md`, `docs/ECONOMY_ENGINE.md`, `docs/WORLD_MODEL.md`, `docs/GAME_DESIGN.md` — w zakresie, którego dotyczy zadanie
+5. **`docs/FEATURE_EVOLUTION.md` — rejestr rozwoju mechanik**: znajdź pozycje (`FE-…`) dotknięte zadaniem, sprawdź ich stan obecny, docelowe zachowanie, brakujące funkcje i znane uproszczenia (§14). Po zadaniu **zaktualizuj wyłącznie pozycje dotknięte zmianą**; nowe uproszczenia dopisz do §14, nowe pomysły do §15. Nie usuwaj pozycji ani pomysłów, nie realizuj zaległości spoza zakresu zadania.
+6. `docs/LEGAL_SOURCES.md` — **zawsze**, gdy zadanie dotyka podatków, ZUS, VAT, rejestracji działalności lub innych przepisów
+7. `docs/ARCHITECTURE.md`, `docs/ECONOMY_ENGINE.md`, `docs/WORLD_MODEL.md`, `docs/GAME_DESIGN.md` — w zakresie, którego dotyczy zadanie
 
 Dokumentacja w repozytorium jest **głównym źródłem prawdy**. Pamięć rozmowy, poprzednie sesje i domysły nią nie są.
 Sprawdź też `git log` i `git status` — dokumentacja mogła zostać zmieniona przez innego agenta.
@@ -32,10 +34,12 @@ Sprawdź też `git log` i `git status` — dokumentacja mogła zostać zmieniona
 4. **Każda zmiana salda przechodzi przez `postTransaction`** i zostawia wpis w rejestrze. Zdarzenia mają unikalne, deterministyczne id; podwójne księgowanie jest niemożliwe (idempotencja + wyjątek).
 5. **Osoba fizyczna ≠ podmiot prawny.** JDG nie jest odrębną osobą prawną; spółka jest. Udziały, zarządzanie i prawo do wypłat to trzy różne rzeczy. Pieniądze prywatne i firmowe można ewidencjonować osobno, ale status prawny musi być poprawny.
 6. **Przychód ≠ wpływ gotówki; koszt ≠ wypływ gotówki.** Najpierw naliczenie (zobowiązanie/należność z kwotą, stronami i terminem), potem rozliczenie.
-7. **Prawo i podatki są wersjonowane datami. Nie wymyślaj obowiązujących stawek.** Wartość niezweryfikowana ma `dataStatus: 'placeholder'` i jest tak oznaczona w UI. Zweryfikowane dane wymagają źródła (link/ustawa/data) w komentarzu lub dokumentacji.
+7. **Prawo i podatki są wersjonowane datami. Nie wymyślaj obowiązujących stawek.** Wartość niezweryfikowana ma `dataStatus: 'placeholder'` i jest tak oznaczona w UI. Każda reguła prawna w silniku musi mieć wpis w `src/engine/legal.ts` (id, zakres, daty, **źródło urzędowe**, data weryfikacji, status `VERIFIED`/`SIMPLIFIED`/`DEFERRED`) i odpowiadać `docs/LEGAL_SOURCES.md`. Jeśli nie możesz zweryfikować zasady na stronie urzędowej — **nie zgaduj**: oznacz `DEFERRED` (albo jawnie `SIMPLIFIED`) i nie przedstawiaj wyniku jako dokładnego. Obliczenia podatkowe to symulacja, nie porada.
 8. **Format zapisu jest wersjonowany.** Zmiana kształtu `GameState` ⇒ podniesienie `SAVE_VERSION` + migracja w `src/persistence/save.ts`. Nigdy nie usuwaj starych zapisów ani nie zmieniaj formatu „po cichu”.
 9. **Niezmienniki finansowe** (`src/engine/invariants.ts`) muszą przechodzić po każdej symulacji i przy wczytywaniu zapisu. Nowa mechanika = nowe niezmienniki + testy.
 10. **Brak sekretów w repozytorium.** `.env*` jest w `.gitignore`.
+11. **JDG nie jest osobą prawną.** Rachunek firmowy należy do osoby fizycznej gracza; „firmowa” jest wyłącznie ewidencja (`scope: 'business'`, rachunek typu `business`). Majątek netto obejmuje wszystko. Pieniądze między rachunkami własnymi przenosi tylko `transferFunds`.
+12. **Wszystkie decyzje gracza przechodzą przez `commands.*`** (czyste, na kopii stanu); UI niczego nie liczy sam.
 
 ## 3. Stos (zatwierdzony)
 
@@ -55,9 +59,10 @@ npm run test:e2e    # Playwright (dla zmian w UI / zapisach)
 ```
 
 oraz:
-- nowa logika ma testy sprawdzające **zachowanie** (nie tylko kompilację),
+- nowa logika ma testy sprawdzające **zachowanie** (nie tylko kompilację); reguły prawne mają testy na przykładach zweryfikowanych w źródłach urzędowych,
 - zaktualizowano `docs/PROJECT_STATUS.md` (stan faktyczny, wyniki testów, znane problemy, następne zadanie),
 - decyzje architektoniczne dopisano do `docs/DECISIONS.md`,
+- **`docs/FEATURE_EVOLUTION.md` zaktualizowano dla dotkniętych pozycji**, a reguły prawne — w `docs/LEGAL_SOURCES.md`,
 - dokumenty, których dotyka zmiana (`WORLD_MODEL`, `ECONOMY_ENGINE`, `ARCHITECTURE`…), są aktualne.
 
 Po dużej zmianie **samodzielnie** przeszukaj repozytorium pod kątem nieaktualnych fragmentów (dokumenty, komentarze, testy) — nie czekaj, aż ktoś je znajdzie.

@@ -4,61 +4,58 @@
 
 ## Wersja
 
-**v0.2.1** — v0.2 (życie prywatne, decyzje, czas, oszczędności) z korektą zatrudnienia (ADR-025). v0.3 czeka na zatwierdzenie. Zapisy: `SAVE_VERSION = 2` (migracja z v1; korekta nie zmieniła schematu).
+**v0.3.0 — Pierwsza działalność gospodarcza (JDG)** (zakończona; v0.4 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 3` (migracje v1 → v2 → v3). Wcześniej: v0.2.1 (korekta zatrudnienia, ADR-025), v0.2, v0.1.
+Rejestr rozwoju mechanik: [`FEATURE_EVOLUTION.md`](FEATURE_EVOLUTION.md) · rejestr reguł prawnych: [`LEGAL_SOURCES.md`](LEGAL_SOURCES.md).
 
-## Co działa (zweryfikowane testami)
+## Co działa (v0.3, zweryfikowane testami)
 
-Wszystko z v0.1 (nowa gra, czas, rejestr, zobowiązania, majątek netto, kalendarz, dziennik, zapisy, 6 ekranów) plus:
+Wszystko z v0.1–v0.2.1 (czas, finanse, praca, mieszkanie, czas i zmęczenie, styl życia, oszczędności, wydarzenia, zapisy) plus:
 
-- **Praca i kariera.** 8 fikcyjnych ofert (tylko umowa o pracę; inne formy są w modelu jako `employmentForm`, ale nieobsługiwane): stanowisko, pracodawca, brutto i *szacowane* netto, wymiar godzin, wymagane umiejętności, lokalizacja, okres wypowiedzenia. Aplikacja → decyzja pracodawcy po 5–12 dniach (deterministyczna, zależna od umiejętności i zmęczenia) → propozycja ważna 7 dni → przyjęcie z automatycznym wypowiedzeniem obecnej umowy i startem od 1. dnia miesiąca po jej końcu. Rezygnacja z pracy. Jedna praca naraz. Pensja nadal przez tę samą mechanikę (naliczenie ostatniego dnia miesiąca, wypłata 10. następnego) — jedno naliczenie na miesiąc przy zmianie pracy.
-- **Mieszkanie.** 5 fikcyjnych ofert najmu w Olsztynie (czynsz, opłaty eksploatacyjne, kaucja, koszt przeprowadzki, standard, powierzchnia, dzielnica). Podgląd warunków przed podpisaniem (kaucja, przeprowadzka, nakładanie umów, zwrot starej kaucji). Zmiana mieszkania aktualizuje przyszłe naliczenia (reguły wiązane z umową); podwójny czynsz tylko przy świadomym nakładaniu okresów. **Kaucja = aktywo** (majątek netto bez zmian), zwrot 14 dni po końcu umowy.
-- **Budżet czasu.** Doba 24 h: praca, sen, obowiązki, rezerwa na działalność (v0.5+), kursy/zlecenia, czas wolny jako reszta; walidacja planu na rok do przodu (także przyszłe umowy). Zmęczenie 0–100 i wydajność w pracy.
-- **Styl życia.** Oszczędny / standardowy / komfortowy zmieniają kwoty żywności, transportu i rozrywki (przez zobowiązania). **Wskaźnik jakości życia** (nie funkcja majątku; bezpieczeństwo finansowe 15% z sufitem).
-- **Oszczędności.** Rachunek oszczędnościowy, przelewy własne (neutralne dla majątku netto i przepływów), odsetki nominalne kapitalizowane miesięcznie (jedno zaokrąglenie), podatek od odsetek jako osobna operacja (parametr przykładowy), historia operacji.
-- **Wydarzenia życiowe (7).** Awaria sprzętu (3 opcje), niespodziewany wydatek, premia, propozycja awansu, utrata pracy, dorywcze zlecenie, kurs (+1 umiejętność). Zależne od stanu gry, deterministyczne, z identyfikatorami, historią, terminem decyzji i opcją domyślną; skutki nie wykonują się dwa razy; część wyników jest nieznana z góry.
-- **UI:** nowa grupa „Życie” (Oferty pracy, Mieszkanie, Styl życia, Budżet czasu, Oszczędności, Decyzje i wydarzenia) z plakietką oczekujących decyzji, alert na pulpicie, oszczędności w HUD, komunikaty jako toasty, menu „Więcej” na telefonie.
-- **Zapisy:** migracja v1 → v2 sprawdzona na **prawdziwym zapisie wygenerowanym przez v0.1** (`src/persistence/fixtures/`): historia finansowa nietknięta, brak zgadywania nieznanych danych, gra toczy się dalej bez dubli; zapis/odczyt zachowuje salda, kaucje, plan czasu, wydarzenia i kolejkę akcji.
+- **JDG** (jedna naraz; **nie jest osobą prawną**): rejestracja z podglądem konsekwencji, 4 profile usługowe z PKD 2025, własny rachunek firmowy należący do osoby fizycznej, odrębna ewidencja (`scope: business`), wkład własny i pobranie właściciela (przelewy własne), zakończenie na koniec miesiąca. Start tylko 1. dnia miesiąca, nie wcześniej niż 1.02.2026.
+- **Formy opodatkowania**: skala (12%/32%, kwota zmniejszająca), podatek liniowy 19% (odliczenie zdrowotnej do 14 100 zł), ryczałt (stawka z profilu; składki społeczne i 50% zdrowotnej odliczane od przychodu). Zaliczki miesięczne metodą narastającą (próg 1 000 zł, tylko zapłacone składki), saldo roczne do 30.04.
+- **ZUS**: ulga na start (6 mies.), składki preferencyjne (24 mies., 1 441,80 zł), standardowe (5 652 zł), dobrowolna chorobowa, **zbieg z etatem** (etat ≥ 4 806 zł brutto → brak składek społecznych z JDG; niższy → składki). Płatność do 20. dnia. Reguły nie są naliczane automatycznie „każdemu” — zależą od wyboru, stażu działalności i etatu.
+- **Składka zdrowotna**: skala 9% / liniowy 4,9% dochodu miesiąca poprzedniego z minimum 432,54 zł; ryczałt wg progów 60/300 tys. zł (498,35 / 830,58 / 1 495,04 zł).
+- **VAT**: zwolnienie podmiotowe albo czynny podatnik (23%); limit 240 000 zł (rok startu proporcjonalnie, np. 220 000 zł przy starcie 1.02); utrata zwolnienia od czynności przekraczającej limit; VAT należny i naliczony jako odrębne zobowiązania (25. następnego miesiąca).
+- **Zlecenia usługowe**: oferty 1. i 16. dnia miesiąca (deterministyczne), przyjęcie z wyborem godzin dziennie, rezerwacja godzin w **wspólnym budżecie czasu** (nie nakłada się na etat; konflikt = odmowa z wyjaśnieniem), koszty realizacji, postęp zależny od wydajności (wyczerpanie → kara umowna), dokument sprzedaży w dniu wykonania, płatność klienta z deterministycznym opóźnieniem 0–35 dni (przychód ≠ należność ≠ wpływ).
+- **Dokumenty**: rejestr sprzedaży i kosztów (numeracja FS/FK, netto/VAT/brutto, status płatności) — **rekord symulacyjny, nie faktura KSeF**.
+- **Interfejs — grupa „Firma (JDG)”**: Rejestracja JDG, Moja działalność, Oferty i kontrakty, Finanse firmy, Podatki i ZUS (tabela miesięcy + jawny rejestr reguł ze statusami), Dokumenty, Kalendarz obowiązków; baner „symulacja — nie porada prawna/podatkowa”; HUD pokazuje saldo firmy.
+- **Prawo**: 39 reguł w rejestrze (`legal.ts`): 22 VERIFIED, 10 SIMPLIFIED, 7 DEFERRED; źródła urzędowe (podatki.gov.pl, biznes.gov.pl, zus.pl) sprawdzone 2026-10-18.
+- **Zapisy**: migracja v2 → v3 na **prawdziwym zapisie wygenerowanym przez v0.2.1**; po wczytaniu rozliczenia nie są naliczane ponownie (klucze idempotencji).
 
-## Czego NIE ma (poza zakresem lub niedokończone)
+## Zweryfikowane i niezweryfikowane przepisy
 
-- Zweryfikowany kalkulator płac, podatki, ZUS (netto = **szacunek 73% brutto**, oznaczony w UI), JDG, spółki, branża remontowa, giełda, nieruchomości inwestycyjne, kredyty, backend, logowanie. **Wdrożenie na Vercel odłożone** zgodnie z poleceniem (repo nadal nie jest podpięte do żadnego projektu Vercel; kod jest na `main`).
-- **Wszystkie parametry są przykładowe**: płace, czynsze, kaucje, koszty stylu życia, stopa i podatek od odsetek, prawdopodobieństwa i kwoty wydarzeń, wagi jakości życia.
-- Katalogi ofert pracy i mieszkań są **stałe** (brak odświeżania, rynku, negocjacji). Inne formy zatrudnienia, wypowiedzenie umowy najmu bez nowej umowy, wycofanie aplikacji i anulowanie podpisanej umowy — niezaimplementowane.
+Zweryfikowane (VERIFIED): skala i kwota zmniejszająca, liniowy 19%, limit odliczenia zdrowotnej 14 100 zł (liniowy), brak odliczenia zdrowotnej w skali, odliczenia przy ryczałcie, terminy zaliczek (20.) i salda rocznego (30.04), próg 1 000 zł, minimalne wynagrodzenie 4 806 zł, podstawy i stopy ZUS 2026 (5 652 zł / 1 441,80 zł; 19,52 / 8 / 2,45 / 1,67 / 2,45%), ulga na start i składki preferencyjne (warunki, 6 i 24 mies.), zbieg z etatem, minimalna składka zdrowotna i progi ryczałtowców, limit VAT 240 000 zł i utrata zwolnienia, termin VAT (25.), ograniczenie usług dla pracodawcy. **Uproszczone (SIMPLIFIED)**: stawka ryczałtu na profil (zamiast wg PKWiU), PKD dwóch profili, proporcja limitu VAT, wyłączenia z VAT (art. 113 ust. 13), stawka VAT 23% dla wszystkich usług, brak odliczenia VAT przez zwolnionego, PIT przy etacie (bez łączenia dochodów), moment przychodu, wybór formy przy rejestracji. **Odłożone (DEFERRED)**: Mały ZUS Plus (zweryfikowany, niewdrożony), wakacje składkowe i składki przy zawieszeniu, zawieszenie działalności, roczne rozliczenie zdrowotnej, straty i ulgi, zaokrąglanie do zł, KSeF/korekty/metoda kasowa. Szczegóły i znalezione rozbieżności źródeł: `LEGAL_SOURCES.md`.
 
-## Korekta v0.2.1 (zatrudnienie)
+## Czego NIE ma (świadomie poza zakresem)
 
-- **Utrata pracy** nie wynika już z samego upływu czasu: ryzyko to suma czynników (wydajność/absencje z wyczerpania, trudna sytuacja pracodawcy, recesja), a bez czynników wynosi 0. Klimat i kondycja pracodawcy są deterministyczne (seed + rok). Zwolnienie podaje przyczynę; ekran „Oferty pracy” pokazuje ryzyko i czynniki. Pomiar (60 seedów × 5 lat): bierna gra → ok. 8% zwolnień (było ok. 50%), wyczerpujący plan dnia → ok. 53%.
-- **Staż** rozdzielony na staż w firmie (ciągłość zatrudnienia, nie zeruje się przy awansie) i staż na stanowisku (od bieżącej umowy). Historia zatrudnienia, naliczenia i terminy wypłat bez zmian; bez migracji.
+Spółki i wspólnicy, zatrudnianie pracowników, branża remontowa, giełda, nieruchomości inwestycyjne, kredyty i leasing, integracje z urzędami i KSeF, backend. **Wdrożenie na Vercel odłożone** (repo nadal nie jest podpięte do żadnego projektu Vercel; kod jest na `main`). Netto z etatu nadal jest **szacunkiem 73% brutto** (zweryfikowany kalkulator płac — FE-TAX-02). Pełna lista uproszczeń v0.3: `FEATURE_EVOLUTION.md` §14.
 
 ## Wykonane testy (2026-10-18)
 
 | Polecenie | Wynik |
 |---|---|
 | `npm run typecheck` | ✅ bez błędów |
-| `npm test` (Vitest) | ✅ **135/135**: kalendarz 8, pieniądze/RNG/formatowanie 8, silnik bazowy 34, mechaniki v0.2 **60** (w tym 9 z korekty v0.2.1), zapis i repozytoria 14, migracja i zapis v2 11 |
-| `npm run build` | ✅ JS 486 kB / 144 kB gzip, CSS 42 kB / 7 kB gzip |
-| `npm run test:e2e` (Chromium) | ✅ **10/10** (4 z v0.1 + 6 z v0.2: praca, mieszkanie z kaucją, styl życia i budżet czasu, oszczędności, decyzja z wydarzenia, zapis stanu v2) |
+| `npm test` (Vitest) | ✅ **184/184**: kalendarz 8, pieniądze/RNG/formatowanie 8, silnik bazowy 34, mechaniki v0.2–v0.2.1 60, **JDG, podatki, ZUS, VAT, zlecenia 44**, zapisy 14, **migracje i zapis v2/v3 16** |
+| `npm run build` | ✅ JS 569 kB / 169 kB gzip, CSS 43 kB / 7,5 kB gzip |
+| `npm run test:e2e` (Chromium) | ✅ **15/15** (4 z v0.1 + 6 z v0.2 + 5 z v0.3: rejestracja, zlecenia i konflikt godzin, podatki i kalendarz, zapis JDG, menu mobilne) |
 
-Pomiary (Node 22, gra z włączonymi wydarzeniami): symulacja 120 miesięcy ≈ 0,85 s, jeden miesiąc na stanie po 10 latach ≈ 13 ms; zapis po 10 latach ≈ 1,2 MB, serializacja ≈ 10 ms, wczytanie z walidacją ≈ 50 ms.
-Wygląd nowych ekranów sprawdzony ręcznie na zrzutach (desktop 1360 px; menu mobilne 390 px); układ mobilny większości nowych ekranów nie ma testu automatycznego.
+Jedyna usterka ujawniona przez testy podczas prac: klucz idempotencji rozliczenia rocznego PIT kolidował z `occurrenceId` zobowiązania (saldo roczne nigdy nie powstawało) — naprawiona, objęta testem.
+Pomiary (Node 22): 10 lat gry z JDG, 80 zleceń i 156 dokumentami ≈ 3,4 s (w tym ok. 80 komend), zapis ≈ 2,8 MB, serializacja ≈ 30 ms, wczytanie z walidacją ≈ 100 ms. Wygląd ekranów „Firma” sprawdzony na zrzutach (desktop 1360 px); mobilnie przetestowane menu (e2e), pozostałe ekrany bez automatycznego testu mobilnego.
 
-**Kryterium ukończenia v0.2** (12 miesięcy aktywnego zarządzania pracą, mieszkaniem, czasem i oszczędnościami z poprawnym śladem w stanie i finansach) jest pokryte testem `ciągłość 12 miesięcy aktywnego zarządzania` (niezmienniki sprawdzane co miesiąc; w tym scenariuszu wystąpiła m.in. utrata pracy, przeprowadzka, 12 przelewów i 11 księgowań odsetek) oraz testami poszczególnych komend.
+**Kryterium ukończenia v0.3** (mała działalność usługowa równolegle z życiem prywatnym, spójne finansowo konsekwencje) pokrywa test „24 miesiące z JDG równolegle z etatem” (niezmienniki co miesiąc; 24 rozliczenia, dokumenty, bez dubli; deterministyczność) oraz testy poszczególnych reguł.
 
 ## Znane problemy i uproszczenia
 
-1. **Zwolnienia** mają przyczyny zewnętrzne i wynikające z kondycji gracza (ADR-025), ale brak zasiłku, odprawy i pomocy w poszukiwaniu pracy; prawdopodobieństwa i progi nie były kalibrowane na danych z rozgrywek. „Absencje” to tylko opis niskiej wydajności z wyczerpania (brak osobnej mechaniki).
-2. Staż w firmie przerywa wypowiedzenie, przerwa w zatrudnieniu i zmiana pracodawcy; ponowne zatrudnienie u dawnego pracodawcy zaczyna staż od nowa.
-3. Pierwsza przeprowadzka nie zwraca kaucji (mieszkanie startowe jest bez kaucji — parametr przykładowy); zwrot kaucji zawsze pełny, bez potrąceń.
-4. Przeprowadzki tylko na 1. dzień miesiąca, bez proporcjonalnych czynszów i kar za wcześniejsze rozwiązanie.
-5. Dzień roboczy = pon–pt, bez świąt i urlopów; „działalność” w budżecie czasu tylko zajmuje godziny (nie ma jeszcze działalności).
-6. Umiejętności rosną wyłącznie przez kursy (brak nauki w pracy).
-7. Odsetki liczone od salda na początek dnia: przelew wykonany dziś liczy się od jutra.
-8. Autozapis jest asynchroniczny (zamknięcie karty tuż po akcji może zgubić ostatni zapis); zapis rośnie ≈ 0,12 MB/rok (dzienna historia majątku) — kompaktowanie historii to przyszła decyzja.
-9. Potwierdzenia (nowa gra, nadpisanie, wczytanie, rezygnacja, umowa najmu) używają `window.confirm`; brak routera i głębokich linków (ADR-012).
-10. Testy e2e wymagają bibliotek systemowych Chromium (`AGENTS.md` §5, ADR-013).
+Pełna lista w `FEATURE_EVOLUTION.md` §14. Najważniejsze:
+1. **Firma wymaga finansowania właściciela**: składki, podatki i VAT są płacone z rachunku firmowego; przy braku środków powstaje zaległość bez odsetek (odsetki za zwłokę — FE-BANK-02).
+2. **Podatek jest symulacją**: brak zaokrągleń do zł, strat i ulg; przy etacie skala bez kwoty zmniejszającej i bez łączenia dochodów; zeznania roczne tylko jako saldo.
+3. **Lata po 2026**: reguły z 2026 r. są przenoszone i oznaczone `carriedForward` (UI ostrzega).
+4. **Zlecenia**: tylko 4 profile i szablony; brak negocjacji, reputacji i windykacji; godziny rezerwowane także w weekendy; zlecenia od pracodawcy gracza blokowane.
+5. Rozbieżności źródeł ZUS/biznes.gov.pl (roczna podstawa zdrowotnej, okresy kwot) — opisane w `LEGAL_SOURCES.md`; silnik używa tylko wartości potwierdzonych spójnie.
+6. Z poprzednich wersji: potwierdzenia przez `window.confirm`, brak routera, asynchroniczny autozapis, zapis rośnie (~2,8 MB po 10 latach z JDG); `LD_LIBRARY_PATH` dla e2e (`AGENTS.md` §5).
 
 ## Następne zadanie (propozycja — wymaga zatwierdzenia)
 
-**v0.3 — Model podatkowy i ZUS (wersjonowany datami):** zamiana szacunku 73% na zweryfikowany kalkulator brutto → netto, tabele przepisów z datami obowiązywania i źródłami, roczne rozliczenie. **Warunek wejścia:** zatwierdzony, zweryfikowany zestaw źródeł prawnych na 2026 (do tego czasu placeholdery). Szczegóły: `IMPLEMENTATION_PLAN.md`.
+**v0.4 — Domknięcie obowiązków JDG i podatków:** po weryfikacji źródeł wdrożyć pozycje oznaczone v0.4 w `FEATURE_EVOLUTION.md` — zmiana formy opodatkowania w kolejnym roku, zawieszenie/wznowienie działalności, Mały ZUS Plus, roczne rozliczenie składki zdrowotnej, straty z lat ubiegłych, łączne rozliczenie etat + JDG oraz zweryfikowany kalkulator netto z etatu. **Bez** pracowników, spółek i branży remontowej.
 
-Nie rozpoczynać v0.3 bez zatwierdzenia.
+Nie rozpoczynać v0.4 bez zatwierdzenia.
