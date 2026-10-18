@@ -31,3 +31,12 @@ describe('powiadomienia w menu (kropki)', () => {
     expect(computeNavAlerts(s, { bizAccounting: '9999-12-31' }).bizAccounting).toBeUndefined();
   });
 });
+
+describe('klucz członka ekipy (formularz Ekipy)', () => {
+  it('zachowuje całe id z dwukropkami (pracownik i podwykonawca)', async () => {
+    const { splitMemberKey } = await import('./format.ts');
+    expect(splitMemberKey('employee:employment:3')).toEqual({ kind: 'employee', id: 'employment:3' });
+    expect(splitMemberKey('sub:sub:2')).toEqual({ kind: 'sub', id: 'sub:2' });
+    expect(splitMemberKey('owner:owner')).toEqual({ kind: 'owner', id: 'owner' });
+  });
+});

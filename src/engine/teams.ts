@@ -83,14 +83,17 @@ export function createTeam(s: GameState, name: string, members: TeamMember[]): s
   return `Ekipa „${n}” utworzona (${members.length} osób).`;
 }
 
-/** Ekipa złożona wyłącznie z jednego podwykonawcy (zlecenie całości); tworzona przy pierwszym użyciu. Zwraca id ekipy. */
-export function ensureSubTeam(s: GameState, subId: string): string {
-  const existing = s.ops.teams.find((t) => t.members.length === 1 && t.members[0]!.kind === 'sub' && t.members[0]!.id === subId);
+/** Ekipa o dokładnie tym składzie — istniejąca albo nowa (tworzona przy wysłaniu oferty z wyceny). Zwraca id ekipy. */
+export function ensureCrewTeam(s: GameState, members: TeamMember[]): string {
+  const key = (m: TeamMember) => `${m.kind}:${m.id}`;
+  const want = members.map(key).sort().join('|');
+  const existing = s.ops.teams.find((t) => t.members.map(key).sort().join('|') === want);
   if (existing) return existing.id;
-  const sub = s.ops.subcontractors.find((x) => x.id === subId);
-  if (!sub) throw new CommandError('Nieznany podwykonawca.');
-  const name = `Zlecenie: ${sub.name}`.slice(0, 60);
-  createTeam(s, s.ops.teams.some((t) => t.name.toLowerCase() === name.toLowerCase()) ? `${name.slice(0, 55)} (2)` : name, [{ kind: 'sub', id: subId }]);
+  const others = members.filter((m) => m.kind !== 'owner').map((m) => memberLabel(s, m));
+  const base = (members.length === 1 && members[0]!.kind === 'sub' ? `Zlecenie: ${others[0]}` : `Ekipa: ${[...(members.some((m) => m.kind === 'owner') ? ['Ty'] : []), ...others].join(', ')}`).slice(0, 55);
+  let name = base;
+  for (let n = 2; s.ops.teams.some((t) => t.name.toLowerCase() === name.toLowerCase()); n++) name = `${base} (${n})`;
+  createTeam(s, name, members);
   return s.ops.teams.at(-1)!.id;
 }
 

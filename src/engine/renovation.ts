@@ -17,7 +17,7 @@ import type { MaterialStandard as Std, ServiceDef } from './renovationCatalog.ts
 import { inventoryValue, equipmentValue } from './selectors.ts';
 import { budgetFor, firstOverload, performanceBps } from './time.ts';
 import { vehicleDef, useVehicle } from './fleet.ts';
-import { describeConflict, ensureSubTeam, releaseJob, reserve, resourceBusy } from './teams.ts';
+import { describeConflict, ensureCrewTeam, releaseJob, reserve, resourceBusy } from './teams.ts';
 import { ACTIVE_SUB, processSubcontracts, requestSubOffer, settleJobSubcontracts, subById, subPrice, subSpeedBps, subcontractsOfJob } from './subcontractors.ts';
 import { employmentActiveOn, employmentById, hoursPerWorkday, personById, personLevel, personName, personPerformanceBps } from './workforce.ts';
 import type {
@@ -262,16 +262,33 @@ export interface QuotePreview {
 }
 
 
-/** Wirtualny wykonawca „samego podwykonawcy”: `sub:<id>` — zlecenie całości firmie B2B bez zakładania ekipy w grze (ekipa powstaje dopiero przy wysłaniu oferty). */
+/**
+ * Skład wykonawców wybrany wprost w wycenie (bez zakładania ekipy w ekranie „Ekipy”): `teamId` w formie `crew:owner|employee=<id>|sub=<id>`
+ * (albo skrót `sub:<id>` = sam podwykonawca). Podgląd liczy się na tymczasowej ekipie; prawdziwa ekipa powstaje dopiero przy wysłaniu oferty.
+ */
+export const CREW_PREFIX = 'crew:';
 export const SOLE_SUB_PREFIX = 'sub:';
-export const soleSubId = (teamId: string | null | undefined): string | null => (teamId && teamId.startsWith(SOLE_SUB_PREFIX) ? teamId.slice(SOLE_SUB_PREFIX.length) : null);
+export type CrewMember = { kind: 'owner' | 'employee' | 'sub'; id: string };
+export const crewKey = (members: CrewMember[]): string => CREW_PREFIX + members.map((m) => (m.kind === 'owner' ? 'owner' : `${m.kind}=${m.id}`)).sort().join('|');
+export function parseCrewKey(teamId: string | null | undefined): CrewMember[] | null {
+  if (!teamId) return null;
+  if (teamId.startsWith(SOLE_SUB_PREFIX)) return [{ kind: 'sub', id: teamId.slice(SOLE_SUB_PREFIX.length) }];
+  if (!teamId.startsWith(CREW_PREFIX)) return null;
+  return teamId.slice(CREW_PREFIX.length).split('|').filter(Boolean).map((part): CrewMember => {
+    if (part === 'owner') return { kind: 'owner', id: 'owner' };
+    const i = part.indexOf('=');
+    const kind = part.slice(0, i);
+    return { kind: kind === 'employee' || kind === 'sub' ? kind : 'sub', id: part.slice(i + 1) };
+  });
+}
 
 export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: boolean } = {}): QuotePreview {
-  const subId = soleSubId(i.teamId);
-  if (!subId) return previewQuoteInner(s, i, opts);
-  if (!s.ops.subcontractors.some((x) => x.id === subId)) return previewQuoteInner(s, { ...i, teamId: 'team:missing' }, opts);
+  const members = parseCrewKey(i.teamId);
+  if (!members) return previewQuoteInner(s, i, opts);
+  const valid = members.length > 0 && members.every((m) => (m.kind === 'owner' ? m.id === 'owner' : m.kind === 'employee' ? employmentById(s, m.id)?.status === 'active' : s.ops.subcontractors.some((x) => x.id === m.id)));
+  if (!valid) return previewQuoteInner(s, { ...i, teamId: 'team:missing' }, opts);
   // tymczasowa ekipa tylko do wyliczenia podglądu (usuwana w finally — stan gry po wywołaniu jest bez zmian)
-  s.ops.teams.push({ id: i.teamId!, name: 'podgląd', members: [{ kind: 'sub', id: subId }], createdOn: s.clock.today });
+  s.ops.teams.push({ id: i.teamId!, name: 'podgląd', members, createdOn: s.clock.today });
   try { return previewQuoteInner(s, i, opts); } finally { s.ops.teams.pop(); }
 }
 
@@ -593,8 +610,8 @@ export function sendQuote(s: GameState, enquiryId: string, input: QuoteInput): s
   if (input.serviceId !== enq.serviceId || input.units !== enq.units || input.complexity !== enq.complexity) throw new CommandError('Oferta musi dotyczyć zakresu z zapytania.');
   const p = previewQuote(s, input, { forSending: true });
   if (p.errors.length) throw new CommandError(p.errors[0]!);
-  const soleSub = soleSubId(input.teamId);
-  if (soleSub) input = { ...input, teamId: ensureSubTeam(s, soleSub) };
+  const crew = parseCrewKey(input.teamId);
+  if (crew) input = { ...input, teamId: crew.length === 1 && crew[0]!.kind === 'owner' ? null : ensureCrewTeam(s, crew) };
   const n = nextCounter(s, 'reno:quote');
   const id = `quote:${n}`;
   const today = s.clock.today;

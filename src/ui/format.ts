@@ -27,3 +27,9 @@ export function parseZloty(input: string): number | null {
   const grosze = Number(whole) * 100 + Number(frac.padEnd(2, '0'));
   return Number.isSafeInteger(grosze) ? grosze : null;
 }
+
+/** Klucz członka ekipy w formularzu: `rodzaj:id`, gdzie samo id może zawierać dwukropki (np. `employee:emp:3`). */
+export function splitMemberKey(key: string): { kind: 'owner' | 'employee' | 'sub'; id: string } {
+  const cut = key.indexOf(':');
+  return { kind: key.slice(0, cut) as 'owner' | 'employee' | 'sub', id: key.slice(cut + 1) };
+}

@@ -40,10 +40,8 @@ test('wycena: można zlecić całość podwykonawcy jednym wyborem, bez zakłada
   for (let i = 0; i < 60 && (await dot.count()) === 0; i++) await page.getByTestId('advance-day').click();
   await nav(page, 'Zapytania klientów');
   await page.getByRole('button', { name: 'Wyceń' }).first().click();
-  const sel = page.locator('#q-team');
-  const opt = sel.locator('optgroup option:not([disabled])').first();
-  await expect(opt).toHaveCount(1);
-  await sel.selectOption({ value: (await opt.getAttribute('value'))! });
-  await expect(page.getByTestId('outsource-box')).toContainText('Całość wykona podwykonawca');
+  await page.locator('[data-testid^="crew-sub-"]').first().check();
+  await page.getByTestId('crew-owner').uncheck();
+  await expect(page.getByTestId('outsource-box')).toContainText('wykonają wybrani wykonawcy');
   await expect(page.getByTestId('quote-preview')).toContainText('Robocizna');
 });

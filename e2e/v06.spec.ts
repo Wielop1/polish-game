@@ -55,6 +55,13 @@ test('rekrutacja i zatrudnienie: ogłoszenie, zgłoszenia, oferta, pracownik z k
   await nav(page, 'Pracownicy');
   await expect(page.getByTestId('payslips')).toBeVisible();
   await expect(page.getByTestId('payslips')).toContainText('2026-');
+  // ekipa z zatrudnionym pracownikiem (regresja: id z dwukropkiem było ucinane i pracownik był odrzucany)
+  await nav(page, 'Ekipy');
+  await page.getByLabel('Nazwa ekipy').fill('Malarze');
+  await page.getByTestId('team-form').getByText('(pracownik)').click();
+  await page.getByTestId('create-team').click();
+  await expect(page.getByTestId('teams')).toContainText('Malarze');
+  await nav(page, 'Pracownicy');
   // wypowiedzenie
   await emp.getByRole('button', { name: /Wypowiedz umowę/ }).click();
   await expect(emp).toContainText('wypowiedzenie do');

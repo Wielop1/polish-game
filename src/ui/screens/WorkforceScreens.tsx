@@ -15,7 +15,7 @@ import {
 import { useGameStore } from '../../store/gameStore.ts';
 import { ProgressBar } from '../components/charts.tsx';
 import { Badge, Button, Card, Empty, Money, ScreenHeader, StatCard, cx, moneyTone } from '../components/ui.tsx';
-import { parseZloty } from '../format.ts';
+import { parseZloty, splitMemberKey } from '../format.ts';
 import { LegalBadge } from './BusinessScreens.tsx';
 
 const input = 'rounded-xl border border-ink-600 bg-ink-900/80 px-3 py-2 text-slate-100 focus:border-sky focus:outline-none';
@@ -335,7 +335,7 @@ export function TeamsScreen() {
   const employees = activeEmployments(game);
   const candidates = [{ key: 'owner:owner', label: 'Właściciel (Ty)' }, ...employees.map((e) => ({ key: `employee:${e.id}`, label: `${personName(personById(game, e.personId)!)} (pracownik)` })), ...game.ops.subcontractors.map((x) => ({ key: `sub:${x.id}`, label: `${x.name} (podwykonawca)` }))];
   const submit = () => {
-    const list = Object.entries(members).filter(([, v]) => v).map(([k]) => { const [kind, id] = k.split(':') as ['owner' | 'employee' | 'sub', string]; return { kind, id }; });
+    const list = Object.entries(members).filter(([, v]) => v).map(([k]) => { return splitMemberKey(k); });
     if (create(name, list)) { setName(''); setMembers({}); }
   };
   const upcoming = game.reno.jobs.filter((j) => j.stage === 'preparation' && today < j.startDate);

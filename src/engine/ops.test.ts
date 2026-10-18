@@ -11,6 +11,7 @@ import type { GameState } from './state.ts';
 import { bizBalance, buyAll, contract, craftEnquiry, docsFor, fail, hireEmployee, jobOf, ok, opsGame, runUntil, toDate } from './testkit.ts';
 import { crewProfitability, fixedCosts, liquidityForecast, teamLoad } from './profitability.ts';
 import { subHistory, subPrice } from './subcontractors.ts';
+import { crewKey } from './renovation.ts';
 import { vehicleBookValue } from './fleet.ts';
 import { yearReport } from './report.ts';
 import { personById } from './workforce.ts';
@@ -624,3 +625,22 @@ describe('11. zlecenie całości podwykonawcy z poziomu wyceny (za niski poziom 
     expect(previewQuote(s, { ...q, teamId: 'sub:sub:nie-ma', priceNet: zl(9_000) }).errors.join(' ')).toMatch(/ekipy/);
   });
 });
+
+describe('12. wykonawcy wybrani wprost w wycenie (pracownik bez zakładania ekipy)', () => {
+  it('zatrudniony pracownik wykonuje zlecenie; ekipa powstaje przy wysłaniu oferty i jest używana ponownie', () => {
+    const { s: s0, emp } = hireEmployee(opsGame(), { level: 3, hours: 160 });
+    const s1 = toDate(s0, addDays(emp.startDate, 1));
+    const enq = craftEnquiry(s1);
+    const q = { ...defaultQuoteInput(s1, enq), startDate: addDays(s1.clock.today, 3), durationDays: 30, priceNet: zl(9_000) };
+    const key = crewKey([{ kind: 'employee', id: emp.id }]);
+    expect(previewQuote(s1, { ...q, teamId: key }).errors).toEqual([]);
+    expect(s1.ops.teams.length).toBe(0);
+    const { s, job } = contract(s1, { quote: { ...q, teamId: key, supervision: 'supervise' } });
+    const team = s.ops.teams.find((t) => t.id === job.crew.teamId)!;
+    expect(team.members).toEqual([{ kind: 'employee', id: emp.id }]);
+    expect(checkInvariants(s)).toEqual([]);
+    const again = contract(s, { quote: { ...q, startDate: addDays(s.clock.today, 60), teamId: key }, sign: false });
+    expect(again.s.ops.teams.length).toBe(1);
+  });
+});
+
