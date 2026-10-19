@@ -6,6 +6,7 @@ import { netWorth, netWorthBreakdown } from './selectors.ts';
 import { activeHoldings, capitalBps, voteBps } from './shares.ts';
 import { advanceDays } from './simulate.ts';
 import { DRAFT, company, fail, foundCompany, ok, richGame, shapePartner, toDate } from './corpkit.ts';
+import { passes } from './resolutions.ts';
 
 describe('P0 · założenie spółki z o.o. (S24), minimalny kapitał, rejestracja', () => {
   it('kapitał poniżej 5 000 zł i nominał poniżej 50 zł są odrzucane (art. 154 KSH)', () => {
@@ -725,4 +726,64 @@ describe('zapis i wczytanie w trakcie procesów korporacyjnych (v0.8 §15)', () 
     expect(sharesOf(b, 'co:1', 'partner:7')).toBe(neg.terms.shares);
     expect(checkInvariants(b)).toEqual([]);
   }, 120_000);
+});
+
+describe('v0.8.1 · głosowania: za / przeciw / wstrzymujące się / nieważne / nieoddane', () => {
+  it('bezwzględna większość = więcej niż połowa głosów oddanych; wstrzymujący się wchodzi do mianownika, ale nie jest głosem „za” (art. 4 § 1 pkt 9–10, art. 245 KSH)', () => {
+    expect(passes('absolute', { for: 50, against: 0, abstain: 50 }, 100).ok).toBe(false); // dokładnie połowa
+    expect(passes('absolute', { for: 51, against: 0, abstain: 49 }, 100).ok).toBe(true);
+    expect(passes('absolute', { for: 40, against: 30, abstain: 0, notCast: 30 }, 100).ok).toBe(true); // nieoddane nie liczą się wcale
+    expect(passes('absolute', { for: 40, against: 30, abstain: 30 }, 100).ok).toBe(false); // wstrzymanie działa jak „nie za”
+    expect(passes('absolute', { for: 0, against: 0, abstain: 0, notCast: 100 }, 100).ok).toBe(false); // brak głosów oddanych
+  });
+
+  it('2/3 i 3/4 liczone od głosów oddanych; nieobecni nie blokują, wstrzymujący się tak (art. 246 § 1)', () => {
+    expect(passes('two_thirds', { for: 60, against: 30, abstain: 0, notCast: 10 }, 100).ok).toBe(true); // 60 z 90 oddanych = 2/3
+    expect(passes('two_thirds', { for: 60, against: 20, abstain: 10, notCast: 10 }, 100).ok).toBe(true); // 60 z 90 oddanych = dokładnie 2/3
+    expect(passes('two_thirds', { for: 59, against: 21, abstain: 10, notCast: 10 }, 100).ok).toBe(false);
+    expect(passes('two_thirds', { for: 59, against: 0, abstain: 30 }, 100).ok).toBe(false);
+    expect(passes('three_quarters', { for: 75, against: 25, abstain: 0 }, 100).ok).toBe(true);
+    expect(passes('three_quarters', { for: 74, against: 26, abstain: 0 }, 100).ok).toBe(false);
+  });
+
+  it('zgoda wszystkich uprawnionych: wstrzymanie, głos przeciw i brak głosu ją blokują (art. 246 § 3)', () => {
+    expect(passes('unanimous', { for: 100, against: 0, abstain: 0 }, 100).ok).toBe(true);
+    expect(passes('unanimous', { for: 90, against: 0, abstain: 10 }, 100).ok).toBe(false);
+    expect(passes('unanimous', { for: 90, against: 0, abstain: 0, notCast: 10 }, 100).ok).toBe(false);
+  });
+
+  it('gracz, który nie głosuje, ma głos NIEODDANY (nie „wstrzymujący się”); zapis tally rozdziela kategorie i wynik się zgadza', () => {
+    let s = companyWithOps({ seed: 'vote-1', capital: zl(120_000), vat: 'active', equip: [], partnerId: 'partner:1', partnerShares: 960, board: 'both' });
+    s = shapePartner(s, 'partner:1', { trust: 70, riskTolerance: 80 });
+    s = ok(commands.proposeResolution(s, 'co:1', { type: 'consent_acquisition', label: 'zakup narzędzi', maxAmount: zl(60_000), validUntil: '2027-12-31' }));
+    const id = s.corp.resolutions.at(-1)!.id;
+    // zapomniany głos „za” gracza — usuwamy go, jakby gracz niczego nie zaznaczył
+    s.corp.resolutions.find((r) => r.id === id)!.votes = [];
+    s = advanceDays(s, 14);
+    const r = s.corp.resolutions.find((x) => x.id === id)!;
+    const mine = r.voters.find((v) => v.holderId === s.person.id)!;
+    expect(r.votes.find((v) => v.holderId === s.person.id)?.vote).toBe('not_cast');
+    expect(r.tally!.notCast).toBe(mine.votes);
+    expect(r.tally!.abstain).toBeLessThanOrEqual(r.voters.find((v) => v.holderId === 'partner:1')!.votes);
+    expect(r.tally!.cast).toBe(r.tally!.for + r.tally!.against + r.tally!.abstain);
+    expect(r.tally!.eligible).toBe(r.voters.reduce((a, v) => a + v.votes, 0));
+    expect(r.outcome).toMatch(/nieoddanych/);
+    expect(checkInvariants(s)).toEqual([]);
+  }, 60_000);
+
+  it('głos wspólnika wyłączonego z głosowania jest nieważny i nie wchodzi do mianownika ani do uprawnionych (art. 244 KSH)', () => {
+    let s = companyWithOps({ seed: 'vote-2', capital: zl(120_000), vat: 'active', equip: [], partnerId: 'partner:1', partnerShares: 960, board: 'both' });
+    s = shapePartner(s, 'partner:1', { trust: 70 });
+    s = ok(commands.proposeResolution(s, 'co:1', { type: 'consent_acquisition', label: 'zakup narzędzi', maxAmount: zl(60_000), validUntil: '2027-12-31' }));
+    const r0 = s.corp.resolutions.at(-1)!;
+    const draft = structuredClone(s);
+    const r = draft.corp.resolutions.find((x) => x.id === r0.id)!;
+    r.voters.find((v) => v.holderId === 'partner:1')!.excluded = 'sprawa jego odpowiedzialności wobec spółki';
+    r.votes.push({ holderId: 'partner:1', vote: 'against', votes: r.voters.find((v) => v.holderId === 'partner:1')!.votes, castOn: draft.clock.today });
+    const after = advanceDays(draft, 14).corp.resolutions.find((x) => x.id === r0.id)!;
+    expect(after.tally!.invalid).toBeGreaterThan(0);
+    expect(after.tally!.against).toBe(0);
+    expect(after.tally!.eligible).toBe(r.voters.find((v) => v.holderId === s.person.id)!.votes);
+    expect(after.status).toBe('executed');
+  }, 60_000);
 });

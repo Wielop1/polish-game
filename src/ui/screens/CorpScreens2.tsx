@@ -16,7 +16,7 @@ import { CompanyPicker, CorpBanner, Field, NoCompany, Row, Th, inputCls, pct, us
 
 const RES_STATUS = { scheduled: 'zgromadzenie zwołane', passed: 'przyjęta', rejected: 'odrzucona', executed: 'przyjęta i wykonana', failed: 'przyjęta, niewykonalna', cancelled: 'odwołana' } as const;
 const RES_TONE = { scheduled: 'sky', passed: 'gain', rejected: 'loss', executed: 'gain', failed: 'gold', cancelled: 'neutral' } as const;
-const VOTE_LABEL = { for: 'za', against: 'przeciw', abstain: 'wstrzymał się' } as const;
+const VOTE_LABEL = { for: 'za', against: 'przeciw', abstain: 'wstrzymał się', invalid: 'głos nieważny', not_cast: 'głos nieoddany' } as const;
 
 /* ---------- 6. Uchwały ---------- */
 
@@ -112,7 +112,7 @@ export function CorpResolutionsScreen() {
               return (
                 <li key={r.id} className="rounded-xl border border-ink-600 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-slate-100">{r.title}</span><Badge tone="sky">zgromadzenie {formatDatePL(r.assemblyOn)}</Badge></div>
-                  <p className="text-xs text-slate-400">Próg: {THRESHOLD_LABEL[r.threshold.kind]} · inicjator: {holderName(game, r.proposedBy)} · Twój głos: {mine ? VOTE_LABEL[mine.vote] : 'brak (= wstrzymujący się)'}</p>
+                  <p className="text-xs text-slate-400">Próg: {THRESHOLD_LABEL[r.threshold.kind]} · inicjator: {holderName(game, r.proposedBy)} · Twój głos: {mine ? VOTE_LABEL[mine.vote] : 'brak (głos nieoddany — nie wlicza się do głosów oddanych)'}</p>
                   {voter && game.clock.today < r.assemblyOn && (
                     <div className="mt-2 flex gap-2">
                       {(['for', 'against', 'abstain'] as const).map((v) => <Button key={v} variant={mine?.vote === v ? 'primary' : 'secondary'} onClick={() => run((g) => commands.castVote(g, r.id, v))} data-testid={`vote-${v}-${r.id}`}>{v === 'for' ? 'Za' : v === 'against' ? 'Przeciw' : 'Wstrzymuję się'}</Button>)}

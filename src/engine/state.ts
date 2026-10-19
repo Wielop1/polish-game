@@ -1348,9 +1348,10 @@ export const ResolutionSchema = z.object({
   assemblyOn: IsoDateSchema,
   threshold: z.object({ kind: z.enum(['absolute', 'two_thirds', 'three_quarters', 'unanimous']), ruleId: z.string() }),
   voters: z.array(z.object({ holderId: IdSchema, votes: z.number().int().min(0), excluded: z.string().nullable() })),
-  votes: z.array(z.object({ holderId: IdSchema, vote: z.enum(['for', 'against', 'abstain']), votes: z.number().int().min(0), castOn: IsoDateSchema })),
+  votes: z.array(z.object({ holderId: IdSchema, vote: z.enum(['for', 'against', 'abstain', 'invalid', 'not_cast']), votes: z.number().int().min(0), castOn: IsoDateSchema })),
   status: z.enum(['scheduled', 'passed', 'rejected', 'executed', 'failed', 'cancelled']),
-  tally: z.object({ for: z.number().int(), against: z.number().int(), abstain: z.number().int(), cast: z.number().int(), needed: z.number().int() }).nullable(),
+  /** v0.8.1: `invalid` (głosy nieważne) i `notCast` (głosy nieoddane) nie wchodzą do głosów oddanych; `eligible` = głosy uprawnionych (bez wyłączonych, art. 244 KSH). */
+  tally: z.object({ for: z.number().int(), against: z.number().int(), abstain: z.number().int(), cast: z.number().int(), needed: z.number().int(), invalid: z.number().int().default(0), notCast: z.number().int().default(0), eligible: z.number().int().default(0) }).nullable(),
   decidedOn: IsoDateSchema.nullable(),
   executedOn: IsoDateSchema.nullable(),
   outcome: z.string().max(400),

@@ -30,17 +30,27 @@ export function thresholdFor(p: ResolutionPayload): Resolution['threshold'] {
 }
 
 export const THRESHOLD_LABEL: Record<ThresholdKind, string> = {
-  absolute: 'bezwzględna większość (> ½ głosów oddanych)', two_thirds: '2/3 głosów', three_quarters: '3/4 głosów', unanimous: 'jednomyślność',
+  absolute: 'bezwzględna większość (> ½ głosów oddanych, wstrzymujące się wliczane)', two_thirds: '2/3 głosów', three_quarters: '3/4 głosów', unanimous: 'zgoda wszystkich uprawnionych',
 };
 
-/** Czy uchwała przechodzi: wstrzymanie się liczy się jako głos oddany (SIMPLIFIED, CO-KSH-VOTING). */
-export function passes(kind: ThresholdKind, v: { for: number; against: number; abstain: number }, eligibleVotes: number): { ok: boolean; needed: number; cast: number } {
-  const cast = v.for + v.against + v.abstain;
+/**
+ * Wynik głosowania (v0.8.1). Rozróżnienie wg art. 4 § 1 pkt 9–10 KSH: „głosy” to głosy „za”, „przeciw” i „wstrzymujące się”, a bezwzględna
+ * większość to więcej niż połowa głosów ODDANYCH — wstrzymujący się wchodzi więc do mianownika, ale nie jest głosem „za”. Głosy nieważne
+ * i nieoddane (nieobecny wspólnik, brak głosu) nie są głosami oddanymi. Zgromadzenie jest ważne bez względu na kworum (art. 241), więc o wyniku
+ * decydują głosy oddane; wyjątek — zgoda wszystkich uprawnionych (art. 246 § 3): wstrzymanie, brak głosu i głos przeciw ją blokują.
+ * Większość kwalifikowana z art. 246 § 1 (2/3, 3/4) liczona od głosów oddanych (SIMPLIFIED — doktryna dopuszcza inne ujęcia mianownika).
+ */
+export interface VoteSum { for: number; against: number; abstain: number; invalid?: number; notCast?: number }
+
+export function castVotes(v: VoteSum): number { return v.for + v.against + v.abstain; }
+
+export function passes(kind: ThresholdKind, v: VoteSum, eligibleVotes: number): { ok: boolean; needed: number; cast: number } {
+  const cast = castVotes(v);
   switch (kind) {
     case 'absolute': return { ok: cast > 0 && v.for * 2 > cast, needed: Math.floor(cast / 2) + 1, cast };
     case 'two_thirds': return { ok: cast > 0 && v.for * 3 >= cast * 2, needed: Math.ceil((cast * 2) / 3), cast };
     case 'three_quarters': return { ok: cast > 0 && v.for * 4 >= cast * 3, needed: Math.ceil((cast * 3) / 4), cast };
-    case 'unanimous': return { ok: cast === eligibleVotes && v.for === cast, needed: eligibleVotes, cast };
+    case 'unanimous': return { ok: eligibleVotes > 0 && v.for === eligibleVotes, needed: eligibleVotes, cast };
   }
 }
 
@@ -255,21 +265,28 @@ function decide(s: GameState, r: Resolution, date: IsoDate): void {
   const c = companyOf(s, r.companyId);
   for (const v of r.voters) {
     if (v.excluded || r.votes.some((x) => x.holderId === v.holderId)) continue;
-    if (v.holderId === s.person.id) { r.votes.push({ holderId: v.holderId, vote: 'abstain', votes: v.votes, castOn: date }); log(r, date, 'Nie oddałeś głosu — wstrzymujący się.'); continue; }
+    if (v.holderId === s.person.id) { r.votes.push({ holderId: v.holderId, vote: 'not_cast', votes: v.votes, castOn: date }); log(r, date, 'Nie oddałeś głosu — głos nieoddany (nie wlicza się do głosów oddanych).'); continue; }
     const p = partnerById(s, v.holderId);
     if (!p) continue;
     const d = partnerVote(s, p, c, r);
     r.votes.push({ holderId: v.holderId, vote: d.vote, votes: v.votes, castOn: date });
     log(r, date, `${holderName(s, p.id)}: ${d.vote === 'for' ? 'za' : d.vote === 'against' ? 'przeciw' : 'wstrzymał się'} — ${d.reason}.`);
   }
-  const sum = { for: 0, against: 0, abstain: 0 };
-  for (const v of r.votes) sum[v.vote] += v.votes;
+  // głosy wyłączonych wspólników (art. 244 KSH) są nieważne i nie liczą się ani do oddanych, ani do uprawnionych
+  const excludedIds = new Set(r.voters.filter((v) => v.excluded).map((v) => v.holderId));
+  const sum = { for: 0, against: 0, abstain: 0, invalid: 0, notCast: 0 };
+  for (const v of r.votes) {
+    if (excludedIds.has(v.holderId) || v.vote === 'invalid') sum.invalid += v.votes;
+    else if (v.vote === 'not_cast') sum.notCast += v.votes;
+    else sum[v.vote] += v.votes;
+  }
   const eligible = r.voters.filter((v) => !v.excluded).reduce((a, v) => a + v.votes, 0);
   const res = passes(r.threshold.kind, sum, eligible);
-  r.tally = { ...sum, cast: res.cast, needed: res.needed };
+  r.tally = { for: sum.for, against: sum.against, abstain: sum.abstain, cast: res.cast, needed: res.needed, invalid: sum.invalid, notCast: sum.notCast, eligible };
   r.decidedOn = date;
   r.status = res.ok ? 'passed' : 'rejected';
-  r.outcome = res.ok ? `Przyjęta: ${sum.for} za, ${sum.against} przeciw, ${sum.abstain} wstrzymujących się (próg: ${THRESHOLD_LABEL[r.threshold.kind]}).` : `Odrzucona: ${sum.for} za, ${sum.against} przeciw, ${sum.abstain} wstrzymujących się (potrzeba ${res.needed} głosów „za”; próg: ${THRESHOLD_LABEL[r.threshold.kind]}).`;
+  const detail = `${sum.for} za, ${sum.against} przeciw, ${sum.abstain} wstrzymujących się${sum.notCast > 0 ? `, ${sum.notCast} nieoddanych` : ''}${sum.invalid > 0 ? `, ${sum.invalid} nieważnych` : ''}`;
+  r.outcome = res.ok ? `Przyjęta: ${detail} (próg: ${THRESHOLD_LABEL[r.threshold.kind]}).` : `Odrzucona: ${detail} (potrzeba ${res.needed} głosów „za”; próg: ${THRESHOLD_LABEL[r.threshold.kind]}).`;
   logEvent(s, {
     id: `corp.resolution:${r.id}:decided`, date, type: 'corp.resolution', tone: res.ok ? 'positive' : 'negative',
     title: `Uchwała ${res.ok ? 'przyjęta' : 'odrzucona'}: ${r.title} (${c.name} sp. z o.o.)`, detail: r.outcome.slice(0, 290), amount: null, category: null,
