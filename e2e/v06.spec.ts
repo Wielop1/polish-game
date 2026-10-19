@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-const nav = (page: Page, name: string) => page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name, exact: true }).click();
+const nav = async (page: Page, name: string) => {
+  const menu = page.getByRole('navigation', { name: 'Główna nawigacja' });
+  const item = menu.getByRole('button', { name, exact: true });
+  if (!(await item.first().isVisible())) for (const h of await menu.locator('button[aria-expanded="false"]').all()) await h.click();
+  await item.click();
+};
 
 async function startRenoBusiness(page: Page, seed: string) {
   await page.goto('/');
@@ -82,7 +87,7 @@ test('ekrany pracowników, podwykonawców, ekip, pojazdów, harmonogramu i rento
   await nav(page, 'Rentowność');
   await expect(page.getByTestId('profit-burn')).toBeVisible();
   await expect(page.getByTestId('liquidity')).toBeVisible();
-  await nav(page, 'Pulpit firmy');
+  await nav(page, 'Pulpit zleceń');
   await expect(page.getByTestId('company-panel')).toContainText('Pracownicy');
   await expect(page.getByTestId('company-panel')).toContainText('Prognoza płynności');
 });

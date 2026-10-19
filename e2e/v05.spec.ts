@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-const nav = (page: Page, name: string) => page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name, exact: true }).click();
+const nav = async (page: Page, name: string) => {
+  const menu = page.getByRole('navigation', { name: 'Główna nawigacja' });
+  const item = menu.getByRole('button', { name, exact: true });
+  if (!(await item.first().isVisible())) for (const h of await menu.locator('button[aria-expanded="false"]').all()) await h.click();
+  await item.click();
+};
 
 async function startGame(page: Page, seed: string) {
   await page.goto('/');
@@ -67,7 +72,7 @@ test('remonty: rejestracja ze specjalizacją, sprzęt, zapytanie, wycena z podgl
 
 test('remonty: wszystkie ekrany branży i księgowość renderują się; biuro rachunkowe można wybrać i rozwiązać', async ({ page }) => {
   await registerReno(page, 'e2e-reno-2');
-  for (const [name, heading] of [['Pulpit firmy', 'Pulpit firmy — Remonty'], ['Zapytania klientów', 'Zapytania klientów'], ['Wyceny', 'Wyceny'], ['Kontrakty', 'Kontrakty'], ['Harmonogram', 'Harmonogram'], ['Magazyn i sprzęt', 'Magazyn i sprzęt'], ['Reputacja i reklamacje', 'Reputacja i reklamacje']] as const) {
+  for (const [name, heading] of [['Pulpit zleceń', 'Pulpit zleceń — Remonty'], ['Zapytania klientów', 'Zapytania klientów'], ['Wyceny', 'Wyceny'], ['Kontrakty', 'Kontrakty'], ['Harmonogram', 'Harmonogram'], ['Magazyn i sprzęt', 'Magazyn i sprzęt'], ['Reputacja i reklamacje', 'Reputacja i reklamacje']] as const) {
     await nav(page, name);
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   }
@@ -104,7 +109,7 @@ test('remonty: stan firmy przeżywa zapis i wczytanie (sprzęt, zapas, specjaliz
   await expect(page.getByTestId('mat-farba:std')).toContainText('10 l');
 });
 
-test('mobilne menu zawiera sekcję Remonty i Księgowość', async ({ page }) => {
+test('mobilne menu zawiera sekcję Zlecenia i Księgowość', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto('/');
   await page.getByLabel('Imię').fill('Jan');
@@ -113,7 +118,7 @@ test('mobilne menu zawiera sekcję Remonty i Księgowość', async ({ page }) =>
   await page.getByTestId('start-game').click();
   await page.getByRole('button', { name: 'Więcej' }).click();
   const menu = page.getByRole('dialog', { name: 'Menu' });
-  await expect(menu.getByText('Remonty', { exact: true })).toBeVisible();
+  await expect(menu.getByText('Zlecenia', { exact: true })).toBeVisible();
   await menu.getByRole('button', { name: 'Magazyn i sprzęt' }).click();
   await expect(page.getByRole('heading', { name: 'Magazyn i sprzęt' })).toBeVisible();
   await page.getByRole('button', { name: 'Więcej' }).click();

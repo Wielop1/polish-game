@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-const nav = (page: Page, name: string) => page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name, exact: true }).click();
+const nav = async (page: Page, name: string) => {
+  const menu = page.getByRole('navigation', { name: 'Główna nawigacja' });
+  const item = menu.getByRole('button', { name, exact: true });
+  if (!(await item.first().isVisible())) for (const h of await menu.locator('button[aria-expanded="false"]').all()) await h.click();
+  await item.click();
+};
 
 async function startWithBusiness(page: Page, seed: string) {
   await page.goto('/');

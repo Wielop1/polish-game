@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-const nav = (page: Page, name: string) => page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name, exact: true }).click();
+const nav = async (page: Page, name: string) => {
+  const menu = page.getByRole('navigation', { name: 'Główna nawigacja' });
+  const item = menu.getByRole('button', { name, exact: true });
+  if (!(await item.first().isVisible())) for (const h of await menu.locator('button[aria-expanded="false"]').all()) await h.click();
+  await item.click();
+};
 
 test('kropka w menu: pojawia się przy nowych zapytaniach klientów (menu i grupa), a samo wejście na ekran jej nie gasi', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
@@ -16,10 +21,13 @@ test('kropka w menu: pojawia się przy nowych zapytaniach klientów (menu i grup
   await page.getByTestId('register-business').click();
   await expect(page.getByRole('heading', { name: 'Moja działalność' })).toBeVisible();
   // zapytania klientów wygasają po ~7 dniach, więc przesuwamy czas dzień po dniu, aż pojawi się pierwsze
+  // sekcja „Zlecenia” jest zwinięta, więc o nowym zapytaniu informuje kropka przy jej nagłówku
   const dot = page.getByTestId('nav-dot-renoEnquiries');
-  for (let i = 0; i < 60 && (await dot.count()) === 0; i++) await page.getByTestId('advance-day').click();
+  const groupDot = page.getByTestId('group-dot-Zlecenia');
+  for (let i = 0; i < 60 && (await groupDot.count()) === 0; i++) await page.getByTestId('advance-day').click();
+  await expect(groupDot).toBeVisible();
+  await page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name: 'Zlecenia', exact: true }).click();
   await expect(dot).toBeVisible();
-  await expect(page.getByTestId('group-dot-Remonty')).toBeVisible();
   // wejście na ekran nie gasi kropki „do załatwienia” — gasi ją dopiero obsłużenie zapytania
   await nav(page, 'Zapytania klientów');
   await expect(dot).toBeVisible();
@@ -36,8 +44,8 @@ test('wycena: można zlecić całość podwykonawcy jednym wyborem, bez zakłada
   await page.getByText('Usługi remontowo-wykończeniowe').first().click();
   await page.getByTestId('register-business').click();
   await expect(page.getByRole('heading', { name: 'Moja działalność' })).toBeVisible();
-  const dot = page.getByTestId('nav-dot-renoEnquiries');
-  for (let i = 0; i < 60 && (await dot.count()) === 0; i++) await page.getByTestId('advance-day').click();
+  const groupDot = page.getByTestId('group-dot-Zlecenia');
+  for (let i = 0; i < 60 && (await groupDot.count()) === 0; i++) await page.getByTestId('advance-day').click();
   await nav(page, 'Zapytania klientów');
   await page.getByRole('button', { name: 'Wyceń' }).first().click();
   await page.locator('[data-testid^="crew-sub-"]').first().check();

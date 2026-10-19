@@ -31,66 +31,108 @@ interface NavItem {
   label: string;
   icon: IconName;
 }
-const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
+interface NavBlock {
+  label?: string;
+  items: NavItem[];
+}
+interface NavSection {
+  title: string;
+  blocks: NavBlock[];
+}
+const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Przegląd',
-    items: [
-      { id: 'dashboard', label: 'Pulpit', icon: 'dashboard' },
-      { id: 'character', label: 'Postać', icon: 'user' },
-      { id: 'finances', label: 'Finanse', icon: 'wallet' },
-      { id: 'calendar', label: 'Kalendarz', icon: 'calendar' },
-      { id: 'events', label: 'Historia zdarzeń', icon: 'list' },
-    ],
+    blocks: [{
+      items: [
+        { id: 'dashboard', label: 'Pulpit', icon: 'dashboard' },
+        { id: 'character', label: 'Postać', icon: 'user' },
+        { id: 'finances', label: 'Finanse', icon: 'wallet' },
+        { id: 'calendar', label: 'Kalendarz', icon: 'calendar' },
+        { id: 'events', label: 'Historia zdarzeń', icon: 'list' },
+      ],
+    }],
   },
   {
     title: 'Życie',
-    items: [
-      { id: 'jobs', label: 'Oferty pracy', icon: 'briefcase' },
-      { id: 'housing', label: 'Mieszkanie', icon: 'home' },
-      { id: 'lifestyle', label: 'Styl życia', icon: 'heart' },
-      { id: 'time', label: 'Budżet czasu', icon: 'clock' },
-      { id: 'savings', label: 'Oszczędności', icon: 'coins' },
-      { id: 'decisions', label: 'Decyzje i wydarzenia', icon: 'bell' },
-    ],
+    blocks: [{
+      items: [
+        { id: 'jobs', label: 'Oferty pracy', icon: 'briefcase' },
+        { id: 'housing', label: 'Mieszkanie', icon: 'home' },
+        { id: 'lifestyle', label: 'Styl życia', icon: 'heart' },
+        { id: 'time', label: 'Budżet czasu', icon: 'clock' },
+        { id: 'savings', label: 'Oszczędności', icon: 'coins' },
+        { id: 'decisions', label: 'Decyzje i wydarzenia', icon: 'bell' },
+      ],
+    }],
   },
   {
     title: 'Firma (JDG)',
-    items: [
-      { id: 'bizRegister', label: 'Rejestracja JDG', icon: 'building' },
-      { id: 'bizOverview', label: 'Moja działalność', icon: 'briefcase' },
-      { id: 'bizOrders', label: 'Oferty i kontrakty', icon: 'file' },
-      { id: 'bizFinance', label: 'Finanse firmy', icon: 'trend' },
-      { id: 'bizTax', label: 'Podatki i ZUS', icon: 'shield' },
-      { id: 'bizDocs', label: 'Dokumenty', icon: 'receipt' },
-      { id: 'bizSettlement', label: 'Rozliczenie roczne', icon: 'receipt' },
-      { id: 'bizReport', label: 'Podsumowanie roku', icon: 'list' },
-      { id: 'planning', label: 'Planowanie', icon: 'trend' },
-      { id: 'bizAccounting', label: 'Księgowość', icon: 'file' },
-      { id: 'hrEmployees', label: 'Pracownicy', icon: 'user' },
-      { id: 'hrRecruitment', label: 'Rekrutacja', icon: 'bell' },
-      { id: 'bizCalendar', label: 'Kalendarz obowiązków', icon: 'calendar' },
+    blocks: [
+      {
+        items: [
+          { id: 'bizRegister', label: 'Rejestracja JDG', icon: 'building' },
+          { id: 'bizOverview', label: 'Moja działalność', icon: 'briefcase' },
+          { id: 'bizFinance', label: 'Finanse firmy', icon: 'trend' },
+          { id: 'planning', label: 'Planowanie', icon: 'trend' },
+        ],
+      },
+      {
+        label: 'Podatki i księgowość',
+        items: [
+          { id: 'bizTax', label: 'Podatki i ZUS', icon: 'shield' },
+          { id: 'bizAccounting', label: 'Księgowość', icon: 'file' },
+          { id: 'bizDocs', label: 'Dokumenty', icon: 'receipt' },
+          { id: 'bizCalendar', label: 'Kalendarz obowiązków', icon: 'calendar' },
+          { id: 'bizSettlement', label: 'Rozliczenie roczne', icon: 'receipt' },
+          { id: 'bizReport', label: 'Podsumowanie roku', icon: 'list' },
+        ],
+      },
+      {
+        label: 'Ludzie',
+        items: [
+          { id: 'hrEmployees', label: 'Pracownicy', icon: 'user' },
+          { id: 'hrRecruitment', label: 'Rekrutacja', icon: 'bell' },
+        ],
+      },
     ],
   },
   {
-    title: 'Remonty',
-    items: [
-      { id: 'renoDashboard', label: 'Pulpit firmy', icon: 'dashboard' },
-      { id: 'renoEnquiries', label: 'Zapytania klientów', icon: 'bell' },
-      { id: 'renoQuotes', label: 'Wyceny', icon: 'receipt' },
-      { id: 'renoContracts', label: 'Kontrakty', icon: 'briefcase' },
-      { id: 'renoSchedule', label: 'Harmonogram', icon: 'calendar' },
-      { id: 'renoStock', label: 'Magazyn i sprzęt', icon: 'coins' },
-      { id: 'renoReputation', label: 'Reputacja i reklamacje', icon: 'heart' },
-      { id: 'opsSubcontractors', label: 'Podwykonawcy', icon: 'file' },
-      { id: 'opsTeams', label: 'Ekipy', icon: 'user' },
-      { id: 'opsSchedule', label: 'Harmonogram wielu kontraktów', icon: 'calendar' },
-      { id: 'opsVehicles', label: 'Pojazdy', icon: 'home' },
-      { id: 'opsProfit', label: 'Rentowność', icon: 'trend' },
+    title: 'Zlecenia',
+    blocks: [
+      {
+        items: [
+          { id: 'renoDashboard', label: 'Pulpit zleceń', icon: 'dashboard' },
+          { id: 'renoEnquiries', label: 'Zapytania klientów', icon: 'bell' },
+          { id: 'renoQuotes', label: 'Wyceny', icon: 'receipt' },
+          { id: 'renoContracts', label: 'Kontrakty', icon: 'briefcase' },
+          { id: 'bizOrders', label: 'Oferty i kontrakty', icon: 'file' },
+        ],
+      },
+      {
+        label: 'Realizacja',
+        items: [
+          { id: 'renoSchedule', label: 'Harmonogram', icon: 'calendar' },
+          { id: 'opsSchedule', label: 'Harmonogram wielu kontraktów', icon: 'calendar' },
+          { id: 'opsTeams', label: 'Ekipy', icon: 'user' },
+          { id: 'opsSubcontractors', label: 'Podwykonawcy', icon: 'file' },
+          { id: 'renoStock', label: 'Magazyn i sprzęt', icon: 'coins' },
+          { id: 'opsVehicles', label: 'Pojazdy', icon: 'home' },
+        ],
+      },
+      {
+        label: 'Wyniki',
+        items: [
+          { id: 'opsProfit', label: 'Rentowność', icon: 'trend' },
+          { id: 'renoReputation', label: 'Reputacja i reklamacje', icon: 'heart' },
+        ],
+      },
     ],
   },
-  { title: 'System', items: [{ id: 'game', label: 'Nowa gra / Wczytaj', icon: 'save' }] },
+  { title: 'System', blocks: [{ items: [{ id: 'game', label: 'Nowa gra / Wczytaj', icon: 'save' }] }] },
 ];
-const ALL_NAV = NAV_GROUPS.flatMap((g) => g.items);
+const sectionItems = (sec: NavSection) => sec.blocks.flatMap((b) => b.items);
+const ALL_NAV = NAV_SECTIONS.flatMap(sectionItems);
+const sectionOf = (id: Screen) => NAV_SECTIONS.find((sec) => sectionItems(sec).some((n) => n.id === id))?.title;
 
 function Logo() {
   return (
@@ -156,7 +198,13 @@ export function App() {
   const visited = useGameStore((s) => s.visited);
   const [menuOpen, setMenuOpen] = useState(false);
   const alerts = useMemo(() => (game ? computeNavAlerts(game, visited) : {}), [game, visited]);
-  const groupAlert = (g: { items: NavItem[] }) => g.items.some((n) => alerts[n.id]);
+  const groupAlert = (sec: NavSection) => sectionItems(sec).some((n) => alerts[n.id]);
+  const [open, setOpen] = useState<Set<string>>(() => new Set(['Przegląd', sectionOf(screen) ?? '']));
+  useEffect(() => {
+    const t = sectionOf(screen);
+    if (t) setOpen((o) => (o.has(t) ? o : new Set(o).add(t)));
+  }, [screen]);
+  const toggle = (title: string) => setOpen((o) => { const n = new Set(o); if (!n.delete(title)) n.add(title); return n; });
   const totalAlerts = Object.keys(alerts).length;
   const attention = game ? pendingLifeEvents(game).length + game.applications.filter((a) => a.status === 'offered').length : 0;
 
@@ -178,32 +226,49 @@ export function App() {
     <div className="flex h-full">
       <aside className="hidden w-64 shrink-0 flex-col border-r border-ink-700/60 bg-ink-900/60 p-5 backdrop-blur md:flex">
         <Logo />
-        <nav className="mt-6 flex flex-1 flex-col gap-4 overflow-y-auto" aria-label="Główna nawigacja">
-          {NAV_GROUPS.map((g) => (
-            <div key={g.title}>
-              <div className="mb-1 flex items-center gap-1.5 px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{g.title}{groupAlert(g) && <span aria-hidden="true" data-testid={`group-dot-${g.title}`} className="size-1.5 rounded-full bg-gold" />}</div>
-              <div className="flex flex-col gap-0.5">
-                {g.items.map((n) => (
-                  <button
-                    key={n.id}
-                    type="button"
-                    onClick={() => navigate(n.id)}
-                    aria-current={screen === n.id ? 'page' : undefined}
-                    title={alerts[n.id] ? `${n.label}: ${alerts[n.id]!.count} — ${alerts[n.id]!.hint}` : undefined}
-                    className={cx(
-                      'flex items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition',
-                      screen === n.id ? 'bg-ink-700 text-white shadow-inner ring-1 ring-ink-600' : 'text-slate-400 hover:bg-ink-800 hover:text-slate-100',
-                    )}
-                  >
-                    <Icon name={n.icon} />
-                    <span className="flex-1">{n.label}</span>
-                    {alerts[n.id] && <span aria-hidden="true" data-testid={`nav-dot-${n.id}`} className="size-2.5 shrink-0 rounded-full bg-gold shadow-[0_0_6px] shadow-gold/60" />}
-                    {n.id === 'decisions' && attention > 0 && <span data-testid="attention-badge" className="grid min-w-5 place-items-center rounded-full bg-gold px-1.5 text-[11px] font-bold text-ink-950">{attention}</span>}
-                  </button>
+        <nav className="mt-6 flex flex-1 flex-col gap-2 overflow-y-auto" aria-label="Główna nawigacja">
+          {NAV_SECTIONS.map((sec) => {
+            const expanded = open.has(sec.title);
+            return (
+              <div key={sec.title}>
+                <button
+                  type="button"
+                  onClick={() => toggle(sec.title)}
+                  aria-expanded={expanded}
+                  className="flex w-full items-center gap-1.5 rounded-lg px-3 py-1.5 text-left text-[11px] font-semibold tracking-wider text-slate-400 uppercase transition hover:bg-ink-800 hover:text-slate-200"
+                >
+                  <Icon name="chevronRight" className={cx('size-3.5 transition-transform', expanded && 'rotate-90')} />
+                  <span className="flex-1">{sec.title}</span>
+                  {groupAlert(sec) && <span aria-hidden="true" data-testid={`group-dot-${sec.title}`} className="size-1.5 rounded-full bg-gold" />}
+                </button>
+                {expanded && sec.blocks.map((blk, bi) => (
+                  <div key={bi} className="mt-0.5">
+                    {blk.label && <div className="mt-2 mb-0.5 px-3 text-[10px] font-semibold tracking-wider text-slate-600 uppercase">{blk.label}</div>}
+                    <div className="flex flex-col gap-0.5">
+                      {blk.items.map((n) => (
+                        <button
+                          key={n.id}
+                          type="button"
+                          onClick={() => navigate(n.id)}
+                          aria-current={screen === n.id ? 'page' : undefined}
+                          title={alerts[n.id] ? `${n.label}: ${alerts[n.id]!.count} — ${alerts[n.id]!.hint}` : undefined}
+                          className={cx(
+                            'flex items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition',
+                            screen === n.id ? 'bg-ink-700 text-white shadow-inner ring-1 ring-ink-600' : 'text-slate-400 hover:bg-ink-800 hover:text-slate-100',
+                          )}
+                        >
+                          <Icon name={n.icon} />
+                          <span className="flex-1">{n.label}</span>
+                          {alerts[n.id] && <span aria-hidden="true" data-testid={`nav-dot-${n.id}`} className="size-2.5 shrink-0 rounded-full bg-gold shadow-[0_0_6px] shadow-gold/60" />}
+                          {n.id === 'decisions' && attention > 0 && <span data-testid="attention-badge" className="grid min-w-5 place-items-center rounded-full bg-gold px-1.5 text-[11px] font-bold text-ink-950">{attention}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
         <p className="text-[11px] leading-relaxed text-slate-500">v0.6 · pracownicy, ekipy i podwykonawcy. Symulacja — nie porada prawna ani podatkowa.</p>
       </aside>
@@ -220,17 +285,22 @@ export function App() {
         </main>
         {menuOpen && (
           <div className="fixed inset-x-0 bottom-14 z-30 max-h-[70vh] overflow-y-auto border-t border-ink-700 bg-ink-900/98 p-3 backdrop-blur md:hidden" role="dialog" aria-label="Menu">
-            {NAV_GROUPS.map((g) => (
-              <div key={g.title} className="mb-2">
-                <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{g.title}{groupAlert(g) && <span aria-hidden="true" className="size-1.5 rounded-full bg-gold" />}</div>
-                <div className="grid grid-cols-2 gap-1">
-                  {g.items.map((n) => (
-                    <button key={n.id} type="button" onClick={() => { navigate(n.id); setMenuOpen(false); }} className={cx('flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm', screen === n.id ? 'bg-ink-700 text-white' : 'text-slate-300')}>
-                      <Icon name={n.icon} className="size-4" />{n.label}
-                      {alerts[n.id] && <span aria-hidden="true" data-testid={`mnav-dot-${n.id}`} className="ml-auto size-2.5 shrink-0 rounded-full bg-gold" />}
-                    </button>
-                  ))}
-                </div>
+            {NAV_SECTIONS.map((sec) => (
+              <div key={sec.title} className="mb-2">
+                <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{sec.title}{groupAlert(sec) && <span aria-hidden="true" className="size-1.5 rounded-full bg-gold" />}</div>
+                {sec.blocks.map((blk, bi) => (
+                  <div key={bi}>
+                    {blk.label && <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-semibold tracking-wider text-slate-600 uppercase">{blk.label}</div>}
+                    <div className="grid grid-cols-2 gap-1">
+                      {blk.items.map((n) => (
+                        <button key={n.id} type="button" onClick={() => { navigate(n.id); setMenuOpen(false); }} className={cx('flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm', screen === n.id ? 'bg-ink-700 text-white' : 'text-slate-300')}>
+                          <Icon name={n.icon} className="size-4" />{n.label}
+                          {alerts[n.id] && <span aria-hidden="true" data-testid={`mnav-dot-${n.id}`} className="ml-auto size-2.5 shrink-0 rounded-full bg-gold" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             ))}
           </div>

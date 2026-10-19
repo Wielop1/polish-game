@@ -73,7 +73,7 @@ function Row({ k, v, tone }: { k: ReactNode; v: ReactNode; tone?: string }) {
 export function RenoDashboardScreen() {
   const { game, biz, isReno } = useReno();
   const navigate = useGameStore((s) => s.navigate);
-  if (!biz || !isReno) return <NoReno title="Pulpit firmy — Remonty" />;
+  if (!biz || !isReno) return <NoReno title="Pulpit zleceń — Remonty" />;
   const d = renoDashboard(game);
   const liq = businessLiquidity(game);
   const active = game.reno.jobs.filter((j) => j.stage !== 'done' && j.stage !== 'cancelled');
@@ -85,7 +85,7 @@ export function RenoDashboardScreen() {
   const delta = d.actualCostActive - d.plannedCostActive;
   return (
     <div className="space-y-5">
-      <ScreenHeader title="Pulpit firmy — Remonty" subtitle={`${biz.name} · reputacja ${d.reputation.stars.toString().replace('.', ',')}★ (${d.reputation.reviews} opinii)`} />
+      <ScreenHeader title="Pulpit zleceń — Remonty" subtitle={`${biz.name} · reputacja ${d.reputation.stars.toString().replace('.', ',')}★ (${d.reputation.reviews} opinii)`} />
       <ParamNote />
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard testId="reno-cash" label="Gotówka firmy" icon="wallet" accent="gain" value={<Money value={liq.balance} />} hint={<>płynność 30 dni: <Money value={liq.coverage} signed /></>} />
