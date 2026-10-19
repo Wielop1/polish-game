@@ -111,7 +111,7 @@ export const SERVICES: readonly ServiceDef[] = [
     id: 'gladzie', label: 'Gładzie i szpachlowanie', description: 'Dwuwarstwowe gładzie gipsowe ze szlifowaniem, przygotowanie ścian pod malowanie.',
     unit: 'm²', normCentiPerUnit: 55, difficulty: 2,
     materialsPer100: [{ materialId: 'gladz', qty: 250 }, { materialId: 'grunt', qty: 15 }, { materialId: 'papier', qty: 5 }],
-    requiredEquipment: ['trowel-set'], referencePerUnit: zl(48), qtyRange: [25, 120], transportPerDay: zl(35),
+    requiredEquipment: ['trowel-set'], referencePerUnit: zl(54), qtyRange: [25, 120], transportPerDay: zl(35),
     risks: ['ukryte ubytki i pęknięcia tynku', 'kurz i konieczność dodatkowego sprzątania', 'zbyt wilgotne podłoże'],
   },
   {

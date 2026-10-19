@@ -7,8 +7,9 @@ import { referencePrice } from './renovationCatalog.ts';
 import { PROJECT_TEMPLATES, TIER_REQUIREMENTS, tierOfValue } from './projectsCatalog.ts';
 import { buildProject, companyReferences, defaultPlanInput, ensureB2BPool, planProject, projectAcceptance, projectById, projectValueNet, requirementChecks, segmentComparison } from './projects.ts';
 import { advanceDays } from './simulate.ts';
+import { addDays } from './date.ts';
 import type { GameState, RenoProject } from './state.ts';
-import { buyAll, ok, opsGame } from './testkit.ts';
+import { buyAll, contract, ok, opsGame, runUntil } from './testkit.ts';
 
 const NO_REQ = { minCompleted: 0, minValueNet: 0, minRating10: 0, minProjectTier: 0, minWorkers: 0 };
 
@@ -209,5 +210,94 @@ describe('v0.8.1 · większe projekty: realizacja, zależności, płatności i r
     expect(plan.blockers.length).toBeGreaterThan(0);
     expect(plan.checks.filter((c) => !c.ok).map((c) => c.label)).toEqual(expect.arrayContaining(['Ukończone kontrakty', 'Zdolność realizacyjna (liczba wykonawców)']));
     expect(zl(1)).toBe(100);
+  });
+});
+
+describe('v0.8.1 · klienci B2B, referencje i zdolność realizacyjna', () => {
+  it('pula klientów B2B: 10 fikcyjnych podmiotów, deterministyczna z seeda, o różnych typach, terminach płatności i rzetelności', () => {
+    const a = opsGame({ seed: 'pool-a' });
+    const b = opsGame({ seed: 'pool-a' });
+    const c = opsGame({ seed: 'pool-b' });
+    const pa = structuredClone(ensureB2BPool(structuredClone(a)));
+    expect(ensureB2BPool(structuredClone(b))).toEqual(pa);
+    expect(ensureB2BPool(structuredClone(c))).not.toEqual(pa);
+    expect(pa).toHaveLength(10);
+    expect(new Set(pa.map((x) => x.kind)).size).toBe(5);
+    expect(pa.every((x) => x.name.includes('fikcyjn') && x.termDays >= 7 && x.termDays <= 60 && x.reliability >= 40 && x.relationship === 40)).toBe(true);
+    // ponowne wywołanie nie dubluje klientów ani stron
+    const s = structuredClone(a);
+    ensureB2BPool(s); ensureB2BPool(s);
+    expect(s.reno.b2bClients).toHaveLength(10);
+    expect(Object.keys(s.parties).filter((id) => id.startsWith('party:b2b:'))).toHaveLength(10);
+  });
+
+  it('referencje rosną wyłącznie z rzeczywiście wykonanych robót: ukończone kontrakty odblokowują poziom 1, a ocena i liczba kontraktów mają znaczenie', () => {
+    let s = opsGame({ seed: 'refs-1', equip: ['paint-basic', 'paint-basic'] });
+    expect(companyReferences(s).tier).toBe(0);
+    for (let i = 0; i < 3; i++) {
+      const c = contract(s, { quote: { hoursPerDay: 3, durationDays: 20, startDate: addDays(s.clock.today, 3), priceNet: zl(3_200) } });
+      s = buyAll(c.s, c.job.id);
+      s = runUntil(s, (x) => x.reno.jobs.find((j) => j.id === c.job.id)!.stage === 'done', 120);
+    }
+    const refs = companyReferences(s);
+    expect(refs.completedJobs).toBe(3);
+    expect(refs.completedValueNet).toBeGreaterThanOrEqual(zl(9_000));
+    expect(refs.avgRating10).not.toBeNull();
+    expect(refs.workers).toBeGreaterThanOrEqual(1);
+    // sama liczba kontraktów i wartość spełniają poziom 1; o dostępie decyduje jeszcze ocena
+    const checks = requirementChecks(refs, TIER_REQUIREMENTS[1]);
+    expect(checks.find((x) => x.label === 'Ukończone kontrakty')!.ok).toBe(true);
+    expect(refs.tier).toBe(refs.avgRating10! >= TIER_REQUIREMENTS[1].minRating10 ? 1 : 0);
+    expect(refs.tier).toBeLessThan(2); // poziom 2 wymaga ukończonego projektu poziomu 1 i 8 kontraktów
+  }, 180_000);
+
+  it('zdolność realizacyjna: brak umiejętności, brak gotówki na start i nierealny termin blokują ofertę z konkretnym powodem', () => {
+    const { s, p } = projectGame({ seed: 'cap-1' });
+    // brak specjalizacji w panelach i drobnych pracach (nowa gra bez szkoleń)
+    let g = opsGame({ seed: 'cap-1', equip: ['paint-basic'] });
+    g = structuredClone(g);
+    const clients = ensureB2BPool(g);
+    const q = buildProject(g, currentOperator(g)!, clients[2]!, 'flat_finish', 1, g.clock.today)!;
+    q.requirements = { ...NO_REQ };
+    g.reno.projects.push(q);
+    // domyślnie program dobiera podwykonawców tam, gdzie właściciel nie ma umiejętności; wymuszenie pracy właściciela daje blokadę
+    expect(Object.values(defaultPlanInput(g, q).crews!).some((k) => k !== null)).toBe(true);
+    const forced = Object.fromEntries(q.packages.map((x) => [x.id, null]));
+    const plan = planProject(g, q, { ...defaultPlanInput(g, q), crews: forced });
+    expect(plan.blockers.some((b) => /specjalizacji|umiejętno/i.test(b))).toBe(true);
+    // brak gotówki: rachunek firmy opróżniony
+    const poor = structuredClone(s);
+    const acc = poor.accounts[currentOperator(poor)!.accountId]!;
+    acc.balance = 0;
+    const planPoor = planProject(poor, projectById(poor, p.id)!, defaultPlanInput(poor, projectById(poor, p.id)!));
+    expect(planPoor.blockers.some((b) => /Brakuje gotówki na start/.test(b))).toBe(true);
+    // nierealny termin: okno klienta skrócone do 10 dni
+    const rush = structuredClone(s);
+    projectById(rush, p.id)!.maxDays = 10;
+    const planRush = planProject(rush, projectById(rush, p.id)!, defaultPlanInput(rush, projectById(rush, p.id)!));
+    expect(planRush.blockers.some((b) => /nierealny/.test(b))).toBe(true);
+  });
+
+  it('klient odrzuca ofertę powyżej swojej granicy; kontroferta rabatowa zmniejsza cenę wszystkich pakietów proporcjonalnie, a suma cen pakietów = cena oferty', () => {
+    const { s: s0, p } = projectGame({ seed: 'counter-1' });
+    const input = { ...defaultPlanInput(s0, p), totalPriceNet: Math.round(p.walkAwayNet * 1.5) };
+    let s = ok(commands.sendProjectQuote(s0, p.id, input));
+    const c = structuredClone(s);
+    const pc = projectById(c, p.id)!;
+    expect(pc.quote!.priceNet).toBe(pc.packages.reduce((a, x) => a + x.priceNet, 0));
+    expect(projectAcceptance(c, pc).pAccept).toBeLessThanOrEqual(300);
+    // kontroferta
+    pc.status = 'counter';
+    pc.signBy = addDays(c.clock.today, 5);
+    pc.quote!.counter = { discountBps: 1_000, termDays: Math.min(pc.maxTermDays, pc.paymentTermDays + 5) };
+    const before = pc.quote!.priceNet;
+    s = ok(commands.respondProjectCounter(c, p.id, 'accept'));
+    const after = projectById(s, p.id)!;
+    expect(after.status).toBe('accepted');
+    expect(after.quote!.priceNet).toBe(after.packages.reduce((a, x) => a + x.priceNet, 0));
+    expect(after.quote!.priceNet).toBeLessThan(before);
+    expect(Math.abs(after.quote!.priceNet - Math.round(before * 0.9))).toBeLessThanOrEqual(after.packages.length * 100);
+    expect(after.quote!.paymentTermDays).toBe(pc.quote!.counter?.termDays ?? after.quote!.paymentTermDays);
+    expect(checkInvariants(s)).toEqual([]);
   });
 });

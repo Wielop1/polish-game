@@ -3,7 +3,7 @@ import { formatDatePL } from '../../engine/date.ts';
 import type { JobFinancials, QuoteEconomics } from '../../engine/renovation.ts';
 import { Money, cx, moneyTone } from '../components/ui.tsx';
 
-function Row({ k, v, tone, hint }: { k: ReactNode; v: ReactNode; tone?: string; hint?: string }) {
+export function Row({ k, v, tone, hint }: { k: ReactNode; v: ReactNode; tone?: string; hint?: string }) {
   return (
     <div className="py-1.5 text-sm">
       <div className="flex items-baseline justify-between gap-3">
@@ -15,7 +15,7 @@ function Row({ k, v, tone, hint }: { k: ReactNode; v: ReactNode; tone?: string; 
   );
 }
 
-const Head = ({ children }: { children: ReactNode }) => <div className="pt-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{children}</div>;
+export const Head = ({ children }: { children: ReactNode }) => <div className="pt-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{children}</div>;
 const hours = (centi: number) => `${(centi / 100).toFixed(1).replace('.', ',')} godz.`;
 
 /** Zarobek przedsiębiorcy z jednego zlecenia: przychód → koszty rzeczywiste → nadwyżka → (kalkulacyjna) praca właściciela → zysk ekonomiczny → płynność. */

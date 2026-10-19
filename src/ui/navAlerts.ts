@@ -18,6 +18,8 @@ export function computeNavAlerts(game: GameState, visited: Record<string, string
   add('renoEnquiries', game.reno.enquiries.filter((e) => e.status === 'open').length, 'nowe zapytania czekają na wycenę');
   add('renoQuotes', game.reno.quotes.filter((q) => q.status === 'counter' || q.status === 'accepted').length, 'negocjacje lub umowa do podpisu');
   add('renoContracts', active.filter((j) => j.blockedReason !== null && j.stage !== 'preparation').length, 'kontrakt stoi (materiały, sprzęt, brak wykonawców)');
+  add('projects', game.reno.projects.filter((p) => p.status === 'counter' || p.status === 'accepted').length + game.reno.projects.filter((p) => p.status === 'enquiry' && p.requirements.minCompleted <= game.reno.jobs.filter((j) => j.stage === 'done').length).length, 'zapytanie lub umowa projektu czeka na decyzję');
+  add('projectPackages', game.reno.projects.filter((p) => p.status === 'signed' && p.note !== '').length, 'pakiet projektu czeka na wykonawców');
   add('renoReputation', game.reno.complaints.filter((c) => c.status === 'open').length, 'reklamacja czeka na decyzję');
   add('renoStock', game.reno.equipment.filter((e) => e.conditionBps < 3_000).length, 'sprzęt wymaga konserwacji');
   add('hrRecruitment', game.ops.candidates.filter((c) => c.status === 'new' || c.status === 'countered').length, 'zgłoszenia kandydatów czekają na ofertę');

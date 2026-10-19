@@ -148,6 +148,6 @@ export const B2B_RULES = {
   /** Zwłoka płatnika: do (100 − rzetelność) × 0,4 dni ponad umowny termin. */
   delayPerReliabilityPt: 0.4,
   /** Zapas czasu w planie względem minimalnego czasu pracy: ekipa z właścicielem / bez właściciela. */
-  slackOwner: 1.2,
-  slackCrew: 1.45,
+  slackOwner: 1.4,
+  slackCrew: 1.6,
 } as const;

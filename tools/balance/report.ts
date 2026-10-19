@@ -42,6 +42,14 @@ export interface PolicySummary {
   competitorExits: number;
   competitorEntries: number;
   invariantFailures: number;
+  /** v0.8.1: projekty B2B i podział przychodu; zysk ekonomiczny właściciela (po kalkulacyjnej wartości jego pracy). */
+  projectsPerYear: { enquiries: number; quoted: number; signed: number; done: number };
+  projectRevenuePerYear: number;
+  privateRevenuePerYear: number;
+  projectSurplusShare: number | null;
+  privateSurplusShare: number | null;
+  ownerEconomicProfitPerYear: Stat;
+  avgPaymentDelay: number;
 }
 
 const pct = (sorted: number[], q: number): number => (sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))]!);
@@ -93,6 +101,16 @@ export function summarize(runs: RunMetrics[], params: Summary['params']): Summar
       competitorExits: sum(rs.map((r) => r.competitorExits)) / rs.length,
       competitorEntries: sum(rs.map((r) => r.competitorEntries)) / rs.length,
       invariantFailures: rs.filter((r) => r.invariantErrors.length > 0).length,
+      projectsPerYear: {
+        enquiries: sum(rs.map((r) => r.projectEnquiries / yrs(r))) / rs.length, quoted: sum(rs.map((r) => r.projectsQuoted / yrs(r))) / rs.length,
+        signed: sum(rs.map((r) => r.projectsSigned / yrs(r))) / rs.length, done: sum(rs.map((r) => r.projectsDone / yrs(r))) / rs.length,
+      },
+      projectRevenuePerYear: sum(rs.map((r) => r.projectRevenueNet / yrs(r))) / rs.length / 100,
+      privateRevenuePerYear: sum(rs.map((r) => r.privateRevenueNet / yrs(r))) / rs.length / 100,
+      projectSurplusShare: sum(rs.map((r) => r.projectRevenueNet)) > 0 ? sum(rs.map((r) => r.projectSurplusNet)) / sum(rs.map((r) => r.projectRevenueNet)) : null,
+      privateSurplusShare: sum(rs.map((r) => r.privateRevenueNet)) > 0 ? sum(rs.map((r) => r.privateSurplusNet)) / sum(rs.map((r) => r.privateRevenueNet)) : null,
+      ownerEconomicProfitPerYear: statZl(stat(rs.map((r) => r.ownerEconomicProfit / yrs(r)))),
+      avgPaymentDelay: sum(rs.map((r) => r.avgPaymentDelay)) / rs.length,
     });
   }
   const notes: string[] = [];
@@ -127,7 +145,13 @@ export function formatSummary(sm: Summary): string {
     ['przegrane z konkurencją / rok', (p) => f1(p.lostToRivalsPerYear)],
     ['udział w zleceniach rynku', (p) => (p.marketShare === null ? '—' : fp(p.marketShare))],
     ['przychód netto / rok (zł)', (p) => f0(p.revenuePerYear.median)],
-    ['marża kontraktów', (p) => fp(p.contractMargin)],
+    ['marża kontraktów (nadwyżka przed obciążeniami)', (p) => fp(p.contractMargin)],
+    ['zysk ekonomiczny po pracy właściciela / rok (zł)', (p) => f0(p.ownerEconomicProfitPerYear.median)],
+    ['projekty B2B / rok: zapytania·wycenione·podpisane·zakończone', (p) => `${p.projectsPerYear.enquiries.toFixed(1)}·${p.projectsPerYear.quoted.toFixed(1)}·${p.projectsPerYear.signed.toFixed(1)}·${p.projectsPerYear.done.toFixed(1)}`],
+    ['przychód z małych zleceń prywatnych / rok (zł)', (p) => f0(p.privateRevenuePerYear)],
+    ['przychód z projektów / rok (zł)', (p) => f0(p.projectRevenuePerYear)],
+    ['nadwyżka/przychód: prywatne | projekty', (p) => `${p.privateSurplusShare === null ? '—' : fp(p.privateSurplusShare)} | ${p.projectSurplusShare === null ? '—' : fp(p.projectSurplusShare)}`],
+    ['średnia zwłoka płatnika B2B (dni)', (p) => f1(p.avgPaymentDelay)],
     ['przychód / godz. pracy (zł)', (p) => f0(p.revenuePerWorkHour)],
     ['wykorzystanie mocy własnej', (p) => fp(p.capacityUse)],
     ['koszty stałe / mies. (zł)', (p) => f0(p.fixedCostsPerMonth.median)],

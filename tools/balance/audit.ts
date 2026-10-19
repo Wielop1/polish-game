@@ -59,3 +59,43 @@ for (const r of rows) {
   }
 }
 if (out) { mkdirSync(dirname(out), { recursive: true }); writeFileSync(out, JSON.stringify(rows, null, 1)); console.log(`zapisano ${out}`); }
+
+/* ---------- Audyt projektów B2B (v0.8.1) ---------- */
+import { currentOperator } from '../../src/engine/operator.ts';
+import { B2B_KINDS, PROJECT_TEMPLATES } from '../../src/engine/projectsCatalog.ts';
+import { buildProject, defaultPlanInput, ensureB2BPool, planProject } from '../../src/engine/projects.ts';
+
+{
+  let s = opsGame({ seed: 'audit-proj', equip: ['hand-tools', 'paint-basic', 'trowel-set', 'panel-kit'] });
+  s = fund(s, zl(100_000));
+  for (const id of ['gladzie', 'panele', 'drobne']) { const r = commands.addSpecialization(s, id); if (r.ok) s = r.state; }
+  s = structuredClone(s);
+  const clients = ensureB2BPool(s);
+  console.log('\nprojekt                                  klient                          cena  koszty  nadw.  godz. zł/h(nadw.) dni/okno  szczyt gotówki');
+  const rows2: Record<string, unknown>[] = [];
+  for (const [tid, tpl] of Object.entries(PROJECT_TEMPLATES)) {
+    for (const pos of [0, 0.5, 1]) {
+      const kind = tid === 'subcontract' || tid === 'serial_flats' ? 'general_contractor' : tid === 'flat_finish' ? 'private_investor' : 'property_manager';
+      const client = clients.find((c) => c.kind === kind)!;
+      const area = Math.round(tpl.areaRange[0] + (tpl.areaRange[1] - tpl.areaRange[0]) * pos);
+      const flats = tid === 'serial_flats' ? Math.round(tpl.flatsRange[0] + (tpl.flatsRange[1] - tpl.flatsRange[0]) * pos) : 1;
+      const wanted = [1, 2, 3].find((t) => buildProject(s, currentOperator(s)!, client, tid as never, t, s.clock.today) !== null);
+      void wanted;
+      // buildProject losuje metraż — dla audytu budujemy projekt ręcznie z tego samego szablonu
+      const p = (() => {
+        for (let t = 1; t <= 3; t++) { const x = buildProject(s, currentOperator(s)!, client, tid as never, t, s.clock.today); if (x) return x; }
+        return null;
+      })();
+      if (!p) continue;
+      for (const pkg of p.packages) { pkg.complexity = 'standard'; pkg.refPriceNet = referencePrice(pkg.serviceId, pkg.units, 'standard', pkg.qualityReq); }
+      p.requirements = { minCompleted: 0, minValueNet: 0, minRating10: 0, minProjectTier: 0, minWorkers: 0 };
+      s.reno.projects.push(p);
+      const plan = planProject(s, p, defaultPlanInput(s, p));
+      void area; void flats;
+      rows2.push({ title: p.title, kind: B2B_KINDS[client.kind].label, revenue: z(plan.economics.revenueNet), external: z(plan.economics.externalCost), surplus: z(plan.economics.surplus), hours: plan.economics.ownerCenti / 100, hourly: plan.economics.ownerHourly === null ? null : z(plan.economics.ownerHourly), chainDays: plan.chainDays, maxDays: p.maxDays, peak: z(plan.cash.peakNeed), blockers: plan.blockers.length });
+      console.log(`${p.title.slice(0, 40).padEnd(40)} ${B2B_KINDS[client.kind].label.slice(0, 24).padEnd(24)} ${String(z(plan.economics.revenueNet)).padStart(8)} ${String(z(plan.economics.externalCost)).padStart(7)} ${String(z(plan.economics.surplus)).padStart(6)} ${String(Math.round(plan.economics.ownerCenti / 100)).padStart(5)} ${String(plan.economics.ownerHourly === null ? '-' : z(plan.economics.ownerHourly)).padStart(6)} ${String(plan.chainDays).padStart(5)}/${String(p.maxDays).padEnd(4)} ${String(z(plan.cash.peakNeed)).padStart(8)} ${plan.blockers.length ? '!' + plan.blockers.length : ''}`);
+      break;
+    }
+  }
+  if (out) writeFileSync(out.replace('.json', '-projects.json'), JSON.stringify(rows2, null, 1));
+}

@@ -17,6 +17,7 @@ import { BizCalendarScreen, BizDocsScreen, BizFinanceScreen, BizOrdersScreen, Bi
 import { BizReportScreen, BizSettlementScreen, PlanningScreen } from './screens/AnnualScreens.tsx';
 import { HrEmployeesScreen, HrRecruitmentScreen, MultiScheduleScreen, ProfitabilityScreen, SubcontractorsScreen, TeamsScreen, VehiclesScreen } from './screens/WorkforceScreens.tsx';
 import { BizAccountingScreen } from './screens/AccountingScreen.tsx';
+import { B2BClientsScreen, ProjectPackagesScreen, ProjectReferencesScreen, ProjectsScreen } from './screens/ProjectScreens.tsx';
 import { MarketCompetitionScreen, MarketDemandScreen, MarketLocalScreen, MarketMarketingScreen, MarketStrategyScreen } from './screens/MarketScreens.tsx';
 import { RenoContractsScreen, RenoDashboardScreen, RenoEnquiriesScreen, RenoQuotesScreen, RenoReputationScreen, RenoScheduleScreen, RenoStockScreen } from './screens/RenovationScreens.tsx';
 import { CorpBoardScreen, CorpCompaniesScreen, CorpFoundScreen, CorpPartnersScreen, CorpSharesScreen } from './screens/CorpScreens.tsx';
@@ -121,6 +122,15 @@ const NAV_SECTIONS: NavSection[] = [
           { id: 'opsSubcontractors', label: 'Podwykonawcy', icon: 'file' },
           { id: 'renoStock', label: 'Magazyn i sprzęt', icon: 'coins' },
           { id: 'opsVehicles', label: 'Pojazdy', icon: 'home' },
+        ],
+      },
+      {
+        label: 'Większe projekty (B2B)',
+        items: [
+          { id: 'b2bClients', label: 'Klienci B2B', icon: 'user' },
+          { id: 'projects', label: 'Większe projekty', icon: 'briefcase' },
+          { id: 'projectPackages', label: 'Pakiety robót', icon: 'list' },
+          { id: 'projectReferences', label: 'Referencje firmy', icon: 'shield' },
         ],
       },
       {
@@ -235,6 +245,10 @@ function renderScreen(screen: Screen) {
     case 'marketMarketing': return <MarketMarketingScreen />;
     case 'marketStrategy': return <MarketStrategyScreen />;
     case 'marketDemand': return <MarketDemandScreen />;
+    case 'b2bClients': return <B2BClientsScreen />;
+    case 'projects': return <ProjectsScreen />;
+    case 'projectPackages': return <ProjectPackagesScreen />;
+    case 'projectReferences': return <ProjectReferencesScreen />;
     case 'corpCompanies': return <CorpCompaniesScreen />;
     case 'corpFound': return <CorpFoundScreen />;
     case 'corpPartners': return <CorpPartnersScreen />;

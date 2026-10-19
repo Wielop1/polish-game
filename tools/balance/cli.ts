@@ -14,6 +14,7 @@ import { summarize, formatSummary } from './report.ts';
  *   npm run balance -- --policies solo,team3 --runs 20
  *   npm run balance -- --trace bal-3 --policy team3   (jeden seed: log decyzji + końcowy stan, do debugowania)
  *   npm run balance -- --policies team3 --marketing portals   (nadpisuje profil marketingu: none | basic | active | portals)
+ *   npm run balance -- --projects true                         (bot obsługuje większe projekty B2B; domyślnie tylko małe zlecenia prywatne)
  */
 
 function arg(name: string, fallback?: string): string | undefined {
@@ -34,6 +35,7 @@ const traceSeed = arg('trace');
 const marketing = arg('marketing');
 if (marketing && !['none', 'basic', 'active', 'portals'].includes(marketing)) throw new Error('--marketing: none | basic | active | portals');
 const capital = Math.round(Number(arg('capital', '90000')) * 100);
+const projects = arg('projects') === 'true'; // bot obsługuje większe projekty B2B (domyślnie nie — wersja „tylko małe zlecenia prywatne”)
 
 function writeOut(path: string, data: string): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -44,7 +46,7 @@ if (traceSeed) {
   const policy = POLICIES.find((p) => p.id === arg('policy', 'solo'));
   if (!policy) throw new Error(`Nieznana strategia: ${arg('policy')}`);
   const t0 = Date.now();
-  const r = runScenario({ seed: traceSeed, years, policy: marketing ? { ...policy, marketing: marketing as typeof policy.marketing } : policy, trace: true, capital });
+  const r = runScenario({ seed: traceSeed, years, policy: marketing ? { ...policy, marketing: marketing as typeof policy.marketing } : policy, trace: true, capital, projects });
   const base = `balance-out/trace-${policy.id}-${traceSeed}`;
   writeOut(`${base}.log`, r.trace!.join('\n'));
   writeOut(`${base}.metrics.json`, JSON.stringify(r.metrics, null, 2));
@@ -57,8 +59,8 @@ if (traceSeed) {
 
 for (const id of policyIds) if (!POLICIES.some((p) => p.id === id)) throw new Error(`Nieznana strategia: ${id}. Dostępne: ${POLICIES.map((p) => p.id).join(', ')}`);
 
-const tasks: { id: number; seed: string; years: number; policy: string; capital: number; marketing?: string }[] = [];
-for (let r = 0; r < runs; r++) for (const policy of policyIds) tasks.push({ id: tasks.length, seed: `${prefix}-${r + 1}`, years, policy, capital, marketing });
+const tasks: { id: number; seed: string; years: number; policy: string; capital: number; marketing?: string; projects?: boolean }[] = [];
+for (let r = 0; r < runs; r++) for (const policy of policyIds) tasks.push({ id: tasks.length, seed: `${prefix}-${r + 1}`, years, policy, capital, marketing, projects });
 
 console.log(`Symulator balansu: ${policyIds.length} strategii × ${runs} seedów × ${years} lat = ${tasks.length} przebiegów, kapitał ${capital / 100} zł, wątków: ${workers}`);
 const results: RunMetrics[] = [];

@@ -57,9 +57,10 @@ test('remonty: rejestracja ze specjalizacją, sprzęt, zapytanie, wycena z podgl
   await expect(page.getByRole('heading', { name: 'Wyceny' })).toBeVisible();
   await expect(page.getByTestId('quote-builder')).toBeVisible();
   const preview = page.getByTestId('quote-preview');
-  await expect(preview).toContainText('Koszt planowany');
-  await expect(preview).toContainText('Narzut (od kosztu)');
-  await expect(preview).toContainText('Marża (od ceny)');
+  await expect(preview).toContainText('Koszty rzeczywiste');
+  await expect(preview).toContainText('Nadwyżka przed obciążeniami właściciela');
+  await expect(preview).toContainText('Kalkulacyjna wartość Twojej pracy');
+  await expect(preview).toContainText('Zysk ekonomiczny');
   await expect(preview).toContainText('bez VAT');
   const send = page.getByTestId('send-quote');
   if (await send.isEnabled()) {

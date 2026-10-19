@@ -273,7 +273,7 @@ function fitPackage(s: GameState, pkg: RenoPackage, key: string | null, start: I
   };
   const ownerIn = key === null || (parseCrewKey(key) ?? []).some((m) => m.kind === 'owner') || !!s.ops.teams.find((t) => t.id === key)?.members.some((m) => m.kind === 'owner');
   let last: { h: number; dur: number; preview: QuotePreview; conflict: boolean } | null = null;
-  for (const h of ownerIn ? [...new Set([hpdMax, 5, 4, 3, 2, 1].filter((x) => x <= hpdMax))] : [hpdMax]) {
+  for (const h of ownerIn ? [...new Set([hpdMax, 7, 6, 5, 4, 3, 2, 1].filter((x) => x <= hpdMax))] : [hpdMax]) {
     const probe = previewQuote(s, { ...base, hoursPerDay: h }, { project: true });
     const dur = Math.max(minDur, Math.ceil(probe.minDays * (ownerIn ? B2B_RULES.slackOwner : B2B_RULES.slackCrew)) + 1);
     const preview = previewQuote(s, { ...base, hoursPerDay: h, durationDays: dur }, { project: true });
@@ -538,6 +538,7 @@ export function processProjects(s: GameState, b: Operator, date: IsoDate): void 
   if (s.processed[key]) return;
   s.processed[key] = true;
   const st = reno(s);
+  ensureB2BPool(s);
   if (st.projects.length === 0 && st.jobs.filter((j) => j.stage === 'done').length === 0) { rollB2BEnquiry(s, b, date); return; }
   for (const p of st.projects) {
     if (p.status === 'enquiry' && date > p.respondBy) { p.status = 'expired'; p.note = 'Termin odpowiedzi minął'; }
@@ -557,7 +558,12 @@ export function processProjects(s: GameState, b: Operator, date: IsoDate): void 
         // pakiety, których poprzednicy zostali odebrani, stają się kontraktami (jeden dzień po odbiorze); brak wykonawców/godzin = ponowna próba następnego dnia
         for (const pkg of p.packages) {
           if (pkg.jobId || !pkg.dependsOn.every((d) => jobOfPackage(s, p.packages.find((x) => x.id === d)!)?.stage === 'done')) continue;
-          try { activatePackage(s, b, p, pkg); p.note = ''; logEvent(s, { id: `reno.project:${p.id}:pkg:${pkg.id}`, date, type: 'reno.project', tone: 'neutral', title: `Rusza kolejny pakiet: ${pkg.label} (${p.title.split(':')[0]})`, detail: 'Zaliczka etapu i materiały — w kontraktach.', amount: null, category: null }); }
+          try {
+            // próba na kopii: nieudana aktywacja (brak godzin, zajęty wykonawca) nie może zostawić po sobie częściowych zapisów (zlecenie, dokument zaliczki, rezerwacje)
+            const trial = structuredClone(s);
+            const tp = trial.reno.projects.find((x) => x.id === p.id)!;
+            activatePackage(trial, b, tp, tp.packages.find((x) => x.id === pkg.id)!);
+            activatePackage(s, b, p, pkg); p.note = ''; logEvent(s, { id: `reno.project:${p.id}:pkg:${pkg.id}`, date, type: 'reno.project', tone: 'neutral', title: `Rusza kolejny pakiet: ${pkg.label} (${p.title.split(':')[0]})`, detail: 'Zaliczka etapu i materiały — w kontraktach.', amount: null, category: null }); }
           catch (e) { if (!(e instanceof CommandError)) throw e; if (p.note !== e.message.slice(0, 280)) { p.note = e.message.slice(0, 280); logEvent(s, { id: `reno.project:${p.id}:wait:${pkg.id}:${date}`, date, type: 'reno.project', tone: 'warning', title: `Pakiet czeka na wykonawców: ${pkg.label}`, detail: p.note.slice(0, 290), amount: null, category: null }); } }
         }
       }

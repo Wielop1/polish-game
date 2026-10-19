@@ -9,7 +9,9 @@ const base = (over: Partial<RunMetrics>): RunMetrics => ({
   revenueNet: 10_000_00, economicResult: 6_000_00, workHours: 400, ownerHours: 400, payrollTotal: 0, payrollIdle: 0, fixedCostsTotal: 2_000_00, marketingSpend: 0,
   minBusinessCash: 5_000_00, insolvent: false, insolvencyDay: null, netWorthStart: 90_000_00, capital: 90_000_00, netWorthEnd: 100_000_00, ownerInjections: 0, ownerDraws: 0,
   avgEmployees: 0, avgOpenBacklog: 2, capacityHours: 2_000, lostCapacity: 4, lostToRivals: 10, marketShare: 0.05, competitorsEnd: 15, competitorExits: 1,
-  competitorEntries: 2, avgCompetitorUtil: 0.7, declineReasons: {}, invariantErrors: [], yearly: [], ...over,
+  competitorEntries: 2, avgCompetitorUtil: 0.7, declineReasons: {}, invariantErrors: [], yearly: [],
+  projectEnquiries: 0, projectsQuoted: 0, projectsSigned: 0, projectsDone: 0, projectsCancelled: 0, projectRevenueNet: 0, projectSurplusNet: 0, privateRevenueNet: 10_000_00,
+  privateSurplusNet: 6_000_00, ownerEconomicProfit: 3_000_00, avgPaymentDelay: 0, ...over,
 });
 
 describe('symulator balansu: agregacja wyników', () => {

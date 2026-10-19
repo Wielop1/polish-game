@@ -134,6 +134,7 @@ export function RenoDashboardScreen() {
             <Row k="Zakończone kontrakty" v={d.doneJobs} />
             <Row k="Przychód netto" v={<Money value={d.revenueDone} />} />
             <Row k="Nadwyżka przed obciążeniami właściciela (ukończone)" v={<Money value={d.economicResultDone} signed />} tone={moneyTone(d.economicResultDone)} />
+            <Row k="Zysk ekonomiczny po pracy właściciela (kalkulacyjnie, ukończone)" v={<Money value={d.economicProfitDone} signed />} tone={moneyTone(d.economicProfitDone)} />
             <Row k="Zapasy materiałów (aktywo)" v={<Money value={d.stockValue} />} />
             <Row k="Sprzęt — wartość księgowa (aktywo)" v={<Money value={d.equipmentValue} />} />
           </dl>

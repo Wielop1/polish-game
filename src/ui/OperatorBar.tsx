@@ -8,6 +8,7 @@ export const OPERATOR_SCREENS: ReadonlySet<Screen> = new Set<Screen>([
   'renoDashboard', 'renoEnquiries', 'renoQuotes', 'renoContracts', 'renoSchedule', 'renoStock', 'renoReputation',
   'hrEmployees', 'hrRecruitment', 'opsSubcontractors', 'opsTeams', 'opsSchedule', 'opsVehicles', 'opsProfit',
   'marketLocal', 'marketCompetition', 'marketMarketing', 'marketStrategy', 'marketDemand',
+  'b2bClients', 'projects', 'projectPackages', 'projectReferences',
 ]);
 
 /** Wybór aktywnego podmiotu (widoczny tylko, gdy gracz ma więcej niż jeden podmiot prowadzący działalność). */

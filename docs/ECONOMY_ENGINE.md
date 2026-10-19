@@ -164,6 +164,14 @@ Moduły: `operator.ts`, `company.ts`, `shares.ts`, `partners.ts`, `negotiation.t
 
 **Niezmienniki dodane w v0.8:** suma udziałów = struktura kapitału; kapitał = liczba × nominał; zdarzenia udziałowe = stan rejestru; wkłady kapitałowe = wpływy kapitałowe na rachunek spółki; kapitał zapasowy = agio + przeniesienia z zysku; przelewy osoba↔spółka tylko jako wkład; uchwała wykonana tylko przy wymaganej większości i tylko raz; dywidenda ≤ kwota do podziału, netto + podatek = brutto, gracz nie dostaje dywidendy niewypłaconej; zeznania CIT (saldo, stawka 9% tylko przy spełnieniu warunków), straty (5 lat, 50%); kontekst operatora pusty w stanie spoczynkowym; zarząd niepusty, dokładnie jeden prezes.
 
+## 8g. Mechaniki v0.8.1 — zarobek przedsiębiorcy, większe projekty, referencje (skrót; ADR-072–078)
+
+- **Zarobek przedsiębiorcy** (ADR-073): przychód → koszty rzeczywiste (wydatki firmy + zużycie sprzętu) → nadwyżka przed obciążeniami właściciela → kalkulacyjna wartość pracy właściciela (godziny × stawka; **nie** wypłata i **nie** koszt podatkowy JDG) → zysk ekonomiczny; osobno przepływy gotówkowe (zaliczka, wydatki przed zapłatą, data zapłaty, maksymalne zapotrzebowanie). `previewQuote().economics`, `jobFinancials()`; ostrzeżenia: strata gotówkowa vs ujemny zysk ekonomiczny.
+- **Projekty** (ADR-074/075): projekt → etapy → pakiety → zadania; pakiet = `RenoJob` z `dependsOn`; aktywacja po odbiorze poprzedników; plan (`planProject`: wykonawcy, godziny właściciela, harmonogram łańcucha, ekonomia, gotówka, wymagania, blokady i ryzyka); oferta → decyzja klienta (prawdopodobieństwo z ceny/budżetu, referencji, relacji, terminu płatności, terminu, konkurencji) → kontroferta → podpis; zwłoka płatnika B2B z rzetelności; kara umowna per pakiet; relacja z klientem rośnie po terminowych, dobrze ocenionych projektach.
+- **Referencje** (`companyReferences`): liczone z kontraktów i projektów; trzy poziomy dostępu; forma prawna bez znaczenia; zapytania B2B rzadkie (poniedziałkowe losowanie, limity).
+- **Głosowania** (ADR-072): za / przeciw / wstrzymujące się / nieważne / nieoddane; bezwzględna większość = więcej niż połowa głosów oddanych (art. 4 § 1 pkt 10 KSH).
+- **Niezmienniki**: pakiet ma kontrakt wskazujący projekt i pakiet; zależności istnieją i poprzednicy są odebrani; cena oferty = suma cen pakietów; zakończony projekt ma wynik.
+
 ## 8a. Mechaniki v0.4 — płace, rozliczenia roczne, planowanie (skrót; ADR-033–039)
 
 Moduły: `payroll.ts` (kalkulator brutto → netto, odcinki płacowe), `annual.ts` (31.12: zeznania PIT-37/36/36L/28, straty, roczna zdrowotna, wnioski o zwrot), `business.ts` (zawieszenie, zmiana formy od 1.01, Mały ZUS Plus), `planning.ts` (prognoza na klonie stanu), `report.ts` (podsumowanie roku). Zaokrąglenia: składki do grosza, podstawa i podatek do zł. Dzienne przetwarzanie: `processDay` → płace → JDG (`closeMonth`) → `processAnnual` (31.12). Wszystkie operacje idempotentne (klucze `processed`).

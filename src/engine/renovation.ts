@@ -1753,6 +1753,8 @@ export interface RenoDashboard {
   contractedNet: Grosze;
   doneJobs: number;
   economicResultDone: Grosze;
+  /** v0.8.1: zysk ekonomiczny ukończonych kontraktów po kalkulacyjnej wartości pracy właściciela (nie wypłata). */
+  economicProfitDone: Grosze;
   revenueDone: Grosze;
 }
 
@@ -1786,6 +1788,7 @@ export function renoDashboard(s: GameState): RenoDashboard {
     contractedNet: active.reduce((a, j) => a + j.priceNet, 0),
     doneJobs: done.length,
     economicResultDone: done.reduce((a, j) => a + jobFinancials(j, subcontractsOfJob(s, j.id)).economicResult, 0),
+    economicProfitDone: done.reduce((a, j) => a + jobFinancials(j, subcontractsOfJob(s, j.id)).economicProfit, 0),
     revenueDone: done.reduce((a, j) => a + jobFinancials(j, subcontractsOfJob(s, j.id)).revenueNet, 0),
   };
 }

@@ -1,3 +1,4 @@
+import { SegmentComparisonCard } from './ProjectScreens.tsx';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { addDays, formatDatePL, monthKey } from '../../engine/date.ts';
@@ -574,6 +575,7 @@ export function ProfitabilityScreen() {
           </table></div>
         )}
       </Card>
+      <SegmentComparisonCard game={game} />
       <Card title="Prognoza płynności (60 dni)">
         <div className="flex flex-wrap items-end gap-1" data-testid="liquidity" role="img" aria-label="Prognozowane saldo rachunku firmowego">
           {fc.points.map((p) => {

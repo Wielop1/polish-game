@@ -15,6 +15,8 @@ import { fixedCosts, teamLoad } from '../../src/engine/profitability.ts';
 import { subcontractsOfJob } from '../../src/engine/subcontractors.ts';
 import { firstFree, resourceBusy } from '../../src/engine/teams.ts';
 import { personLevel } from '../../src/engine/workforce.ts';
+import { defaultPlanInput, planProject, segmentOfJob, suggestCrews } from '../../src/engine/projects.ts';
+import { parseCrewKey, SOLE_SUB_PREFIX } from '../../src/engine/renovation.ts';
 import type { GameState, RenoEnquiry } from '../../src/engine/state.ts';
 import { REG, fund } from '../../src/engine/testkit.ts';
 import { applyMarketing } from './port.ts';
@@ -103,6 +105,18 @@ export interface RunMetrics {
   invariantErrors: string[];
   /** Powody odrzucenia kandydatów na ofertę (diagnostyka bota). */
   declineReasons: Record<string, number>;
+  /** v0.8.1: projekty B2B (zapytania, wycenione, podpisane, zakończone, przerwane), przychód i nadwyżka z projektów oraz z małych zleceń prywatnych, zysk ekonomiczny po wartości pracy właściciela. */
+  projectEnquiries: number;
+  projectsQuoted: number;
+  projectsSigned: number;
+  projectsDone: number;
+  projectsCancelled: number;
+  projectRevenueNet: number;
+  projectSurplusNet: number;
+  privateRevenueNet: number;
+  privateSurplusNet: number;
+  ownerEconomicProfit: number;
+  avgPaymentDelay: number;
   /** Roczne migawki majątku netto i gotówki firmy (do debugowania). */
   yearly: { year: number; netWorth: number; businessCash: number; contractsDone: number }[];
 }
@@ -127,6 +141,8 @@ interface Ctx {
   capital: number;
   /** Powody, dla których kandydat na ofertę został odrzucony (diagnostyka bota). */
   why: Map<string, number>;
+  /** Czy bot obsługuje większe projekty B2B (wersja „tylko małe zlecenia prywatne” je ignoruje). */
+  projects: boolean;
 }
 
 /**
@@ -167,12 +183,14 @@ const bizCash = (s: GameState): number => {
   return b ? s.accounts[b.accountId]!.balance : 0;
 };
 
-export function newScenario(seed: string, policy: Policy, trace: string[] | null = null, capital: number = DEFAULT_CAPITAL): Ctx {
+export function newScenario(seed: string, policy0: Policy, trace: string[] | null = null, capital: number = DEFAULT_CAPITAL, projects = false): Ctx {
+  // wariant z projektami B2B: szablony projektów wymagają też drobnych prac i paneli — bot dokupuje te specjalizacje (koszt szkolenia i sprzętu liczy się w wyniku)
+  const policy: Policy = projects ? { ...policy0, specializations: [...new Set([...policy0.specializations, 'drobne', 'panele'])] } : policy0;
   const businessCash = Math.round(capital / 3 / 1_000) * 1_000;
   let s = createNewGame({ firstName: 'Jan', lastName: 'Kowalski', seed, lifeEvents: false });
   s.person.birthDate = '1990-05-05';
   s = fund(s, capital);
-  const ctx: Ctx = { s, policy, injections: 0, draws: 0, minCash: Infinity, insolventDay: null, empDays: 0, backlogSum: 0, trace, day: 0, retryAt: new Map(), dirty: false, lastHireDay: -999, escalated: false, capital, why: new Map() };
+  const ctx: Ctx = { s, policy, injections: 0, draws: 0, minCash: Infinity, insolventDay: null, empDays: 0, backlogSum: 0, trace, day: 0, retryAt: new Map(), dirty: false, lastHireDay: -999, escalated: false, capital, why: new Map(), projects };
   // rezygnacja z etatu (wypowiedzenie), rejestracja JDG od 1.02.2026
   exec(ctx, commands.resignFromJob(ctx.s), 'rezygnacja z etatu');
   exec(ctx, commands.registerBusiness(ctx.s, { ...REG, startDate: REGISTER_DATE, specialization: policy.specializations[0]! }), 'rejestracja JDG');
@@ -319,7 +337,9 @@ function handleEnquiries(ctx: Ctx): void {
       }
     }
     // właściciel: terminy (także oferty bez umowy) sprawdza `candidateQuote` — nie ma osobnego limitu liczby prac
-    if (policy.ownerWorks) { const c = candidateQuote(ctx, e, { kind: 'owner' }); if (c) cands.push(c); }
+    // wariant z projektami: gdy właściciel pracuje przy podpisanym projekcie, nie bierze równolegle drobnych prac (przeciążenie i zmęczenie opóźniają wszystko)
+    const ownerOnProject = ctx.projects && ctx.s.reno.projects.some((x) => x.status === 'signed' && x.packages.some((k) => k.crewKey === null || (parseCrewKey(k.crewKey) ?? []).some((m) => m.kind === 'owner')));
+    if (policy.ownerWorks && !ownerOnProject) { const c = candidateQuote(ctx, e, { kind: 'owner' }); if (c) cands.push(c); }
     if (policy.subs !== 'none' && (policy.subs === 'only' || cands.length === 0)) {
       const subs = ctx.s.ops.subcontractors.filter((x) => x.services.includes(e.serviceId) && x.reliabilityBps >= 8_000).sort((a, b) => b.quality - a.quality);
       for (const sub of subs) { const c = candidateQuote(ctx, e, { kind: 'sub', subId: sub.id }); if (c) { cands.push(c); break; } }
@@ -329,6 +349,52 @@ function handleEnquiries(ctx: Ctx): void {
     const order = { team: 0, owner: 1, sub: 2 } as const;
     cands.sort((a, b) => Number(a.start > addDays(e.desiredStart, e.flexDays)) - Number(b.start > addDays(e.desiredStart, e.flexDays)) || order[a.kind] - order[b.kind] || a.start.localeCompare(b.start));
     inPlace(ctx, `oferta ${e.id}`, () => sendQuote(ctx.s, e.id, cands[0]!.q));
+  }
+}
+
+/**
+ * Projekty B2B (v0.8.1): bot wycenia projekt tylko wtedy, gdy plan nie ma blokad (referencje, umiejętności, godziny, gotówka, termin), a nadwyżka pokrywa
+ * 60% wartości pracy właściciela (jak przy małych zleceniach) i co najmniej 8% przychodu. Wykonawcy pakietów wynikają ze struktury firmy (właściciel pracuje /
+ * pracownicy / podwykonawcy zależnie od strategii). Projekty podpisuje po akceptacji klienta; kontrofertę przyjmuje, jeśli nadal spełnia ten warunek.
+ */
+function botCrews(ctx: Ctx, p: GameState['reno']['projects'][number]): Record<string, string | null> {
+  const base = suggestCrews(ctx.s, p);
+  const out: Record<string, string | null> = {};
+  for (const pkg of p.packages) {
+    const key = base[pkg.id] ?? null;
+    const members = key === null ? [{ kind: 'owner' as const, id: 'owner' }] : parseCrewKey(key) ?? [];
+    const allowed = members.filter((m) => (m.kind === 'owner' ? ctx.policy.ownerWorks : m.kind === 'sub' ? ctx.policy.subs !== 'none' : true));
+    const subOnly = ctx.policy.subs === 'only';
+    const final = subOnly ? members.filter((m) => m.kind === 'sub') : allowed;
+    if (final.length === 0) {
+      const sub = ctx.policy.subs === 'none' ? undefined : ctx.s.ops.subcontractors.filter((x) => x.services.includes(pkg.serviceId) && x.reliabilityBps >= 8_000).sort((a, c) => a.priceBps - c.priceBps)[0];
+      out[pkg.id] = sub ? `${SOLE_SUB_PREFIX}${sub.id}` : 'none';
+    } else out[pkg.id] = final.length === 1 && final[0]!.kind === 'owner' ? null : crewKey(final);
+  }
+  return out;
+}
+
+function handleProjects(ctx: Ctx): void {
+  if (!ctx.projects) return;
+  const s = ctx.s;
+  for (const p of s.reno.projects) {
+    if (p.status === 'enquiry') {
+      if (ctx.day - (ctx.retryAt.get(p.id) ?? -99) < 4) continue;
+      ctx.retryAt.set(p.id, ctx.day);
+      const crews = botCrews(ctx, p);
+      if (Object.values(crews).includes('none')) { ctx.why.set('projekt:brak wykonawcy', (ctx.why.get('projekt:brak wykonawcy') ?? 0) + 1); exec(ctx, commands.declineProject(s, p.id), `odrzucenie projektu ${p.id}`); continue; }
+      const input = { ...defaultPlanInput(s, p), crews };
+      const plan = planProject(s, p, input);
+      if (plan.blockers.length) { const k = `projekt:${plan.blockers[0]!.slice(0, 40)}`; ctx.why.set(k, (ctx.why.get(k) ?? 0) + 1); if (p.respondBy <= addDays(s.clock.today, 4)) exec(ctx, commands.declineProject(s, p.id), `odrzucenie projektu ${p.id}`); continue; }
+      const e = plan.economics;
+      if (e.surplus < Math.round(e.ownerLabor * 0.6) + Math.round(e.revenueNet * 0.08)) { ctx.why.set('projekt:za niska nadwyżka', (ctx.why.get('projekt:za niska nadwyżka') ?? 0) + 1); exec(ctx, commands.declineProject(s, p.id), `odrzucenie projektu ${p.id}`); continue; }
+      exec(ctx, commands.sendProjectQuote(s, p.id, input), `oferta projektu ${p.id}`);
+    } else if (p.status === 'counter') exec(ctx, commands.respondProjectCounter(s, p.id, 'accept'), `kontroferta projektu ${p.id}`);
+    else if (p.status === 'accepted') {
+      if (ctx.day - (ctx.retryAt.get(`sign:${p.id}`) ?? -99) < 2) continue;
+      ctx.retryAt.set(`sign:${p.id}`, ctx.day);
+      exec(ctx, commands.signProject(s, p.id), `umowa projektu ${p.id}`);
+    }
   }
 }
 
@@ -401,6 +467,7 @@ export function stepDay(ctx: Ctx): void {
   ctx.day += 1;
   staffing(ctx);
   handleEnquiries(ctx);
+  handleProjects(ctx);
   if (ctx.dirty) { recordHistory(ctx.s, ctx.s.clock.today); ctx.dirty = false; }
   handleContracts(ctx);
   money(ctx);
@@ -435,6 +502,14 @@ export function collect(ctx: Ctx, seed: string, years: number): RunMetrics {
     if (h) yearly.push({ year: startYear + y, netWorth: h.netWorth, businessCash: 0, contractsDone: done.filter((j) => j.finishedOn && j.finishedOn <= `${startYear + y}-12-31`).length });
   }
   const jobsAll = s.reno.jobs.filter((j) => j.stage !== 'cancelled' || j.workedDays > 0);
+  let privRev = 0, privSur = 0, projRev = 0, projSur = 0, ownerProfit = 0;
+  for (const j of done) {
+    const f = jobFinancials(j, subcontractsOfJob(s, j.id));
+    ownerProfit += f.economicProfit;
+    if (segmentOfJob(s, j.projectId) === 'private') { privRev += f.revenueNet; privSur += f.surplusBeforeOwner; } else { projRev += f.revenueNet; projSur += f.surplusBeforeOwner; }
+  }
+  const pjobs = done.filter((j) => j.projectId);
+  const prj = s.reno.projects;
   return {
     seed, policy: ctx.policy.id, years, days: ctx.day,
     inquiries: s.reno.enquiries.length,
@@ -459,17 +534,21 @@ export function collect(ctx: Ctx, seed: string, years: number): RunMetrics {
     competitorExits: s.market.competitors.filter((c) => c.status === 'exited').length,
     competitorEntries: s.market.competitors.filter((c) => c.enteredOn > s.market.initializedOn!).length,
     avgCompetitorUtil: s.market.months.length ? s.market.months.reduce((a, m) => a + m.competitorUtilBps, 0) / s.market.months.length / 10_000 : null,
+    projectEnquiries: prj.length, projectsQuoted: prj.filter((p) => p.quote !== null).length, projectsSigned: prj.filter((p) => p.signedOn !== null).length,
+    projectsDone: prj.filter((p) => p.status === 'done').length, projectsCancelled: prj.filter((p) => p.status === 'cancelled').length,
+    projectRevenueNet: projRev, projectSurplusNet: projSur, privateRevenueNet: privRev, privateSurplusNet: privSur, ownerEconomicProfit: ownerProfit,
+    avgPaymentDelay: pjobs.length ? pjobs.reduce((a, j) => a + j.paymentDelayDays, 0) / pjobs.length : 0,
     declineReasons: Object.fromEntries([...ctx.why.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)),
     invariantErrors: checkInvariants(s).slice(0, 5),
     yearly,
   };
 }
 
-export interface RunOptions { seed: string; years: number; policy: Policy; trace?: boolean; capital?: number }
+export interface RunOptions { seed: string; years: number; policy: Policy; trace?: boolean; capital?: number; projects?: boolean }
 
 export function runScenario(o: RunOptions): { metrics: RunMetrics; trace: string[] | null; final: GameState } {
   const trace = o.trace ? [] : null;
-  const ctx = newScenario(o.seed, o.policy, trace, o.capital);
+  const ctx = newScenario(o.seed, o.policy, trace, o.capital, o.projects ?? false);
   const days = Math.round(o.years * 365);
   for (let i = 0; i < days; i++) stepDay(ctx);
   return { metrics: collect(ctx, o.seed, o.years), trace, final: ctx.s };

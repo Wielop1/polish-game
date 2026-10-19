@@ -51,5 +51,5 @@ test('wycena: można zlecić całość podwykonawcy jednym wyborem, bez zakłada
   await page.locator('[data-testid^="crew-sub-"]').first().check();
   await page.getByTestId('crew-owner').uncheck();
   await expect(page.getByTestId('outsource-box')).toContainText('wykonają wybrani wykonawcy');
-  await expect(page.getByTestId('quote-preview')).toContainText('Robocizna');
+  await expect(page.getByTestId('quote-preview')).toContainText('Płace pracowników i podwykonawcy');
 });
