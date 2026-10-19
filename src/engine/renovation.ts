@@ -1067,7 +1067,8 @@ function cancelJob(s: GameState, b: Operator, job: RenoJob, date: IsoDate, reaso
   order.status = 'failed';
   order.completedOn = date;
   const c = s.commitments.find((x) => x.id === order.commitmentId);
-  if (c) c.endDate = date < c.startDate ? c.startDate : date;
+  // anulowany kontrakt przestaje zajmować godziny od dnia anulowania (wcześniej commitment był wydłużany do tego dnia i dawał ujemny wolny czas — błąd wykryty benchmarkiem v0.8.1)
+  if (c && c.endDate >= date) c.endDate = date <= c.startDate ? addDays(c.startDate, -1) : addDays(date, -1);
   if (job.advanceNet > 0) {
     if (job.advanceMode === 'legacy') {
       // zapisy sprzed v0.6: zaliczka była ujęta jako przychód, więc zwrot to koszt (SIMPLIFIED, RENO-COMPLAINT-CORRECTION)

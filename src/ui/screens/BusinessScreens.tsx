@@ -90,7 +90,7 @@ export function BizRegisterScreen() {
   const navigate = useGameStore((s) => s.navigate);
   const starts = allowedBusinessStarts(game);
   const [name, setName] = useState(`${game.person.firstName} ${game.person.lastName} — usługi`);
-  const [profileId, setProfileId] = useState(BUSINESS_PROFILES[0]!.id);
+  const [profileId, setProfileId] = useState(BUSINESS_PROFILES.find((p) => p.industry === 'renovation')?.id ?? BUSINESS_PROFILES[0]!.id);
   const [taxForm, setTaxForm] = useState<TaxForm>('skala');
   const [vat, setVat] = useState<'exempt' | 'active'>('exempt');
   const [start, setStart] = useState<string>(starts[0] ?? '');
@@ -131,10 +131,10 @@ export function BizRegisterScreen() {
             <label htmlFor="bizname" className="mb-1.5 block text-sm font-medium text-slate-200">Nazwa działalności</label>
             <input id="bizname" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} className="mb-4 w-full rounded-xl border border-ink-600 bg-ink-900/80 px-3.5 py-2.5 text-slate-100 focus:border-sky focus:outline-none focus:ring-2 focus:ring-sky/30" />
             <div className="grid gap-2 sm:grid-cols-2">
-              {BUSINESS_PROFILES.map((p) => (
-                <Choice key={p.id} name="profile" checked={profileId === p.id} onChange={() => setProfileId(p.id)} title={p.label}>
+              {[...BUSINESS_PROFILES].sort((a, b) => Number(!!b.industry) - Number(!!a.industry)).map((p) => (
+                <Choice key={p.id} name="profile" checked={profileId === p.id} onChange={() => setProfileId(p.id)} title={p.industry ? `${p.label} — polecane na start` : p.label}>
                   PKD 2025: <strong>{p.pkd}</strong> — {p.pkdName}
-                  {p.industry && <><br />Moduł branżowy: zapytania, wyceny, materiały, sprzęt, reputacja.</>}
+                  {p.industry ? <><br /><strong className="text-gain">Pełna rozgrywka:</strong> zapytania klientów, wyceny, materiały, sprzęt, pracownicy, rynek i większe projekty.</> : <><br />Prostsze zlecenia usługowe (bez rynku, pracowników i projektów).</>}
                 </Choice>
               ))}
             </div>

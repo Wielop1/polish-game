@@ -1,7 +1,7 @@
 # POLSKI TYCOON
 
 Symulator życia i przedsiębiorczości w Polsce — otwarty sandbox ekonomiczny w przeglądarce.
-Stan projektu: **v0.8 (etat + JDG + branża remontowa, pracownicy i podwykonawcy, rynek lokalny, a od v0.8 także spółka z o.o.: wspólnicy, rejestr udziałów, zarząd, uchwały, CIT, dywidendy, inwestorzy)** — patrz [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
+Stan projektu: **v0.8.1 (etat + JDG + branża remontowa, pracownicy i podwykonawcy, rynek lokalny, spółka z o.o. oraz — od v0.8.1 — rzeczywisty zarobek przedsiębiorcy (koszty rzeczywiste ≠ praca właściciela), większe projekty B2B z pakietami robót i referencjami, przewodnik „jak grać” i uporządkowane menu)** — patrz [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md). Nowy gracz: zacznij od ekranu „Przewodnik: jak grać” w grze.
 
 ```bash
 npm install
@@ -9,7 +9,8 @@ npm run dev        # http://localhost:5173
 npm test           # testy silnika i zapisów
 npm run build      # build produkcyjny (dist/)
 npm run test:e2e   # testy przeglądarkowe (Playwright)
-npm run balance -- --quick                      # symulator balansu (narzędzie developerskie), krótka próba
+npm run balance -- --quick                      # symulator balansu (narzędzie developerskie), krótka próba (--projects true: bot obsługuje projekty B2B)
+node tools/balance/audit.ts                     # audyt rentowności usług i projektów (v0.8.1)
 npm run balance -- --years 5 --runs 20          # pełniejsza seria; --policies, --capital, --trace <seed> (patrz docs/BALANCE_REPORT.md)
 ```
 

@@ -67,3 +67,19 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-pop { animation: none; }
 }
+
+/* Tabele w ekranach gry: odstęp poziomy między kolumnami (komórki mają tylko pionowe odstępy z klas Tailwind) */
+@layer base {
+  table td,
+  table th {
+    padding-inline: 0.5rem;
+  }
+  table td:first-child,
+  table th:first-child {
+    padding-left: 0;
+  }
+  table td:last-child,
+  table th:last-child {
+    padding-right: 0;
+  }
+}

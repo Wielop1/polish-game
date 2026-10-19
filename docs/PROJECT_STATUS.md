@@ -1,13 +1,27 @@
 # PROJECT_STATUS — stan projektu
 
-> Aktualizuj po każdym zadaniu. Opisuje **stan faktyczny**, nie plany. Ostatnia aktualizacja: 2026-10-19 (v0.8).
+> Aktualizuj po każdym zadaniu. Opisuje **stan faktyczny**, nie plany. Ostatnia aktualizacja: 2026-10-20 (v0.8.1).
 
 ## Wersja
 
-**v0.8.0 — Spółki, wspólnicy i własność przedsiębiorstw** (zakończona; v0.9 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 8` (migracje v1 → … → v8). Wcześniej: v0.7 (rynek lokalny, konkurencja, marketing, symulator balansu; commit bazowy 1e58217), v0.6, v0.5, v0.4, v0.3, v0.2.1, v0.2, v0.1.
+**v0.8.1 — Ekonomia, rentowność i większe kontrakty** (zakończona; v0.9 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 9` (migracje v1 → … → v9). Wcześniej: v0.8.0 (spółki z o.o., commit 249a876), v0.7 (rynek lokalny, symulator balansu; 1e58217), v0.6, v0.5, v0.4, v0.3, v0.2.1, v0.2, v0.1.
 Rejestr rozwoju mechanik: [`FEATURE_EVOLUTION.md`](FEATURE_EVOLUTION.md) · rejestr reguł prawnych: [`LEGAL_SOURCES.md`](LEGAL_SOURCES.md) · analiza balansu: [`BALANCE_REPORT.md`](BALANCE_REPORT.md).
 
-## Co działa (v0.8, zweryfikowane testami)
+## Co działa (v0.8.1, zweryfikowane testami)
+
+Wszystko z v0.1–v0.8 plus:
+
+- **Głosowania wspólników** (ADR-072): za / przeciw / wstrzymujące się / nieważne / nieoddane zgodnie z art. 4 § 1 pkt 9–10, 245–246 KSH (bezwzględna większość = więcej niż połowa głosów **oddanych**; brak głosu gracza to głos nieoddany, nie „wstrzymujący się” — błąd v0.8); `Resolution.tally` z polami `invalid`, `notCast`, `eligible`.
+- **Rzeczywisty zarobek przedsiębiorcy** (ADR-073): wycena i rozliczenie rozdzielają przychód, koszty rzeczywiste (materiały, płace pracowników, podwykonawcy, transport, drobne, zużycie sprzętu), kalkulacyjną wartość pracy właściciela (nie wypłata, nie koszt podatkowy), nadwyżkę przed obciążeniami właściciela, zysk ekonomiczny, stawkę za godzinę i wpływ na płynność (`QuoteEconomics`, `JobFinancials`); ostrzeżenia rozróżniają stratę gotówkową od ujemnego zysku ekonomicznego; w spółce właściciel nie jest wykonawcą (brak pracy wspólnika i wypłat). UI: panel w wycenie (nad kalendarzem, z przyciskiem wysłania zaraz pod nim), rozliczenie kontraktu, tabela marż, Pulpit zleceń.
+- **Audyt i kalibracja** (ADR-076): `tools/balance/audit.ts`; zmiany tylko tam, gdzie pomiar wskazał problem — cena gładzi 54 zł/m², limit problemu na budowie do 40% normy kontraktu; naprawiony błąd rezerwacji godzin przy anulowaniu kontraktu (wykryty benchmarkiem). Wielkość rynku i konwersja bez zmian.
+- **Większe projekty B2B** (ADR-074/075): 10 fikcyjnych klientów (zarządca, inwestor, firma budowlana, generalny wykonawca, deweloper), 5 szablonów projektów, rzadkie zapytania (limity), hierarchia projekt → etapy → pakiety → zadania, pakiety jako zwykłe kontrakty z zależnościami aktywowane „na czas” (rezerwacja na przyszłość, zaliczka etapu), plan projektu z blokadami i ryzykami, decyzja klienta, kontroferta, podpis, zwłoka płatnika B2B, kary za etap, zakończenie i historia.
+- **Referencje i zdolność realizacyjna**: z faktycznie ukończonych kontraktów i projektów; trzy poziomy dostępu; forma prawna (JDG/spółka) bez znaczenia; ekran „Referencje firmy” z drabiną poziomów i **porównaniem segmentów** (mali klienci / większe remonty / B2B / model mieszany; także w „Rentowności”).
+- **Benchmark przed/po** (`BALANCE_REPORT.md` §10): ten sam bot, seedy i horyzont; `--projects true`; wynik: kalibracja nie zmienia obrazu, B2B nie poprawia wyniku bota (wypiera drobne zlecenia, zespoły nie mają gotówki na start) — jawnie opisane.
+- **UI dla nowych graczy**: ekran „Przewodnik: jak grać” (cel, pierwsze kroki, pętla zarabiania, mapa menu, słownik), karta „Co zrobić teraz?” i „Twoja firma” na Pulpicie, pomoc przy każdym ekranie („Do czego służy ten ekran / Co dalej”), menu uporządkowane w grupy z opisami i **progresywnym odsłanianiem** (ekrany firmowe ukryte do założenia firmy; „Oferty i kontrakty” tylko dla branż innych niż remonty), domyślny profil „Remonty — polecane na start”, szybki start marketingu, poprawione odstępy tabel.
+- **Zapisy**: `migrateV8ToV9` (puste projekty i klienci, pola pakietów, `ownerLabor`/`equipment` = 0, kategorie głosów), test na prawdziwym zapisie wygenerowanym przez v0.8 (`save-v8.json`: JDG z pracownikiem + spółka z kontraktem w toku).
+- **Domyślny nadzór 0 godz.** przy zleceniu podwykonawcy/ekipie bez właściciela (ADR-078).
+
+## Co działa (v0.8 — bez zmian, poza opisanymi wyżej)
 
 Wszystko z v0.1–v0.7 plus:
 
@@ -72,22 +86,23 @@ Zweryfikowane w v0.3 (VERIFIED): skala i kwota zmniejszająca, liniowy 19%, limi
 
 Inne formy spółek (jawna, komandytowa, akcyjna), przekształcenie JDG, aporty, holdingi, giełda, nieruchomości inwestycyjne, kredyty i leasing, kolejne branże i miasta (rynek ma architekturę pod nie, ale jest tylko Olsztyn i remonty), dane GUS (parametry rynku są kalibracyjne), integracje z urzędami i KSeF, multiplayer, backend. **Vercel**: repo przygotowane do importu (`vercel.json`, `npm ci`, build statyczny); push na `main` wdraża.
 
-## Wykonane testy (2026-10-19, v0.8)
+## Wykonane testy (2026-10-20, v0.8.1)
 
 | Polecenie | Wynik |
 |---|---|
 | `npm run typecheck` (`tsc -b`, w tym `tools/`) | ✅ bez błędów |
-| `npm test` (Vitest) | ✅ **443/443** (19 plików): w tym 39 testów spółek (`corp.test.ts`: założenie i minimalny kapitał, rejestracja S24, odrębne rachunki, ZUS jedynego wspólnika, udziały i głosy, zarząd i reprezentacja łączna, uchwały i progi, CIT: stawki/limity/strata/zaliczki, dywidendy, emisja i rozwodnienie, zakup/sprzedaż udziałów, wycena, determinizm, zapis w trakcie procesów), scenariusz 36 miesięcy (`corp.scenario.test.ts`), 4 testy migracji v7 → v8 na prawdziwym zapisie z v0.7 (`save-v7.json`), 4 testy renderu ekranów spółek |
+| `npm test` (Vitest) | ✅ **486/486** (23 plików): głosowania i abstencje (czyste progi, nieoddane, nieważne, wykluczeni — `corp.test.ts`), ekonomia zarobku (praca właściciela ≠ gotówka ani koszt podatkowy, tożsamości wyniku, płynność, spółka — `economics.test.ts`), projekty B2B (szablony, wymagania, plan, akceptacja, kontroferta, pakiety i zależności, aktywacja „na czas”, zwłoka płatnika, segmenty, determinizm, limity, referencje, klienci — `projects.test.ts`), 4 testy migracji v8 → v9 na prawdziwym zapisie (`save-v8.json`) i zaktualizowane v1–v7, render ekranów projektów i przewodnika (`projectScreens.test.ts`, `guide.test.ts`), agregacja benchmarku |
 | `npm run build` | ✅ |
-| `npm run test:e2e` (Chromium, `LD_LIBRARY_PATH`) | ✅ **33/33** (31 wcześniejszych + 2 nowe: założenie spółki → KRS → ekrany własności; JDG obok spółki z przełącznikiem aktywnego podmiotu) |
-| `npm run balance` | ⚠️ bez zmian względem v0.7: wielogodzinny benchmark **nie został uruchomiony ponownie** (zgodnie z poleceniem); jego niedokończona walidacja 5-letnia pozostaje jawna (`BALANCE_REPORT.md` §2); `tools/balance/balance.test.ts` przechodzi |
+| `npm run test:e2e` (Chromium, `LD_LIBRARY_PATH`) | ✅ **36/36** (33 + 3 nowe: ekrany B2B, panel ekonomii wyceny, onboarding nowego gracza z szybkim startem marketingu); zaktualizowane oczekiwania v03–v07 (nowe etykiety, progresywne menu, domyślny profil „Remonty”) |
+| Benchmark (`npm run balance`) | ✅ krótkie, kontrolowane serie: 2 lata × 3 seedy × 6 strategii (przed / po tylko prywatni / po z projektami) oraz 4 lata × 3 seedy × 3 strategie (po, dwa warianty) — bez naruszonych niezmienników; wyniki i ograniczenia: `BALANCE_REPORT.md` §10. Seria 5-letnia z v0.7 wciąż niedokończona |
 
-Pełna regresja wykonana na końcu (po zmianach wspólnego silnika: operator, rynek, selektory, niezmienniki). Usterki ujawnione przez testy podczas v0.8 (naprawione): koszt niezmienników spółek spowalniał testy pętlą po całym rejestrze (teraz wczesne wyjście bez spółek); analityka JDG (płynność, koszty stałe, zestawienia, plan, raport roczny) mieszała dokumenty i zobowiązania spółek; minimalny kapitał (5 000 zł) wymaga w grze odłożenia środków — gracz startuje z 5 000 zł i odkłada ok. 1,4 tys. zł miesięcznie.
+Usterki ujawnione podczas prac (naprawione): brak głosu gracza liczony jako „wstrzymujący się”; stałe pule problemów na budowie podwajały robociznę małych pakietów (limit 40% normy); pakiety projektu podpisane z góry „starzały się” przy opóźnieniach i były anulowane po 45 dniach (→ aktywacja „na czas”, rezerwacja na przyszłość); anulowany kontrakt wydłużał rezerwację godzin do dnia anulowania (ujemny wolny czas; błąd od v0.5); częściowe zapisy po nieudanej aktywacji pakietu (→ próba na kopii).
 
 ## Znane problemy i uproszczenia
 
 Pełna lista w `FEATURE_EVOLUTION.md` §14. Najważniejsze (v0.8: pkt 0):
-0. **Spółki (v0.8)**: wyłącznie sp. z o.o. przez S24 (wkłady pieniężne); rejestracja KRS i numer są symulowane; brak umów gracz↔spółka (art. 210 KSH), więc właściciel nie pracuje w spółce — spółka zatrudnia pracowników i podwykonawców; wstrzymanie się od głosu liczone jako głos oddany; CIT z kwot podatkowych wspólnego silnika (bez amortyzacji i NKUP); wycena to model kalibracyjny; jedyny wspólnik płaci wysokie składki ZUS (ok. 2,8 tys. zł miesięcznie przy 5 000 zł kapitału — to skutek przepisów, nie błąd); statystyki rynku (`market.months`) są sumą dla wszystkich firm gracza; ścieżka notarialna, aporty, odpowiedzialność zarządu i upadłość odłożone.
+0a. **Ekonomia i B2B (v0.8.1, `BALANCE_REPORT.md` §10)**: samozatrudnienie i „właściciel + 1” opłacalne, zespoły ≥ 3 osób nadal nierentowne w 100% przebiegów (koszty stałe, brak gotówki na start); **projekty B2B nie poprawiają wyniku bota** — wypierają drobne zlecenia i obciążają właściciela (zmęczenie), a zespoły nie mają gotówki na ich start; wartość B2B to drabina rozwoju, referencje i realistyczne warunki, nie automatyczny zysk. Bot wycenia projekty prostą regułą; 3 seedy; brak serii 5-letniej. Parametry klientów B2B, wymagań i częstości zapytań — kalibracyjne. „Zadania” pakietu to wyprowadzony cykl pakietu; pakiety sekwencyjne; brak umów ramowych, retencji, aneksów i odbiorów częściowych z uwagami. Praca własna w JDG liczona stawką kalkulacyjną gracza (domyślnie 60 zł/godz.), nie kosztem alternatywnym z etatu.
+0. **Spółki (v0.8)**: wyłącznie sp. z o.o. przez S24 (wkłady pieniężne); rejestracja KRS i numer są symulowane; brak umów gracz↔spółka (art. 210 KSH), więc właściciel nie pracuje w spółce — spółka zatrudnia pracowników i podwykonawców; CIT z kwot podatkowych wspólnego silnika (bez amortyzacji i NKUP); wycena to model kalibracyjny; jedyny wspólnik płaci wysokie składki ZUS (ok. 2,8 tys. zł miesięcznie przy 5 000 zł kapitału — to skutek przepisów, nie błąd); statystyki rynku (`market.months`) są sumą dla wszystkich firm gracza; ścieżka notarialna, aporty, odpowiedzialność zarządu i upadłość odłożone.
 1. **Firma wymaga finansowania właściciela**: składki, podatki i VAT są płacone z rachunku firmowego; przy braku środków powstaje zaległość bez odsetek (odsetki za zwłokę — FE-BANK-02).
 2. **Podatek jest symulacją**: zaokrąglenia do zł SIMPLIFIED; brak ulg (IP Box, B+R, internetowa, prorodzinna) i kilku pracodawców u pracownika; zeznania roczne to rekordy z saldem; zaliczki: przychód dopiero po wykonaniu usługi (ADV-PIT SIMPLIFIED); pojazdy bez reguł podatkowych.
 3. **Lata po 2026**: reguły z 2026 r. są przenoszone i oznaczone `carriedForward` (UI ostrzega).
@@ -97,6 +112,6 @@ Pełna lista w `FEATURE_EVOLUTION.md` §14. Najważniejsze (v0.8: pkt 0):
 
 ## Następne zadanie (propozycja — wymaga zatwierdzenia)
 
-**v0.9 — kandydaci** (kolejność do decyzji właściciela): (1) praca wspólnika w spółce (umowa o pracę/zlecenie/B2B z zarządem, wynagrodzenie zarządu i składki — odblokowuje model „właściciel pracuje w spółce” i zamyka lukę art. 210 KSH); (2) generaliści, pomocnicy i kierownicy ekip oraz klienci powracający i zlecenia B2B (wypełnianie bezczynności i stabilny popyt — główne problemy nierentowności zespołów z `BALANCE_REPORT.md`); (3) kredyty i leasing (finansowanie dłużne spółek i JDG); (4) przekształcenie JDG w spółkę i aporty (po weryfikacji skutków CIT/VAT/KP).
+**v0.9 — kandydaci** (kolejność do decyzji właściciela): (1) **finansowanie rozwoju** — kredyty/leasing i zaliczki etapowe, żeby zespoły miały gotówkę na start projektu (główna blokada z benchmarku v0.8.1) razem z generalistami/pomocnikami i kierownikami ekip (obłożenie zespołów); (2) praca wspólnika w spółce (umowa o pracę/zlecenie/B2B z zarządem — zamyka lukę art. 210 KSH); (3) umowy ramowe i klienci powracający (stabilny popyt), retencja i odbiory częściowe projektów; (4) przekształcenie JDG w spółkę i aporty (po weryfikacji skutków CIT/VAT/KP).
 
 Nie rozpoczynać v0.9 bez zatwierdzenia.

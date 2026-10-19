@@ -220,3 +220,100 @@ npm run balance -- --trace bal-3 --policy team3 --years 2 --dump-state         #
 
 Raporty trafiają do `balance-out/` (poza repozytorium); wyniki użyte w tym dokumencie są zapisane w `docs/balance/`. Wyniki poprzedniego modelu (v0.6) uzyskano tym samym botem na kodzie z commitu `e4e04e4` (przeniesionym do osobnego katalogu roboczego z adapterem `setAdvertising`).
 
+
+
+---
+
+# 10. v0.8.1 — audyt rentowności, kalibracja i większe projekty (B2B)
+
+> Pomiary z tego rozdziału pochodzą z narzędzi w repozytorium: `node tools/balance/audit.ts` (audyt usług i projektów) oraz `npm run balance` (flaga `--projects true`). Surowe wyniki: `docs/balance/v081-*.json`. Parametry rynku, klientów B2B i projektów są **kalibracyjne** (nie dane GUS).
+
+## 10.1 Dlaczego ten rozdział: „na JDG nie da się zarobić”
+
+Zgłoszenie z gry: oferty po 1–3 tys. zł, „zysk” rzędu 200 zł, brak szans na rozwój. Sprawdziłem trzy możliwe przyczyny osobno:
+
+1. **Prezentacja.** Karta wyceny pokazywała „koszt planowany” z Twoją pracą po 60 zł/godz. i „marżę” po tej pracy — to wyglądało jak pensja, której firma nie zarabia. Realnie praca własna nie jest przepływem pieniężnym ani kosztem podatkowym (dowód: `economics.test.ts`). **Naprawione w v0.8.1** (koszty rzeczywiste ≠ praca właściciela ≠ zysk ekonomiczny).
+2. **Brak marketingu.** Mój pierwszy pomiar (bierny gracz, bez marketingu) dał ok. **5 zapytań miesięcznie** (31 w pół roku, 28 wygasło) — to prawdziwy powód „nie ma klientów”; z podstawowym marketingiem (550 zł/mies.) bot dostaje 300–500 zapytań rocznie. **Poprawione UI**: karta „Co zrobić teraz?”, szybki start marketingu, pomoc przy ekranie.
+3. **Ceny usług.** Audyt poniżej: przy cenie rynkowej wszystkie usługi dają nadwyżkę **70–120 zł za godzinę własnej pracy** (przed składkami i podatkiem), więc same ceny nie są głównym problemem. Jedyna anomalia: gładzie (trudniejsze, wymagają szkolenia za 1 800 zł) dawały mniej niż malowanie. **Skorygowane.**
+
+Mój wcześniejszy szybki pomiar (gładzie 73 m² z marżą −3%) był błędny — gracz nie miał specjalizacji i sprzętu; pomiar poprawiony w audycie (nowa firma: tylko sprzęt wymagany do usługi).
+
+## 10.2 Audyt usług (cena rynkowa, wymagania „dobre”, zlecenie standardowe, materiały „std”, stawka kalkulacyjna 60 zł/godz., sprzęt tylko wymagany)
+
+| usługa | poziom | zlecenie | cena ref. netto (przed → po) | godz. pracy | koszty rzecz. | nadwyżka (po) | nadwyżka / godz. (przed → po) | zysk ekonomiczny (przed → po) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| malowanie | 1 | 85 m² | 2 890 → 2 890 | 25,5 | 942 | 1 948 | 76 → 76 | 418 → 418 |
+| malowanie | 5 | 85 m² | 2 890 → 2 890 | 19,6 | 905 | 1 985 | 101 → 101 | 808 → 808 |
+| gładzie | 1 | 73 m² | 3 500 → **3 940** | 40,1 | 733 | 3 207 | 69 → **80** | 358 → 798 |
+| gładzie | 5 | 73 m² | 3 500 → **3 940** | 30,9 | 660 | 3 280 | 92 → **106** | 987 → 1 427 |
+| panele | 1 | 48 m² | 5 660 | 19,2 | 3 960 | 1 700 | 89 | 548 |
+| panele | 5 | 48 m² | 5 660 | 14,8 | 3 914 | 1 746 | 118 | 860 |
+| drobne prace | 1 | 23 godz. | 2 190 | 23,0 | 231 | 1 959 | 85 | 579 |
+| drobne prace | 5 | 23 godz. | 2 190 | 17,7 | 229 | 1 961 | 111 | 900 |
+
+Wnioski: (a) nadwyżka na godzinę rośnie z poziomem umiejętności (+30–40% od poziomu 1 do 5), (b) panele to głównie materiały (70% ceny) — mała nadwyżka na zlecenie, duże zamrożenie gotówki, (c) zlecenie 1–3 tys. zł daje 0,5–2 tys. zł nadwyżki — **przy 100–150 godzinach własnej pracy miesięcznie to 7–10 tys. zł przed składkami (ok. 2 tys. zł) i podatkiem**: da się zarobić, ale przy około 5 zapytaniach miesięcznie (bez marketingu) — nie.
+
+## 10.3 Kalibracja (osobno dla składników)
+
+| składnik | decyzja | uzasadnienie / pomiar |
+|---|---|---|
+| wielkość rynku, liczba zapytań, konwersja, udział firmy | **bez zmian** | benchmark: solo dostaje 320–470 zapytań rocznie i odrzuca 64–83% (termin, moc) — popyt nie jest wąskim gardłem; zespoły ≥ 3 osób są ograniczone kosztami stałymi i udziałem w wygranych ofertach, nie wielkością rynku |
+| cena referencyjna gładzi | **48 → 54 zł/m²** (+12,5%) | zarobek godzinowy gładzi (trudność 2, szkolenie 1 800 zł) 69 zł/godz. był niższy niż malowania (76); po zmianie 80 zł/godz. — zachowana kolejność wg trudności |
+| ceny malowania, paneli, drobnych | bez zmian | audyt: 76–89 zł/godz. na poziomie 1 |
+| normy czasu, zużycie materiałów | bez zmian | brak sygnału z audytu |
+| problemy na budowie | **jeden problem nie dołoży więcej niż 40% normy kontraktu** | stała pula 6–16 godz. podwajała robociznę małych pakietów (8–12 godz.), co wyszło dopiero przy projektach |
+| anulowanie kontraktu | **poprawka błędu**: anulowany kontrakt nie wydłuża już rezerwacji godzin do dnia anulowania | benchmark z projektami wykrył ujemny wolny czas (naruszony niezmiennik „budżet czasu > 24 godz.”); błąd istniał od v0.5 |
+| ceny i warunki B2B | nowe, kalibracyjne | cena 85–100% ceny prywatnej (siła nabywcza), płatność 7–60 dni, kary 2–5% za tydzień (`projectsCatalog.ts`) |
+
+Nie zwiększano jednocześnie cen i liczby klientów.
+
+## 10.4 Metoda benchmarku (przed / po)
+
+Ten sam bot (wersja z v0.7 po poprawkach, bez zmian logiki dla małych zleceń), te same seedy `bal-1…3`, ten sam horyzont (2 lata; dodatkowo 4 lata dla 3 strategii), kapitał 90 000 zł, strategie: solo, właściciel + 1, 3 pracowników, podwykonawcy, model mieszany, firma rosnąca (bez „5 pracowników” — czas). Trzy zestawy: **przed** (silnik v0.8, commit `e21658d`), **po, tylko prywatni** (silnik v0.8.1, bot ignoruje projekty — izoluje kalibrację) i **po, z projektami** (`--projects true`: ten sam bot + wycena/podpis projektów; dokupuje specjalizacje drobnych prac i paneli — koszt wliczony). Nie mieszam wersji bota.
+
+## 10.5 Wyniki — 2 lata × 3 seedy (mediany)
+
+| wskaźnik | wariant | solo | owner+1 | team3 | subs-only | mixed | grow |
+|---|---|---:|---:|---:|---:|---:|---:|
+| przychód netto / rok (zł) | przed | 148 870 | 256 465 | 149 397 | 179 722 | 150 612 | 257 608 |
+| | po, prywatni | 148 140 | 262 440 | 152 926 | 152 324 | 179 563 | 265 909 |
+| | po, z projektami | 120 506 | 259 777 | 170 809 | 152 145 | 169 452 | 106 309 |
+| marża (nadwyżka / przychód) | przed → po prywatni → z projektami | 74 → 75 → 62% | 53 → 57 → 47% | 28 → 31 → 29% | 30 → 30 → 34% | 27 → 28 → 30% | 43 → 45 → 51% |
+| zysk operacyjny / rok (zł) | przed | 86 147 | 53 132 | −176 708 | 3 859 | −130 719 | 19 116 |
+| | po, prywatni | 88 517 | 92 932 | −191 585 | −817 | −119 467 | 19 871 |
+| | po, z projektami | 51 769 | 66 399 | −171 049 | 6 292 | −120 441 | 13 964 |
+| wzrost majątku / rok (zł) | przed | 39 910 | 16 525 | −228 687 | −70 323 | −204 918 | −19 753 |
+| | po, prywatni | 41 299 | 49 684 | −232 811 | −78 072 | −192 561 | −33 212 |
+| | po, z projektami | −3 461 | 18 195 | −220 075 | −71 234 | −194 370 | −52 979 |
+| niewypłacalność (% przebiegów) | przed / po prywatni / z projektami | 0 / 0 / 0 | 0 / 0 / 33 | 100 / 100 / 100 | 100 / 100 / 100 | 100 / 100 / 100 | 0 / 67 / 67 |
+| zysk ekonomiczny właściciela / rok (zł) | po, prywatni | 17 770 | 47 904 | 15 665 | 35 140 | 16 765 | 9 509 |
+| | po, z projektami | −25 313 | 4 782 | −3 578 | 40 725 | 10 380 | −17 413 |
+| projekty B2B / rok: zapytania · wycenione · podpisane · ukończone | z projektami | 4,3·1,7·1,7·0,8 | 5,8·4,2·4,0·2,2 | 5,5·1,5·1,5·0,5 | 5,0·1,8·1,7·0,0 | 4,2·1,5·1,5·0,2 | 5,7·3,0·2,7·1,5 |
+| przychód z projektów / z małych zleceń (zł / rok) | z projektami | 20 732 / 99 839 | 81 860 / 173 090 | 22 116 / 141 022 | 2 128 / 165 679 | 12 521 / 156 719 | 42 275 / 110 750 |
+
+## 10.6 Wyniki — 4 lata × 3 seedy (solo, właściciel + 1, firma rosnąca)
+
+| wskaźnik | wariant | solo | owner+1 | grow |
+|---|---|---:|---:|---:|
+| przychód netto / rok (zł) | prywatni | 160 642 | 269 470 | 143 353 |
+| | z projektami | 126 208 | 279 394 | 53 720 |
+| wzrost majątku / rok (zł) | prywatni | 40 490 | 41 922 | −148 639 |
+| | z projektami | −12 058 | 30 541 | −76 520 |
+| niewypłacalność (% przebiegów) | prywatni / z projektami | 0 / 33 | 0 / 33 | 100 / 100 |
+| zysk ekonomiczny właściciela / rok (zł) | prywatni / z projektami | 22 428 / −47 201 | 41 449 / 21 432 | 3 562 / −8 706 |
+| projekty / rok: zapytania·wycenione·podpisane·ukończone | z projektami | 7,2·1,3·1,2·1,0 | 5,5·4,4·4,2·3,6 | 6,9·2,3·2,1·1,3 |
+
+## 10.7 Wnioski (bez zaokrąglania w stronę sukcesu)
+
+1. **Kalibracja nie jest „naprawą ekonomii”.** Samozatrudnienie (+40 tys. zł majątku rocznie) i „właściciel + 1” (+17…50 tys.) były opłacalne już w v0.8; zespoły ≥ 3 osób pozostają nierentowne w 100% przebiegów (koszty stałe 13–19 tys. zł miesięcznie przy 20–30% obłożenia). Zmiany kalibracyjne (gładzie, limit problemów) nie zmieniły tego obrazu (różnice w granicach rozrzutu 3 seedów).
+2. **Większe projekty B2B nie poprawiają wyniku tego bota.** Dla firm ograniczonych mocą właściciela (solo, owner+1) projekt *wypiera* drobne zlecenia (przychód z małych zleceń solo: −48 tys. zł rocznie, z projektów: +21 tys.), a nadwyżka na godzinę jest niższa (ceny B2B 85–100% prywatnych, zwłoka płatników 2–6 dni, długie okna pracy właściciela → zmęczenie i wolniejsza praca; zysk ekonomiczny solo spada z +22 do −47 tys. zł). Dla owner+1 przychód jest taki sam (270 → 279 tys.), ale 40% pochodzi z projektów, a wynik majątkowy jest o ok. 11 tys. niższy.
+3. **Co blokuje projekty (najczęstsze powody wstrzymania oferty w botach, 2 lata):** dla firm z pracownikami i niskim kapitałem (3 pracowników, model mieszany, część „rosnącej”) — „brakuje gotówki na start pierwszego pakietu” (materiały + płace przed pierwszą płatnością za 30–60 dni); dla solo i owner+1 — referencje (liczba ukończonych kontraktów, średnia ocena, wymagany ukończony projekt poziomu 1 dla poziomu 2) i brak wolnych godzin właściciela; dla „tylko podwykonawców” — brak wykonawców z umiejętnościami do pakietów (panele). Kto jest niewypłacalny przed zbudowaniem referencji, nie dostaje projektów.
+4. **Referencje działają jak zaplanowano:** poziom 1 po 3 ukończonych kontraktach z oceną ≥ 3,5★, poziom 2 po ukończonym projekcie poziomu 1 i 8 kontraktach (owner+1 ukończył w 4 latach 11–17 projektów na seed, solo 3–5, firma rosnąca 2–12; 0–3 projekty na seed przerwane — klient odstępuje po 45 dniach bez wykonawców albo po anulowaniu pakietu). Projektów poziomu 3 (3 wykonawców, ukończony projekt poziomu 2) nie analizowałem osobno.
+5. **Wartość B2B w tej wersji jest strukturalna, nie finansowa:** daje drabinę rozwoju, referencje, realistyczne warunki płatności i kary oraz podstawę pod kolejne poziomy skali (FE-SCALE-01). Gracz ręcznie decyduje, które projekty bierze (kalkulator pokazuje zysk ekonomiczny, termin i zapotrzebowanie na gotówkę przed wysłaniem oferty) — bot tego nie robi tak ostrożnie.
+
+## 10.8 Ograniczenia
+
+- 3 seedy na wariant (rozrzut p10–p90 w `docs/balance/*.json`), 2 i 4 lata; brak serii 5-letniej (pozostaje luka z v0.7, §2).
+- Bot wycenia projekty prostą regułą (nadwyżka ≥ 60% wartości pracy właściciela + 8% przychodu), nie zarządza gotówką pod projekty, nie planuje zmęczenia i nie unika kumulowania prac; dobry gracz może wypaść lepiej (lub gorzej).
+- Parametry klientów B2B, wymagań i częstości zapytań są kalibracyjne; sprawdziłem dwa warianty okien czasowych projektu (godziny 5 vs 6 dziennie, zapas 1,7 vs 1,4) — wariant o dłuższych oknach wypadł gorzej, pozostawiono pierwotny (`projectsCatalog.ts`).
+- Benchmark wykrył i naprawił błąd rezerwacji godzin przy anulowaniu kontraktu (10.3); wcześniejsze serie (v0.7) mogły go zawierać w niewielkim stopniu.

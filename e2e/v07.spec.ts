@@ -82,7 +82,7 @@ test('rynek: stan rynku i strategia przeżywają zapis i wczytanie; menu mobilne
   await page.setViewportSize({ width: 390, height: 800 });
   await page.getByRole('button', { name: 'Więcej' }).click();
   const menu = page.getByRole('dialog', { name: 'Menu' });
-  await expect(menu.getByText('Rynek', { exact: true })).toBeVisible();
+  await expect(menu.getByText('Rynek i marketing', { exact: true })).toBeVisible();
   await menu.getByRole('button', { name: 'Analiza popytu' }).click();
   await expect(page.getByRole('heading', { name: 'Analiza popytu' })).toBeVisible();
 });

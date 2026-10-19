@@ -484,11 +484,16 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
               )}
             </div>
           )}
-          <div className="flex flex-wrap gap-2 text-xs"><span className="self-center text-slate-400">Cena = koszt + narzut:</span>{[1_500, 2_500, 3_500].map((m) => <Button key={m} variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => setMarkup(m)}>{m / 100}%</Button>)}</div>
+          <div className="flex flex-wrap gap-2 text-xs"><span className="self-center text-slate-400">Cena = koszt (razem z Twoją pracą) + narzut:</span>{[1_500, 2_500, 3_500].map((m) => <Button key={m} variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => setMarkup(m)}>{m / 100}%</Button>)}</div>
         </div>
         <div className="space-y-3 text-sm" data-testid="quote-preview">
-          <QuoteCalendar game={game} enq={enq} q={q} planWarnings={p.warnings} onPick={(date) => set({ startDate: date })} />
+          <p className="rounded-xl border border-sky/25 bg-sky/5 p-3 text-xs text-slate-300">Tu widzisz, <strong>ile faktycznie zostaje</strong>: koszty rzeczywiste to pieniądze, które wydasz; wartość Twojej pracy to tylko miara porównawcza (nie wypłata). Dopiero zysk ekonomiczny mówi, czy zlecenie się opłaca.</p>
           <QuoteEconomicsPanel e={p.economics} laborRate={input.laborRate} priceGross={p.priceGross} vatRateBps={p.vatRateBps} />
+          {p.errors.length > 0 && <ul className="space-y-1 text-xs text-loss" role="alert">{p.errors.map((e) => <li key={e}>✖ {e}</li>)}</ul>}
+          {p.warnings.length > 0 && <ul className="space-y-1 text-xs text-gold">{p.warnings.map((w) => <li key={w}>⚠ {w}</li>)}</ul>}
+          {Object.keys(p.stockShortage).length > 0 && <p className="text-xs text-slate-400">Materiały do zakupu po podpisaniu umowy: {Object.entries(p.stockShortage).map(([k, n]) => `${MATERIAL_BY_ID.get(splitKey(k).materialId)!.label} × ${n}`).join(', ')}.</p>}
+          <Button variant="primary" className="w-full" disabled={p.errors.length > 0 || price === null} onClick={() => send(enq.id, input)} data-testid="send-quote">Wyślij ofertę klientowi</Button>
+          <p className="text-xs text-slate-500">Klient może zaakceptować, odrzucić, poprosić o rabat albo o zmianę terminu. Decyzja zapada w ciągu 1–3 dni.</p>
           <dl className="divide-y divide-ink-700/60 rounded-xl border border-ink-700 px-3">
             <Row k="Narzut od kosztów rzeczywistych i pracy własnej" v={fmtPct(p.markupBps)} tone={moneyTone(p.markupBps)} />
             <Row k="Marża nadwyżki (przed obciążeniami właściciela)" v={fmtPct(p.economics.surplusMarginBps)} tone={moneyTone(p.economics.surplusMarginBps)} />
@@ -501,11 +506,7 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
             {mp && <div className="mb-1 text-slate-300" data-testid="market-price-hint">Orientacyjnie rynek wycenia to zlecenie na {formatPLN(mulBps(refPrice, mp.lowBps), { round: true })}–{formatPLN(mulBps(refPrice, mp.highBps), { round: true })} (cena referencyjna {formatPLN(refPrice, { round: true })}); budżet klienta to ok. {formatPLN(enq.budgetGross, { round: true })} brutto.</div>}
             {SEGMENTS[enq.segment].description} {enq.rivals > 0 ? 'Wygrasz z konkurencją ceną, jakością (standard materiałów), opiniami i terminem — nie samą najniższą ceną. Dopiero potem klient ocenia warunki oferty.' : 'Nie porównuje ofert, ale nadal może odrzucić zbyt drogą ofertę lub zły termin.'}
           </div>
-          {p.errors.length > 0 && <ul className="space-y-1 text-xs text-loss" role="alert">{p.errors.map((e) => <li key={e}>✖ {e}</li>)}</ul>}
-          {p.warnings.length > 0 && <ul className="space-y-1 text-xs text-gold">{p.warnings.map((w) => <li key={w}>⚠ {w}</li>)}</ul>}
-          {Object.keys(p.stockShortage).length > 0 && <p className="text-xs text-slate-400">Materiały do zakupu po podpisaniu umowy: {Object.entries(p.stockShortage).map(([k, n]) => `${MATERIAL_BY_ID.get(splitKey(k).materialId)!.label} × ${n}`).join(', ')}.</p>}
-          <Button variant="primary" className="w-full" disabled={p.errors.length > 0 || price === null} onClick={() => send(enq.id, input)} data-testid="send-quote">Wyślij ofertę klientowi</Button>
-          <p className="text-xs text-slate-500">Klient może zaakceptować, odrzucić, poprosić o rabat albo o zmianę terminu. Decyzja zapada w ciągu 1–3 dni.</p>
+          <QuoteCalendar game={game} enq={enq} q={q} planWarnings={p.warnings} onPick={(date) => set({ startDate: date })} />
         </div>
       </div>
     </Card>
@@ -553,7 +554,7 @@ export function RenoQuotesScreen() {
   const STATUS = { sent: ['czeka na decyzję klienta', 'sky'], counter: ['klient proponuje zmianę', 'gold'], accepted: ['zaakceptowana — podpisz umowę', 'gain'], rejected: ['odrzucona', 'loss'], declined: ['zrezygnowano', 'neutral'], signed: ['umowa podpisana', 'gain'], expired: ['wygasła', 'neutral'] } as const;
   return (
     <div className="space-y-5">
-      <ScreenHeader title="Wyceny" subtitle="Przygotuj ofertę (koszt planowany + narzut), negocjuj warunki i podpisz umowę." />
+      <ScreenHeader title="Wyceny" subtitle="Przygotuj ofertę: cena ma pokryć koszty rzeczywiste i uczciwie wynagrodzić Twoją pracę. Potem negocjuj warunki i podpisz umowę." />
       <ParamNote />
       {selected && <QuoteBuilder key={selected} enquiryId={selected} />}
       <Card title="Wysłane oferty">

@@ -41,6 +41,7 @@ Sprawdź też `git log` i `git status` — dokumentacja mogła zostać zmieniona
 11. **JDG nie jest osobą prawną.** Rachunek firmowy należy do osoby fizycznej gracza; „firmowa” jest wyłącznie ewidencja (`scope: 'business'`, rachunek typu `business`). Majątek netto obejmuje wszystko. Pieniądze między rachunkami własnymi przenosi tylko `transferFunds`.
 12. **Wszystkie decyzje gracza przechodzą przez `commands.*`** (czyste, na kopii stanu); UI niczego nie liczy sam.
 13. **Spółka z o.o. (v0.8) ma odrębny majątek.** Własność wynika z właściciela rachunku (`Account.ownerId`); `scope: 'company'` nie wchodzi do rozliczeń JDG ani majątku netto gracza (tam tylko szacunkowa wartość jego udziałów). Przepływy osoba↔spółka wyłącznie jako wkład na kapitał, dywidenda i transakcje na udziałach (niezmiennik w `corpInvariants.ts`). Moduły firmowe pracują na bieżącym operatorze (`withOperator`) — nie kopiuj ich dla spółki. Przed zmianą reguł spółek sprawdź `LEGAL_SOURCES.md` (sekcja v0.8) i `legalCorp.ts`.
+14. **Zarobek przedsiębiorcy (v0.8.1)**: kalkulacyjna wartość pracy własnej (`planned.ownerLabor`, `QuoteEconomics`) nie jest wypłatą, przepływem pieniężnym ani kosztem podatkowym; koszty rzeczywiste, nadwyżka przed obciążeniami właściciela i zysk ekonomiczny to osobne wielkości (nie mieszaj ich w UI i raportach). Pakiet robót większego projektu to zwykły `RenoJob` z `projectId`/`packageId`/`dependsOn` — nie twórz drugiego silnika kontraktów; pakiety powstają „na czas” po odbiorze poprzedników (`projects.ts`).
 
 ## 3. Stos (zatwierdzony)
 

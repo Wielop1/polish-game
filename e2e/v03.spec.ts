@@ -20,6 +20,8 @@ async function startGame(page: Page, seed: string) {
 async function registerAndStart(page: Page, seed: string) {
   await startGame(page, seed);
   await nav(page, 'Rejestracja JDG');
+  // testy v0.3 dotyczą prostych zleceń usługowych — wybieramy profil informatyczny (domyślny od v0.8.1 jest „Remonty”)
+  await page.getByText('Programowanie i tworzenie oprogramowania').first().click();
   await page.getByTestId('register-business').click();
   await expect(page.getByRole('heading', { name: 'Moja działalność' })).toBeVisible();
   await page.getByTestId('advance-month').click(); // 1 lutego — start działalności
@@ -108,7 +110,7 @@ test('mobilne menu zawiera grupę Firma', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Więcej' }).click();
   const menu = page.getByRole('dialog', { name: 'Menu' });
-  await expect(menu).toContainText('Firma (JDG)');
+  await expect(menu).toContainText('Moja firma');
   await menu.getByRole('button', { name: 'Rejestracja JDG' }).click();
   await expect(page.getByRole('heading', { name: 'Rejestracja JDG' })).toBeVisible();
 });

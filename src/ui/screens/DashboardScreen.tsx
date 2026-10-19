@@ -7,6 +7,7 @@ import { useGameStore } from '../../store/gameStore.ts';
 import { BarChart, LineChart, ProgressBar, downsample } from '../components/charts.tsx';
 import { Icon } from '../components/icons.tsx';
 import { pendingLifeEvents } from '../../engine/lifeEvents.ts';
+import { FirmSnapshot, NextStepsCard } from './GuideScreen.tsx';
 import { Badge, Button, Card, Empty, Money, Segmented, StatCard, ScreenHeader, moneyTone } from '../components/ui.tsx';
 
 type Range = '30' | '90' | '365' | 'all';
@@ -41,6 +42,9 @@ export function DashboardScreen() {
   return (
     <div className="space-y-5">
       <ScreenHeader title="Pulpit gracza" subtitle={`${game.person.firstName} ${game.person.lastName} · Olsztyn`} />
+
+      <NextStepsCard compact />
+      <FirmSnapshot />
 
       {overdue.length > 0 && (
         <div role="alert" className="flex items-start gap-3 rounded-2xl border border-gold/40 bg-gold/10 p-4 text-sm text-gold">

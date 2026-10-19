@@ -140,7 +140,8 @@ function QuoteBuilder({ project }: { project: RenoProject }) {
   const [input, setInput] = useState<ProjectPlanInput>(() => defaultPlanInput(game, project));
   const [priceText, setPriceText] = useState(() => String(Math.round((input.totalPriceNet ?? 0) / 100)));
   const price = parseZloty(priceText);
-  const eff: ProjectPlanInput = { ...input, totalPriceNet: price ?? input.totalPriceNet };
+  // po przesunięciu czasu zapamiętany start mógłby wypaść w przeszłości — przesuwamy go na jutro
+  const eff: ProjectPlanInput = { ...input, startDate: input.startDate > game.clock.today ? input.startDate : addDays(game.clock.today, 1), totalPriceNet: price ?? input.totalPriceNet };
   const plan = useMemo(() => planProject(game, project, eff), [game, project, input, price]); // eslint-disable-line react-hooks/exhaustive-deps
   const options = crewOptions(game);
   const accept = projectAcceptanceHint(plan, project);

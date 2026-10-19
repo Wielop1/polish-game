@@ -17,7 +17,7 @@ import type { SaveListItem, SaveRepository } from '../persistence/repository.ts'
 import { loadGame, saveGame } from '../persistence/service.ts';
 
 export type Screen =
-  | 'dashboard' | 'character' | 'finances' | 'calendar' | 'events'
+  | 'guide' | 'dashboard' | 'character' | 'finances' | 'calendar' | 'events'
   | 'jobs' | 'housing' | 'lifestyle' | 'time' | 'savings' | 'decisions'
   | 'bizRegister' | 'bizOverview' | 'bizOrders' | 'bizFinance' | 'bizTax' | 'bizDocs' | 'bizCalendar'
   | 'bizSettlement' | 'bizReport' | 'planning' | 'bizAccounting'

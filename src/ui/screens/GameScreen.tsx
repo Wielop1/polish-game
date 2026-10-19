@@ -140,6 +140,11 @@ export function GameScreen() {
   return (
     <div>
       <ScreenHeader title="Nowa gra / Wczytaj" subtitle="Zacznij od zera jako 22-latek w Olsztynie albo wróć do zapisanej rozgrywki." />
+      <div className="mb-5 grid gap-3 rounded-2xl border border-sky/25 bg-sky/5 p-4 text-sm text-slate-300 md:grid-cols-3" data-testid="game-pitch">
+        <div><div className="mb-0.5 font-semibold text-slate-100">O co chodzi</div>Masz 22 lata, 5 000 zł i etat. Zbuduj majątek — najlepiej przez własną firmę remontową, która uczciwie zarabia.</div>
+        <div><div className="mb-0.5 font-semibold text-slate-100">Jak się gra</div>Czas stoi, dopóki nie klikniesz „Następny dzień”. Odpowiadasz klientom, wyceniasz prace, pilnujesz terminów i pieniędzy.</div>
+        <div><div className="mb-0.5 font-semibold text-slate-100">Nikt nie gwarantuje zysku</div>Liczą się koszty, czas, konkurencja i przepisy. Wszystko jest fikcyjne; w grze znajdziesz „Przewodnik: jak grać”.</div>
+      </div>
       <div className="grid gap-5 lg:grid-cols-2">
         <NewGameForm />
         <SaveSlots />

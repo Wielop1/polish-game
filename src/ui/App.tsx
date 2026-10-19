@@ -4,7 +4,6 @@ import { useGameStore } from '../store/gameStore.ts';
 import type { Screen } from '../store/gameStore.ts';
 import { computeNavAlerts } from './navAlerts.ts';
 import { Icon } from './components/icons.tsx';
-import type { IconName } from './components/icons.tsx';
 import { cx } from './components/ui.tsx';
 import { CalendarScreen } from './screens/CalendarScreen.tsx';
 import { DecisionsScreen } from './screens/DecisionsScreen.tsx';
@@ -23,6 +22,10 @@ import { RenoContractsScreen, RenoDashboardScreen, RenoEnquiriesScreen, RenoQuot
 import { CorpBoardScreen, CorpCompaniesScreen, CorpFoundScreen, CorpPartnersScreen, CorpSharesScreen } from './screens/CorpScreens.tsx';
 import { CorpDividendsScreen, CorpFinanceScreen, CorpInvestorsScreen, CorpResolutionsScreen } from './screens/CorpScreens2.tsx';
 import { OperatorBar } from './OperatorBar.tsx';
+import { ScreenHelp } from './ScreenHelp.tsx';
+import { ALL_NAV, businessKind, sectionItems, sectionOf, visibleSections } from './nav.ts';
+import type { NavSection } from './nav.ts';
+import { GuideScreen } from './screens/GuideScreen.tsx';
 import { CharacterScreen } from './screens/CharacterScreen.tsx';
 import { DashboardScreen } from './screens/DashboardScreen.tsx';
 import { EventsScreen } from './screens/EventsScreen.tsx';
@@ -30,163 +33,6 @@ import { FinancesScreen } from './screens/FinancesScreen.tsx';
 import { GameScreen } from './screens/GameScreen.tsx';
 import { NoticeBar } from './NoticeBar.tsx';
 import { TimeBar } from './TimeBar.tsx';
-
-interface NavItem {
-  id: Screen;
-  label: string;
-  icon: IconName;
-}
-interface NavBlock {
-  label?: string;
-  items: NavItem[];
-}
-interface NavSection {
-  title: string;
-  blocks: NavBlock[];
-}
-const NAV_SECTIONS: NavSection[] = [
-  {
-    title: 'Przegląd',
-    blocks: [{
-      items: [
-        { id: 'dashboard', label: 'Pulpit', icon: 'dashboard' },
-        { id: 'character', label: 'Postać', icon: 'user' },
-        { id: 'finances', label: 'Finanse', icon: 'wallet' },
-        { id: 'calendar', label: 'Kalendarz', icon: 'calendar' },
-        { id: 'events', label: 'Historia zdarzeń', icon: 'list' },
-      ],
-    }],
-  },
-  {
-    title: 'Życie',
-    blocks: [{
-      items: [
-        { id: 'jobs', label: 'Oferty pracy', icon: 'briefcase' },
-        { id: 'housing', label: 'Mieszkanie', icon: 'home' },
-        { id: 'lifestyle', label: 'Styl życia', icon: 'heart' },
-        { id: 'time', label: 'Budżet czasu', icon: 'clock' },
-        { id: 'savings', label: 'Oszczędności', icon: 'coins' },
-        { id: 'decisions', label: 'Decyzje i wydarzenia', icon: 'bell' },
-      ],
-    }],
-  },
-  {
-    title: 'Firma (JDG)',
-    blocks: [
-      {
-        items: [
-          { id: 'bizRegister', label: 'Rejestracja JDG', icon: 'building' },
-          { id: 'bizOverview', label: 'Moja działalność', icon: 'briefcase' },
-          { id: 'bizFinance', label: 'Finanse firmy', icon: 'trend' },
-          { id: 'planning', label: 'Planowanie', icon: 'trend' },
-        ],
-      },
-      {
-        label: 'Podatki i księgowość',
-        items: [
-          { id: 'bizTax', label: 'Podatki i ZUS', icon: 'shield' },
-          { id: 'bizAccounting', label: 'Księgowość', icon: 'file' },
-          { id: 'bizDocs', label: 'Dokumenty', icon: 'receipt' },
-          { id: 'bizCalendar', label: 'Kalendarz obowiązków', icon: 'calendar' },
-          { id: 'bizSettlement', label: 'Rozliczenie roczne', icon: 'receipt' },
-          { id: 'bizReport', label: 'Podsumowanie roku', icon: 'list' },
-        ],
-      },
-      {
-        label: 'Ludzie',
-        items: [
-          { id: 'hrEmployees', label: 'Pracownicy', icon: 'user' },
-          { id: 'hrRecruitment', label: 'Rekrutacja', icon: 'bell' },
-        ],
-      },
-    ],
-  },
-  {
-    title: 'Zlecenia',
-    blocks: [
-      {
-        items: [
-          { id: 'renoDashboard', label: 'Pulpit zleceń', icon: 'dashboard' },
-          { id: 'renoEnquiries', label: 'Zapytania klientów', icon: 'bell' },
-          { id: 'renoQuotes', label: 'Wyceny', icon: 'receipt' },
-          { id: 'renoContracts', label: 'Kontrakty', icon: 'briefcase' },
-          { id: 'bizOrders', label: 'Oferty i kontrakty', icon: 'file' },
-        ],
-      },
-      {
-        label: 'Realizacja',
-        items: [
-          { id: 'renoSchedule', label: 'Harmonogram', icon: 'calendar' },
-          { id: 'opsSchedule', label: 'Harmonogram wielu kontraktów', icon: 'calendar' },
-          { id: 'opsTeams', label: 'Ekipy', icon: 'user' },
-          { id: 'opsSubcontractors', label: 'Podwykonawcy', icon: 'file' },
-          { id: 'renoStock', label: 'Magazyn i sprzęt', icon: 'coins' },
-          { id: 'opsVehicles', label: 'Pojazdy', icon: 'home' },
-        ],
-      },
-      {
-        label: 'Większe projekty (B2B)',
-        items: [
-          { id: 'b2bClients', label: 'Klienci B2B', icon: 'user' },
-          { id: 'projects', label: 'Większe projekty', icon: 'briefcase' },
-          { id: 'projectPackages', label: 'Pakiety robót', icon: 'list' },
-          { id: 'projectReferences', label: 'Referencje firmy', icon: 'shield' },
-        ],
-      },
-      {
-        label: 'Wyniki',
-        items: [
-          { id: 'opsProfit', label: 'Rentowność', icon: 'trend' },
-          { id: 'renoReputation', label: 'Reputacja i reklamacje', icon: 'heart' },
-        ],
-      },
-    ],
-  },
-  {
-    title: 'Rynek',
-    blocks: [{
-      items: [
-        { id: 'marketLocal', label: 'Rynek lokalny', icon: 'trend' },
-        { id: 'marketCompetition', label: 'Konkurencja', icon: 'user' },
-        { id: 'marketMarketing', label: 'Marketing', icon: 'bell' },
-        { id: 'marketStrategy', label: 'Strategia firmy', icon: 'shield' },
-        { id: 'marketDemand', label: 'Analiza popytu', icon: 'list' },
-      ],
-    }],
-  },
-  {
-    title: 'Spółki i inwestycje prywatne',
-    blocks: [
-      {
-        items: [
-          { id: 'corpCompanies', label: 'Moje spółki', icon: 'building' },
-          { id: 'corpFound', label: 'Załóż spółkę', icon: 'file' },
-        ],
-      },
-      {
-        label: 'Własność i zarządzanie',
-        items: [
-          { id: 'corpPartners', label: 'Wspólnicy', icon: 'user' },
-          { id: 'corpShares', label: 'Udziały i kapitał', icon: 'coins' },
-          { id: 'corpBoard', label: 'Zarząd', icon: 'shield' },
-          { id: 'corpResolutions', label: 'Uchwały', icon: 'list' },
-        ],
-      },
-      {
-        label: 'Finanse',
-        items: [
-          { id: 'corpFinance', label: 'Finanse i CIT', icon: 'receipt' },
-          { id: 'corpDividends', label: 'Dywidendy', icon: 'wallet' },
-          { id: 'corpInvestors', label: 'Inwestorzy i negocjacje', icon: 'trend' },
-        ],
-      },
-    ],
-  },
-  { title: 'System', blocks: [{ items: [{ id: 'game', label: 'Nowa gra / Wczytaj', icon: 'save' }] }] },
-];
-const sectionItems = (sec: NavSection) => sec.blocks.flatMap((b) => b.items);
-const ALL_NAV = NAV_SECTIONS.flatMap(sectionItems);
-const sectionOf = (id: Screen) => NAV_SECTIONS.find((sec) => sectionItems(sec).some((n) => n.id === id))?.title;
 
 function Logo() {
   return (
@@ -204,6 +50,7 @@ function Logo() {
 
 function renderScreen(screen: Screen) {
   switch (screen) {
+    case 'guide': return <GuideScreen />;
     case 'dashboard': return <DashboardScreen />;
     case 'character': return <CharacterScreen />;
     case 'finances': return <FinancesScreen />;
@@ -270,12 +117,19 @@ export function App() {
   const visited = useGameStore((s) => s.visited);
   const [menuOpen, setMenuOpen] = useState(false);
   const alerts = useMemo(() => (game ? computeNavAlerts(game, visited) : {}), [game, visited]);
+  const sections = useMemo(() => (game ? visibleSections(game, screen) : []), [game, screen]);
+  const kind = game ? businessKind(game) : null;
   const groupAlert = (sec: NavSection) => sectionItems(sec).some((n) => alerts[n.id]);
-  const [open, setOpen] = useState<Set<string>>(() => new Set(['Przegląd', sectionOf(screen) ?? '']));
+  const [open, setOpen] = useState<Set<string>>(() => new Set([sectionOf(screen) ?? 'Start', ...(game && !businessKind(game).business ? ['Moja firma'] : [])]));
   useEffect(() => {
     const t = sectionOf(screen);
     if (t) setOpen((o) => (o.has(t) ? o : new Set(o).add(t)));
   }, [screen]);
+  // nowy gracz bez firmy od razu widzi grupę z rejestracją
+  const gameId = game?.gameId;
+  useEffect(() => {
+    if (game && !businessKind(game).business) setOpen((o) => (o.has('Moja firma') ? o : new Set(o).add('Moja firma')));
+  }, [gameId]); // eslint-disable-line react-hooks/exhaustive-deps
   const toggle = (title: string) => setOpen((o) => { const n = new Set(o); if (!n.delete(title)) n.add(title); return n; });
   const totalAlerts = Object.keys(alerts).length;
   const attention = game ? pendingLifeEvents(game).length + game.applications.filter((a) => a.status === 'offered').length : 0;
@@ -298,8 +152,11 @@ export function App() {
     <div className="flex h-full">
       <aside className="hidden w-64 shrink-0 flex-col border-r border-ink-700/60 bg-ink-900/60 p-5 backdrop-blur md:flex">
         <Logo />
-        <nav className="mt-6 flex flex-1 flex-col gap-2 overflow-y-auto" aria-label="Główna nawigacja">
-          {NAV_SECTIONS.map((sec) => {
+        {open.size > 1 && (
+          <button type="button" onClick={() => setOpen(new Set([sectionOf(screen) ?? 'Start']))} className="mt-4 self-end rounded-lg px-2 py-0.5 text-[11px] text-slate-500 hover:bg-ink-800 hover:text-slate-300" data-testid="collapse-groups">Zwiń pozostałe grupy</button>
+        )}
+        <nav className="mt-2 flex flex-1 flex-col gap-2 overflow-y-auto" aria-label="Główna nawigacja">
+          {sections.map((sec) => {
             const expanded = open.has(sec.title);
             return (
               <div key={sec.title}>
@@ -314,6 +171,7 @@ export function App() {
                   {!expanded && attention > 0 && sectionItems(sec).some((n) => n.id === 'decisions') && <span data-testid="attention-badge" className="grid min-w-5 place-items-center rounded-full bg-gold px-1.5 text-[11px] font-bold text-ink-950 normal-case">{attention}</span>}
                   {groupAlert(sec) && <span aria-hidden="true" data-testid={`group-dot-${sec.title}`} className="size-1.5 rounded-full bg-gold" />}
                 </button>
+                {expanded && <p className="px-3 pt-0.5 pb-1 text-[11px] leading-snug text-slate-500" data-testid={`group-desc-${sec.title}`}>{sec.description}</p>}
                 {expanded && sec.blocks.map((blk, bi) => (
                   <div key={bi} className="mt-0.5">
                     {blk.label && <div className="mt-2 mb-0.5 px-3 text-[10px] font-semibold tracking-wider text-slate-600 uppercase">{blk.label}</div>}
@@ -324,9 +182,9 @@ export function App() {
                           type="button"
                           onClick={() => navigate(n.id)}
                           aria-current={screen === n.id ? 'page' : undefined}
-                          title={alerts[n.id] ? `${n.label}: ${alerts[n.id]!.count} — ${alerts[n.id]!.hint}` : undefined}
+                          title={alerts[n.id] ? `${n.label}: ${alerts[n.id]!.count} — ${alerts[n.id]!.hint}` : n.hint}
                           className={cx(
-                            'flex items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition',
+                            'flex items-center gap-3 rounded-xl px-3 py-1.5 text-left text-sm font-medium transition',
                             screen === n.id ? 'bg-ink-700 text-white shadow-inner ring-1 ring-ink-600' : 'text-slate-400 hover:bg-ink-800 hover:text-slate-100',
                           )}
                         >
@@ -343,7 +201,13 @@ export function App() {
             );
           })}
         </nav>
-        <p className="text-[11px] leading-relaxed text-slate-500">v0.8 · spółki z o.o., wspólnicy, udziały, CIT i dywidendy. Symulacja — nie porada prawna ani podatkowa.</p>
+        {kind && !kind.business && (
+          <div className="my-3 rounded-xl border border-gold/30 bg-gold/10 p-3 text-xs text-gold" data-testid="no-business-callout">
+            <strong>Zlecenia, rynek i pracownicy odblokują się po założeniu firmy.</strong>
+            <button type="button" onClick={() => navigate('bizRegister')} className="mt-1 block font-semibold underline">Załóż firmę →</button>
+          </div>
+        )}
+        <p className="text-[11px] leading-relaxed text-slate-500">v0.8.1 · zarobek przedsiębiorcy, większe projekty B2B, referencje. Symulacja — nie porada prawna ani podatkowa.</p>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -353,13 +217,14 @@ export function App() {
             <NoticeBar />
             <div key={screen} className="animate-pop">
               <OperatorBar screen={screen} />
+              <ScreenHelp key={screen} screen={screen} />
               {renderScreen(screen)}
             </div>
           </div>
         </main>
         {menuOpen && (
           <div className="fixed inset-x-0 bottom-14 z-30 max-h-[70vh] overflow-y-auto border-t border-ink-700 bg-ink-900/98 p-3 backdrop-blur md:hidden" role="dialog" aria-label="Menu">
-            {NAV_SECTIONS.map((sec) => (
+            {sections.map((sec) => (
               <div key={sec.title} className="mb-2">
                 <div className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{sec.title}{groupAlert(sec) && <span aria-hidden="true" className="size-1.5 rounded-full bg-gold" />}</div>
                 {sec.blocks.map((blk, bi) => (
@@ -380,7 +245,7 @@ export function App() {
           </div>
         )}
         <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-ink-700 bg-ink-900/95 backdrop-blur md:hidden" aria-label="Nawigacja mobilna">
-          {[ALL_NAV[0]!, ALL_NAV.find((n) => n.id === 'finances')!, ALL_NAV.find((n) => n.id === 'decisions')!].map((n) => (
+          {[ALL_NAV.find((n) => n.id === 'dashboard')!, ALL_NAV.find((n) => n.id === 'finances')!, ALL_NAV.find((n) => n.id === 'decisions')!].map((n) => (
             <button
               key={n.id}
               type="button"

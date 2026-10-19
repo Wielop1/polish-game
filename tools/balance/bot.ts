@@ -337,9 +337,7 @@ function handleEnquiries(ctx: Ctx): void {
       }
     }
     // właściciel: terminy (także oferty bez umowy) sprawdza `candidateQuote` — nie ma osobnego limitu liczby prac
-    // wariant z projektami: gdy właściciel pracuje przy podpisanym projekcie, nie bierze równolegle drobnych prac (przeciążenie i zmęczenie opóźniają wszystko)
-    const ownerOnProject = ctx.projects && ctx.s.reno.projects.some((x) => x.status === 'signed' && x.packages.some((k) => k.crewKey === null || (parseCrewKey(k.crewKey) ?? []).some((m) => m.kind === 'owner')));
-    if (policy.ownerWorks && !ownerOnProject) { const c = candidateQuote(ctx, e, { kind: 'owner' }); if (c) cands.push(c); }
+    if (policy.ownerWorks) { const c = candidateQuote(ctx, e, { kind: 'owner' }); if (c) cands.push(c); }
     if (policy.subs !== 'none' && (policy.subs === 'only' || cands.length === 0)) {
       const subs = ctx.s.ops.subcontractors.filter((x) => x.services.includes(e.serviceId) && x.reliabilityBps >= 8_000).sort((a, b) => b.quality - a.quality);
       for (const sub of subs) { const c = candidateQuote(ctx, e, { kind: 'sub', subId: sub.id }); if (c) { cands.push(c); break; } }

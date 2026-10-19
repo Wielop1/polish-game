@@ -88,6 +88,16 @@ JDG ──(nadal)──► Person   (Business.ownerId = person; rachunek type: b
 
 Spółka ma własne rachunki, aktywa, zobowiązania, dokumenty, pracowników, kontrakty, wynik i obowiązki podatkowe (CIT, płatnik PIT od dywidend i wynagrodzeń, ZUS do 15.). Majątek netto gracza obejmuje **wyłącznie wartość jego udziałów** (szacunek) — nie gotówkę ani aktywa spółki.
 
+## 3b. Zarobek przedsiębiorcy, projekty i klienci B2B (v0.8.1)
+
+```
+Zlecenie (cena) ─► koszty rzeczywiste (materiały, płace, podwykonawcy, transport, drobne) ─► nadwyżka przed obciążeniami właściciela ─► (− kalkulacyjna wartość pracy właściciela) ─► zysk ekonomiczny
+                                                                                         └► (z nadwyżki firma płaci ZUS, podatek, księgowość) ─► reszta zostaje właścicielowi (to nie wypłata)
+Klient B2B ──(zapytanie)──► Projekt ──► etapy ──► pakiety robót (= kontrakty RenoJob z zależnościami) ──► odbiór ──► referencje firmy ──► dostęp do większych projektów
+```
+
+Praca własna właściciela w JDG nie jest przepływem pieniężnym ani kosztem podatkowym; w spółce właściciel nie jest wykonawcą (brak umowy, art. 210 KSH). Klienci B2B to fikcyjna pula z własnym terminem płatności i rzetelnością; relacja z klientem rośnie po terminowych, dobrze ocenionych projektach.
+
 ## 4. Majątek netto
 
 `majątek netto = rachunki (bieżący + oszczędności + firmowy) + kaucje + otwarte należności − otwarte zobowiązania` (v0.3; JDG nie jest osobną osobą prawną, więc jej środki to majątek właściciela). Docelowo: + wartość aktywów wg wyceny − pasywa. **Tożsamość kontrolna** (sprawdzana w `checkInvariants`):

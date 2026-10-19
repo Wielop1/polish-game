@@ -58,6 +58,10 @@ Wspólna warstwa rynku lokalnego (popyt miasta, koniunktura miesięczna zakotwic
 
 Spółka z o.o. jako odrębny podmiot prawny (założenie przez S24, rejestracja symulowana, odrębny majątek), rejestr udziałów, wspólnicy i inwestorzy AI, negocjacje (objęcie nowych vs zakup istniejących udziałów), zarząd i reprezentacja, uchwały z progami KSH, CIT, dywidendy, wycena, prowadzenie działalności remontowej przez spółkę (ten sam silnik, abstrakcja operatora), przełącznik aktywnego podmiotu. `SAVE_VERSION = 8`. Poza zakresem (zapisane w `FEATURE_EVOLUTION.md`): inne formy spółek, przekształcenie JDG, aporty, holdingi, giełda, kredyty, pełna księgowość, upadłość.
 
+## v0.8.1 — Ekonomia, rentowność i większe kontrakty ✅ (zakończona, patrz `PROJECT_STATUS.md`, `BALANCE_REPORT.md` §10)
+
+Poprawione głosowania wspólników (za/przeciw/wstrzymujące się/nieważne/nieoddane), rozdzielenie przychodu, kosztów rzeczywistych, kalkulacyjnej pracy właściciela i zysku ekonomicznego (wycena, rozliczenie, UI), audyt rentowności czterech usług (`tools/balance/audit.ts`) i mierzona kalibracja, klienci B2B, większe projekty z pakietami robót, referencje i zdolność realizacyjna, porównanie segmentów, kontrolowany benchmark przed/po (ten sam bot, seedy i horyzont), `SAVE_VERSION = 9`. Poza zakresem: deweloperka, infrastruktura, kredyty, giełda, v0.9. Od strony UI: przewodnik „jak grać”, podpowiedzi „co zrobić teraz?”, pomoc przy każdym ekranie, uporządkowane menu z progresywnym odsłanianiem.
+
 ## v0.9+ — Kredyty, leasing, odsetki (dawniej v0.4/v0.5/v0.6)
 
 Harmonogramy rat (kapitał + odsetki, w groszach, bez dryfu zaokrągleń), zdolność kredytowa (uproszczona), odsetki za zwłokę, windykacja (poziom 1). Banki jako strony z własną logiką.

@@ -1,6 +1,15 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+const registerOnMobile = async (page: import('@playwright/test').Page) => {
+  await page.getByRole('button', { name: 'Więcej' }).click();
+  await page.getByRole('dialog', { name: 'Menu' }).getByRole('button', { name: 'Rejestracja JDG' }).click();
+  await page.getByText('Usługi remontowo-wykończeniowe').first().click();
+  await page.getByTestId('register-business').click();
+  await expect(page.getByRole('heading', { name: 'Moja działalność' })).toBeVisible();
+};
+
+
 const nav = async (page: Page, name: string) => {
   const menu = page.getByRole('navigation', { name: 'Główna nawigacja' });
   const item = menu.getByRole('button', { name, exact: true });
@@ -77,10 +86,8 @@ test('remonty: wszystkie ekrany branży i księgowość renderują się; biuro r
     await nav(page, name);
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
   }
-  await nav(page, 'Oferty i kontrakty');
-  await expect(page.getByTestId('offers-status')).toContainText('branży remontowej');
-  await page.getByTestId('offers-status').getByRole('button', { name: 'Przejdź do zapytań' }).click();
-  await expect(page.getByRole('heading', { name: 'Zapytania klientów' })).toBeVisible();
+  // „Oferty i kontrakty” (zlecenia innych branż) jest ukryte w menu firmy remontowej — jej zlecenia obsługują ekrany „Zapytania”, „Wyceny” i „Kontrakty”
+  await expect(page.getByRole('navigation', { name: 'Główna nawigacja' }).getByRole('button', { name: 'Oferty i kontrakty', exact: true })).toHaveCount(0);
   await nav(page, 'Reputacja i reklamacje');
   await expect(page.getByTestId('reno-reputation')).toContainText('3,5★');
   await nav(page, 'Księgowość');
@@ -117,6 +124,7 @@ test('mobilne menu zawiera sekcję Zlecenia i Księgowość', async ({ page }) =
   await page.getByLabel('Nazwisko').fill('Kowalski');
   await page.getByLabel(/Ziarno losowości/).fill('e2e-reno-m');
   await page.getByTestId('start-game').click();
+  await registerOnMobile(page);
   await page.getByRole('button', { name: 'Więcej' }).click();
   const menu = page.getByRole('dialog', { name: 'Menu' });
   await expect(menu.getByText('Zlecenia', { exact: true })).toBeVisible();

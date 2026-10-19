@@ -185,6 +185,12 @@ export function MarketMarketingScreen() {
   return (
     <div className="space-y-5" data-testid="market-marketing">
       <ScreenHeader title="Marketing" subtitle="Rozdziel miesięczny budżet między kanały. Efekt pojawia się z opóźnieniem, maleje przy rosnącym budżecie i zależy od rynku — reklama nie gwarantuje klientów ani zysku." />
+      {total === 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gold/40 bg-gold/10 p-4 text-sm text-gold" data-testid="marketing-quickstart">
+          <div className="max-w-2xl"><strong>Nie masz żadnego marketingu</strong> — rynek pokazuje Cię wtedy tylko kilku klientom miesięcznie. Polecany skromny start: <strong>reklamy lokalne 400 zł + wizytówka firmy 150 zł</strong> miesięcznie (netto, od 1. dnia następnego miesiąca). Później możesz to zmienić w tabeli poniżej.</div>
+          <Button variant="primary" onClick={() => { if (setBudget('local_ads', zl(400))) setBudget('card', zl(150)); }} data-testid="marketing-quickstart-btn">Ustaw polecany start (550 zł/mies.)</Button>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard testId="marketing-total" label="Budżet miesięczny" icon="coins" accent="sky" value={formatPLN(total, { round: true })} hint="netto, pobierany 1. dnia miesiąca" />
         <StatCard label="Wydatki (3 mies.)" icon="wallet" accent="violet" value={formatPLN(spend3, { round: true })} hint="pobrane opłaty" />

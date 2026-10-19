@@ -1,6 +1,15 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+const registerOnMobile = async (page: import('@playwright/test').Page) => {
+  await page.getByRole('button', { name: 'Więcej' }).click();
+  await page.getByRole('dialog', { name: 'Menu' }).getByRole('button', { name: 'Rejestracja JDG' }).click();
+  await page.getByText('Usługi remontowo-wykończeniowe').first().click();
+  await page.getByTestId('register-business').click();
+  await expect(page.getByRole('heading', { name: 'Moja działalność' })).toBeVisible();
+};
+
+
 const nav = async (page: Page, name: string) => {
   const menu = page.getByRole('navigation', { name: 'Główna nawigacja' });
   const item = menu.getByRole('button', { name, exact: true });
@@ -79,6 +88,7 @@ test('mobilne menu zawiera nowe ekrany (Planowanie, Rozliczenie roczne)', async 
   await page.getByLabel('Nazwisko').fill('Kowalski');
   await page.getByLabel(/Ziarno losowości/).fill('e2e-v04-m');
   await page.getByTestId('start-game').click();
+  await registerOnMobile(page);
   await page.getByRole('button', { name: 'Więcej' }).click();
   await page.getByRole('dialog', { name: 'Menu' }).getByRole('button', { name: 'Planowanie' }).click();
   await expect(page.getByRole('heading', { name: 'Planowanie' })).toBeVisible();

@@ -9,7 +9,8 @@ import { buildProject, companyReferences, defaultPlanInput, ensureB2BPool, planP
 import { advanceDays } from './simulate.ts';
 import { addDays } from './date.ts';
 import type { GameState, RenoProject } from './state.ts';
-import { buyAll, contract, ok, opsGame, runUntil } from './testkit.ts';
+import { buyAll, contract, hireEmployee, ok, opsGame, runUntil } from './testkit.ts';
+import { crewKey } from './renovation.ts';
 
 const NO_REQ = { minCompleted: 0, minValueNet: 0, minRating10: 0, minProjectTier: 0, minWorkers: 0 };
 
@@ -300,4 +301,34 @@ describe('v0.8.1 · klienci B2B, referencje i zdolność realizacyjna', () => {
     expect(after.quote!.paymentTermDays).toBe(pc.quote!.counter?.termDays ?? after.quote!.paymentTermDays);
     expect(checkInvariants(s)).toEqual([]);
   });
+});
+
+describe('v0.8.1 · aktywacja pakietów „na czas”', () => {
+  it('pakiet startuje w najwcześniejszym terminie, gdy wykonawcy są wolni (rezerwacja na przyszłość), zamiast czekać w nieskończoność na wolny dzień', () => {
+    let s = opsGame({ seed: 'jit-1', equip: ['hand-tools', 'paint-basic', 'trowel-set', 'panel-kit'] });
+    for (const id of ['gladzie', 'panele', 'drobne']) s = ok(commands.addSpecialization(s, id));
+    s = hireEmployee(s, { expected: zl(5_400), start: addDays(s.clock.today, 1) }).s;
+    const emp = s.ops.employments.at(-1)!;
+    s = ok(commands.createTeam(s, 'Ekipa JIT', [{ kind: 'employee', id: emp.id }]));
+    const teamId = s.ops.teams.at(-1)!.id;
+    s = advanceDays(s, 3);
+    // pracownik zajęty prywatnym kontraktem przez ~30 dni
+    const busy = contract(s, { quote: { teamId, supervision: 'hands-off', hoursPerDay: 1, durationDays: 30, startDate: addDays(s.clock.today, 2), priceNet: zl(4_000) } });
+    s = structuredClone(busy.s);
+    const clients = ensureB2BPool(s);
+    const p = buildProject(s, currentOperator(s)!, clients[2]!, 'flat_finish', 1, s.clock.today)!;
+    for (const pkg of p.packages) { pkg.complexity = 'standard'; pkg.refPriceNet = referencePrice(pkg.serviceId, pkg.units, 'standard', pkg.qualityReq); }
+    p.requirements = { ...NO_REQ };
+    s.reno.projects.push(p);
+    const input = { ...defaultPlanInput(s, p), crews: Object.fromEntries(p.packages.map((x) => [x.id, x.serviceId === 'drobne' || x.serviceId === 'malowanie' ? crewKey([{ kind: 'employee', id: emp.id }]) : null])) };
+    let q = ok(commands.sendProjectQuote(s, p.id, input));
+    q = accept(q, p.id);
+    q = ok(commands.signProject(q, p.id));
+    const first = q.reno.jobs.find((j) => j.projectId === p.id)!;
+    expect(first.startDate > busy.job.deadline).toBe(true); // po zakończeniu prywatnego kontraktu pracownika
+    // żadnych nakładających się rezerwacji tego samego pracownika
+    const asg = q.ops.assignments.filter((a) => a.kind === 'employee' && a.resourceId === emp.id).sort((a, b) => a.from.localeCompare(b.from));
+    for (let i = 1; i < asg.length; i++) expect(asg[i]!.from > asg[i - 1]!.to).toBe(true);
+    expect(checkInvariants(q)).toEqual([]);
+  }, 120_000);
 });

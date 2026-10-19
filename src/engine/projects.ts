@@ -1,5 +1,6 @@
 import { CommandError, ensureParty, logEvent, nextCounter } from './core.ts';
 import { addDays, diffDays, formatDatePL, weekdayIndex } from './date.ts';
+import { firstFree } from './teams.ts';
 import type { IsoDate } from './date.ts';
 import { formatPLN, mulBps, roundDiv, zl } from './money.ts';
 import type { Grosze } from './money.ts';
@@ -470,8 +471,22 @@ function activatePackage(s: GameState, b: Operator, p: RenoProject, pkg: RenoPac
   const members = parseCrewKey(pkg.crewKey);
   const crew: CrewMember[] = pkg.crewKey === null ? [{ kind: 'owner', id: 'owner' }] : members ?? [];
   if (crew.length === 0) throw new CommandError(`Pakiet „${pkg.label}”: wskaż wykonawcę.`);
-  const start = pkg.startDate && pkg.startDate > today ? pkg.startDate : addDays(today, 1);
-  const fit = fitPackage(s, pkg, pkg.crewKey, start, pkg.hoursPerDay, pkg.priceNet, { advanceBps: q.advanceBps, paymentTermDays: q.paymentTermDays, laborRate: OWN_LABOR_RATE_DEFAULT }, pkg.durationDays);
+  // najwcześniejszy termin, w którym wykonawcy (pracownicy, podwykonawcy) są wolni na cały czas pakietu, a właściciel ma wolne godziny — rezerwacja na przyszłość
+  // chroni projekt przed „zagłodzeniem” przez kolejne drobne zlecenia, które zajmowałyby tych samych ludzi bez przerwy
+  let start = pkg.startDate && pkg.startDate > today ? pkg.startDate : addDays(today, 1);
+  let fit = fitPackage(s, pkg, pkg.crewKey, start, pkg.hoursPerDay, pkg.priceNet, { advanceBps: q.advanceBps, paymentTermDays: q.paymentTermDays, laborRate: OWN_LABOR_RATE_DEFAULT }, pkg.durationDays);
+  for (let i = 0; i < 80; i++) {
+    let free = start;
+    for (const m of crew) {
+      if (m.kind === 'owner') continue;
+      const f = firstFree(s, m.kind === 'employee' ? 'employee' : 'sub', m.id, start, fit.dur);
+      if (f > free) free = f;
+    }
+    if (free > start) { start = free; fit = fitPackage(s, pkg, pkg.crewKey, start, pkg.hoursPerDay, pkg.priceNet, { advanceBps: q.advanceBps, paymentTermDays: q.paymentTermDays, laborRate: OWN_LABOR_RATE_DEFAULT }, pkg.durationDays); continue; }
+    if (fit.conflict) { start = addDays(start, 1); fit = fitPackage(s, pkg, pkg.crewKey, start, pkg.hoursPerDay, pkg.priceNet, { advanceBps: q.advanceBps, paymentTermDays: q.paymentTermDays, laborRate: OWN_LABOR_RATE_DEFAULT }, pkg.durationDays); continue; }
+    break;
+  }
+  if (diffDays(start, today) > 90) throw new CommandError(`Pakiet „${pkg.label}”: wykonawcy są zajęci przez ponad 90 dni — wskaż innych wykonawców albo poczekaj.`);
   if (fit.preview.errors.length) throw new CommandError(`Pakiet „${pkg.label}”: ${fit.preview.errors[0]}`);
   if (fit.conflict) throw new CommandError(`Pakiet „${pkg.label}”: brak wolnych godzin właściciela od ${formatDatePL(start)} — wskaż pracownika lub podwykonawcę.`);
   const standard = pkg.qualityReq >= 3 ? 'premium' : pkg.qualityReq === 1 ? 'eko' : 'std';
@@ -558,6 +573,15 @@ export function processProjects(s: GameState, b: Operator, date: IsoDate): void 
         // pakiety, których poprzednicy zostali odebrani, stają się kontraktami (jeden dzień po odbiorze); brak wykonawców/godzin = ponowna próba następnego dnia
         for (const pkg of p.packages) {
           if (pkg.jobId || !pkg.dependsOn.every((d) => jobOfPackage(s, p.packages.find((x) => x.id === d)!)?.stage === 'done')) continue;
+          // klient nie czeka bez końca: pakiet, który nie może ruszyć przez 45 dni od odbioru poprzednika, kończy projekt
+          const readySince = pkg.dependsOn.map((d) => jobOfPackage(s, p.packages.find((x) => x.id === d)!)?.settledOn ?? date).sort().at(-1) ?? date;
+          if (diffDays(date, readySince) > 45) {
+            p.status = 'cancelled'; p.finishedOn = date; p.note = `Klient odstąpił od umowy: pakiet „${pkg.label}” nie ruszył w 45 dni od odbioru poprzedniego.`;
+            const client = st.b2bClients.find((c) => c.id === p.b2bId);
+            if (client) client.relationship = Math.max(0, client.relationship - 10);
+            logEvent(s, { id: `reno.project:${p.id}:cancelled`, date, type: 'reno.project', tone: 'negative', title: `Projekt przerwany: ${p.title}`, detail: p.note.slice(0, 290), amount: null, category: null });
+            break;
+          }
           try {
             // próba na kopii: nieudana aktywacja (brak godzin, zajęty wykonawca) nie może zostawić po sobie częściowych zapisów (zlecenie, dokument zaliczki, rezerwacje)
             const trial = structuredClone(s);
