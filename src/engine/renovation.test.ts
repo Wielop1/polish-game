@@ -12,7 +12,7 @@ import { zl } from './money.ts';
 import { createNewGame } from './newGame.ts';
 import {
   clientAcceptanceBps, complaintBps, decideQuote, defaultQuoteInput, enquiryRateBps, jobFinancials, jobForecast, jobQuality, materialAvailable, materialPrice,
-  previewQuote, renoDashboard, reputation, skillLevel, speedBps, stockKey,
+  crewKey, previewQuote, quoteSchedule, renoDashboard, reputation, skillLevel, speedBps, stockKey,
 } from './renovation.ts';
 import type { QuoteInput } from './renovation.ts';
 import { ACCOUNTING_PLANS } from './renovationCatalog.ts';
@@ -681,6 +681,43 @@ describe('8. konflikty czasu', () => {
     const after = defaultQuoteInput(s, e2);
     expect(after.startDate > c1.job.deadline || previewQuote(s, after).timeConflict === null).toBe(true);
     expect(previewQuote(s, after).timeConflict).toBeNull();
+  });
+
+  it('kalendarz wyceny: pokazuje zajęte kontrakty, kolizję w ich terminie i najbliższy wolny start', () => {
+    const s0 = renoGame();
+    const free0 = budgetFor(s0, addDays(s0.clock.today, 3)).free;
+    // kontrakt zabiera godziny, a druga wycena dostaje tyle, by razem przekroczyły dobę
+    const c1 = contract(s0, { quote: { hoursPerDay: Math.floor(free0 / 2) + 1 } });
+    const s = c1.s;
+    const e2 = craftEnquiry(s);
+    const q2 = { ...defaultQuoteInput(s, e2), startDate: c1.job.startDate, durationDays: 10, hoursPerDay: Math.floor(free0 / 2) + 1 };
+    const sch = quoteSchedule(s, q2);
+    // kontrakt widać na liście zajętych terminów
+    expect(sch.busy).toContainEqual(expect.objectContaining({ id: c1.job.id, kind: 'job', from: c1.job.startDate, to: c1.job.deadline, hoursPerDay: c1.job.hoursPerDay }));
+    // dzień kontraktu jest zajęty godzinami kontraktu, a 8 godz. wyceny się w nim nie mieści
+    const day = sch.days.find((d) => d.date === c1.job.startDate)!;
+    expect(day.commitments).toBe(c1.job.hoursPerDay);
+    expect(day.overload).toBe(true);
+    // każdy dzień zgadza się z silnikiem czasu (ta sama prawda co przy podpisie umowy)
+    for (const d of sch.days) expect(d.free).toBe(budgetFor(s, d.date).free - sch.ownerHours);
+    // zasugerowany start naprawdę jest wolny dla całego terminu
+    expect(sch.suggestedStart).not.toBeNull();
+    expect(sch.suggestedStart! > c1.job.startDate).toBe(true);
+    expect(previewQuote(s, { ...q2, startDate: sch.suggestedStart! }).timeConflict).toBeNull();
+  });
+
+  it('kalendarz wyceny: oferta bez umowy jest widoczna, ale nie rezerwuje czasu; pełne delegowanie nie zajmuje godzin właściciela', () => {
+    const s0 = renoGame();
+    const e1 = craftEnquiry(s0);
+    const sent = ok(commands.sendQuote(s0, e1.id, defaultQuoteInput(s0, e1)));
+    const e2 = craftEnquiry(sent);
+    const q = defaultQuoteInput(sent, e2);
+    const sch = quoteSchedule(sent, q);
+    expect(sch.busy.map((b) => b.kind)).toEqual(['pending']);
+    expect(sch.days.every((d) => d.commitments === 0)).toBe(true);
+    const crew = crewKey([{ kind: 'sub', id: 'sub:1' }]);
+    expect(quoteSchedule(sent, { ...q, teamId: crew, supervision: 'hands-off' }).ownerHours).toBe(0);
+    expect(quoteSchedule(sent, { ...q, teamId: crew, supervision: 'supervise' }).ownerHours).toBe(1);
   });
 
   it('etat i sen zajmują dobę: 8 godz. dziennie na remont jest niemożliwe, a rezerwacja zmniejsza czas wolny dokładnie o godziny kontraktu', () => {

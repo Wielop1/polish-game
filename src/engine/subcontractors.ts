@@ -107,7 +107,7 @@ export function acceptSubOffer(s: GameState, subcontractId: string): string {
     c.prepaid = c.advanceNet;
   }
   logEvent(s, { id: `sub.contract:${c.id}:accepted`, date: today, type: 'sub.contract', tone: 'neutral', title: `Umowa z podwykonawcą: ${sub.name}`, detail: `${formatPLN(c.priceNet)} netto · start ${formatDatePL(start)}${c.advanceNet ? ` · zaliczka ${formatPLN(c.advanceNet)} (przedpłata, nie koszt)` : ''}`, amount: null, category: null });
-  return `Umowa zawarta. ${sub.name} zacznie pracę ${formatDatePL(start)}${c.advanceNet ? `; zaliczka ${formatPLN(c.advanceNet)} zostanie zapłacona w ciągu 2 dni` : ''}.`;
+  return `Umowa zawarta. ${sub.name} zacznie pracę ${formatDatePL(start)}${start > job.startDate ? ` — po starcie kontraktu (${formatDatePL(job.startDate)}), do tego czasu praca stoi` : ''}${c.advanceNet ? `; zaliczka ${formatPLN(c.advanceNet)} zostanie zapłacona w ciągu 2 dni` : ''}.`;
 }
 
 export function declineSubOffer(s: GameState, subcontractId: string): string {

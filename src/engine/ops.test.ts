@@ -4,7 +4,7 @@ import { activeBusiness } from './business.ts';
 import { addDays } from './date.ts';
 import { checkInvariants } from './invariants.ts';
 import { zl } from './money.ts';
-import { crewDay, complaintBps, defaultQuoteInput, jobFinancials, jobQuality, previewQuote, renoDashboard } from './renovation.ts';
+import { crewDay, complaintBps, defaultQuoteInput, jobFinancials, jobQuality, previewQuote, quoteSchedule, renoDashboard } from './renovation.ts';
 import { deferredAdvances, netWorth } from './selectors.ts';
 import { advanceDays } from './simulate.ts';
 import type { GameState } from './state.ts';
@@ -644,3 +644,39 @@ describe('12. wykonawcy wybrani wprost w wycenie (pracownik bez zakładania ekip
   });
 });
 
+
+describe('podwykonawca zajęty innym kontraktem', () => {
+  const twoJobs = () => {
+    const g = opsGame({ reg: {} });
+    const sub = g.ops.subcontractors.find((x) => x.services.includes('malowanie'))!;
+    const q = { teamId: crewKey([{ kind: 'sub', id: sub.id }]), supervision: 'supervise' as const, hoursPerDay: 4 };
+    const c1 = contract(g, { quote: q });
+    const s1 = ok(commands.acceptSubOffer(c1.s, c1.s.ops.subcontracts.find((c) => c.status === 'offered')!.id));
+    return { s1, sub, q, c1 };
+  };
+
+  it('wycena ostrzega, że wybrany podwykonawca jest zajęty, a sugerowany start omija jego kontrakt', () => {
+    const { s1, sub, q, c1 } = twoJobs();
+    const enq = craftEnquiry(s1);
+    const input = { ...defaultQuoteInput(s1, enq), ...q, startDate: c1.job.startDate, durationDays: 7 };
+    const p = previewQuote(s1, input);
+    expect(p.warnings.join(' ')).toMatch(/Podwykonawca .* jest przydzielony do kontraktu/);
+    const sch = quoteSchedule(s1, input);
+    expect(sch.suggestedStart).not.toBeNull();
+    expect(previewQuote(s1, { ...input, startDate: sch.suggestedStart! }).warnings.join(' ')).not.toMatch(/Podwykonawca .* jest przydzielony/);
+    expect(sub.id).toBeTruthy();
+  });
+
+  it('gdy podwykonawca zaczyna po starcie kontraktu, przestój mówi to wprost (nazwa i data), a nie „ekipa nieprzydzielona”', () => {
+    const { s1, q } = twoJobs();
+    const c2 = contract(s1, { quote: q });
+    expect(c2.s.reno.jobs.at(-1)!.crew.teamId).not.toBeNull();
+    const offer = c2.s.ops.subcontracts.find((c) => c.status === 'offered')!;
+    expect(offer.startDate > c2.job.startDate).toBe(true);
+    const s2 = ok(commands.acceptSubOffer(c2.s, offer.id));
+    const stuck = runUntil(s2, (x) => !!jobOf(x, c2.job.id).blockedReason && /podwykonawca/.test(jobOf(x, c2.job.id).blockedReason!), 40);
+    const reason = jobOf(stuck, c2.job.id).blockedReason!;
+    expect(reason).toMatch(/zacznie dopiero/);
+    expect(reason).not.toMatch(/nieprzydzielona/);
+  });
+});

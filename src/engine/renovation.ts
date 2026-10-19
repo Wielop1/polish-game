@@ -350,6 +350,15 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
         if (hit && e) warnings.push(`${personName(personById(s, e.personId)!)} jest ${describeConflict(s, hit)}.`);
       }
     }
+    for (const m of team.members) {
+      if (m.kind !== 'sub') continue;
+      const hit = resourceBusy(s, 'sub', m.id, i.startDate, addDays(i.startDate, Math.max(1, i.durationDays) - 1));
+      if (hit) warnings.push(`Podwykonawca ${subById(s, m.id)?.name.replace(' (fikcyjna)', '') ?? m.id} jest ${describeConflict(s, hit)} — zacznie u Ciebie najwcześniej ${formatDatePL(addDays(hit.to, 1))}, a praca stoi do tego czasu.`);
+    }
+    if (i.vehicleId) {
+      const hit = resourceBusy(s, 'vehicle', i.vehicleId, i.startDate, addDays(i.startDate, Math.max(1, i.durationDays) - 1));
+      if (hit) warnings.push(`Pojazd jest już ${describeConflict(s, hit)}.`);
+    }
     if (day.coordination < 10_000) warnings.push(`Praca w ${day.workers.filter((w) => w.c > 0).length} osoby wymaga koordynacji — wydajność zespołu jest niższa niż suma wydajności jednostek.`);
     if (day.workers.filter((w) => w.c > 0).length > Math.max(1, Math.floor(norm / 100 / 12))) warnings.push('Zakres jest zbyt mały, by wszyscy członkowie ekipy pracowali efektywnie — dodatkowe osoby niewiele przyspieszą pracę.');
     if (supervision === 'hands-off') warnings.push('Bez nadzoru właściciela rośnie ryzyko problemów i spada jakość (−4 pkt jakości).');
@@ -428,6 +437,86 @@ export function defaultQuoteInput(s: GameState, enq: RenoEnquiry): QuoteInput {
   }
   const p1 = previewQuote(s, { ...base, durationDays, startDate: start });
   return { ...base, startDate: start, durationDays, priceNet: roundTo(mulBps(p1.planned.total, 12_500), zl(10)) };
+}
+
+/* ---------- Zajęte terminy przy wycenie ---------- */
+
+export interface ScheduleDay {
+  date: IsoDate;
+  /** Godziny wolne właściciela tego dnia — bez godzin, których wymagałaby wyceniana praca. */
+  free: number;
+  /** Godziny zajęte przez podpisane kontrakty i inne zobowiązania czasowe. */
+  commitments: number;
+  /** Czy wyceniana praca nie zmieści się w tym dniu w dobie właściciela. */
+  overload: boolean;
+}
+export interface ScheduleBusy {
+  id: string;
+  label: string;
+  from: IsoDate;
+  to: IsoDate;
+  hoursPerDay: number;
+  /** `job` = podpisany kontrakt (rezerwuje czas); `pending` = oferta bez podpisanej umowy (czas jeszcze nie zarezerwowany). */
+  kind: 'job' | 'pending';
+}
+export interface QuoteSchedule {
+  /** Godziny dziennie, które wyceniana praca zabiera właścicielowi (praca = godziny dzienne, nadzór = 1, pełne delegowanie = 0). */
+  ownerHours: number;
+  days: ScheduleDay[];
+  busy: ScheduleBusy[];
+  /** Najwcześniejszy start (od jutra), w którym cały czas realizacji mieści się w dobie właściciela, a wybrani pracownicy, podwykonawcy i pojazd są wolni. */
+  suggestedStart: IsoDate | null;
+}
+
+/**
+ * Podgląd obciążenia kalendarza dla wyceny: które dni są już zajęte kontraktami, gdzie wyceniana praca się nie zmieści
+ * i kiedy jest najbliższy wolny termin. Czysta projekcja — niczego nie rezerwuje i nie zmienia stanu.
+ */
+export function quoteSchedule(s: GameState, i: QuoteInput): QuoteSchedule {
+  const today = s.clock.today;
+  const from = addDays(today, 1);
+  const hpd = clamp(Math.round(i.hoursPerDay) || 1, 1, 8);
+  const days = Number.isInteger(i.durationDays) && i.durationDays >= 1 ? Math.min(i.durationDays, 200) : 1;
+  const members = parseCrewKey(i.teamId) ?? (i.teamId ? s.ops.teams.find((t) => t.id === i.teamId)?.members : undefined) ?? null;
+  const ownerWorks = !i.teamId || !members || members.some((m) => m.kind === 'owner');
+  const ownerHours = ownerWorks ? hpd : i.supervision === 'hands-off' ? 0 : 1;
+  const employmentIds = (members ?? []).filter((m) => m.kind === 'employee').map((m) => m.id);
+  const subIds = (members ?? []).filter((m) => m.kind === 'sub').map((m) => m.id);
+
+  // okno: co najmniej 5 tygodni do przodu i cały wybrany termin z zapasem (min. 3 tygodnie od startu) (maks. 130 dni — limit startu to 120)
+  const windowEnd = [addDays(today, 34), addDays(i.startDate, Math.max(days + 6, 21))].reduce((a, b) => (a > b ? a : b));
+  const to = windowEnd > addDays(today, 130) ? addDays(today, 130) : windowEnd;
+  const out: ScheduleDay[] = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    const b = budgetFor(s, d);
+    out.push({ date: d, free: b.free - ownerHours, commitments: b.commitments, overload: b.free - ownerHours < 0 });
+  }
+
+  const busy: ScheduleBusy[] = [];
+  for (const j of s.reno.jobs) {
+    if (j.stage === 'done' || j.stage === 'cancelled' || j.deadline < from) continue;
+    busy.push({ id: j.id, label: `${SERVICE_BY_ID.get(j.serviceId)?.label ?? j.serviceId} — ${j.clientName.split(' (')[0]}`, from: j.startDate, to: j.deadline, hoursPerDay: j.hoursPerDay, kind: 'job' });
+  }
+  for (const q of s.reno.quotes) {
+    if (q.status !== 'sent' && q.status !== 'counter' && q.status !== 'accepted') continue;
+    const end = addDays(q.startDate, q.durationDays - 1);
+    if (end < from) continue;
+    const enq = s.reno.enquiries.find((e) => e.id === q.enquiryId);
+    busy.push({ id: q.id, label: `${SERVICE_BY_ID.get(q.serviceId)?.label ?? q.serviceId} — ${(enq?.clientName ?? 'klient').split(' (')[0]}`, from: q.startDate, to: end, hoursPerDay: q.hoursPerDay, kind: 'pending' });
+  }
+  busy.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+
+  let suggestedStart: IsoDate | null = null;
+  for (let start = from; start <= addDays(today, 120); start = addDays(start, 1)) {
+    const end = addDays(start, days - 1);
+    if (firstOverload(s, start, end, { extraHoursPerDay: ownerHours })) continue;
+    if (employmentIds.some((id) => resourceBusy(s, 'employee', id, start, end))) continue;
+    if (i.vehicleId && resourceBusy(s, 'vehicle', i.vehicleId, start, end)) continue;
+    if (subIds.some((id) => resourceBusy(s, 'sub', id, start, end))) continue;
+    suggestedStart = start;
+    break;
+  }
+  return { ownerHours, days: out, busy, suggestedStart };
 }
 
 /* ---------- Pomocnicze: dokumenty i gotówka firmy ---------- */
@@ -859,7 +948,9 @@ function requestCrewSubOffers(s: GameState, job: RenoJob, team: { members: { kin
     const sub = subById(s, m.id)!;
     if (!sub.services.includes(job.serviceId)) continue;
     const workers = (team?.members ?? []).filter((x) => x.kind !== 'owner').length + (ownerWorks ? 1 : 0);
-    msgs.push(requestSubOffer(s, m.id, job.id, clamp(Math.floor(10_000 / Math.max(1, workers) / 500) * 500, 1_000, 10_000)));
+    const msg = requestSubOffer(s, m.id, job.id, clamp(Math.floor(10_000 / Math.max(1, workers) / 500) * 500, 1_000, 10_000));
+    const offer = s.ops.subcontracts.at(-1)!;
+    msgs.push(offer.startDate > job.startDate ? `${msg} UWAGA: ${sub.name.replace(' (fikcyjna)', '')} jest zajęty — zacznie dopiero ${formatDatePL(offer.startDate)}, a kontrakt startuje ${formatDatePL(job.startDate)} (do tego czasu praca stoi, a termin ${formatDatePL(job.deadline)} jest zagrożony).` : msg);
   }
   return msgs;
 }
@@ -1168,6 +1259,30 @@ function maybeIssue(s: GameState, job: RenoJob, date: IsoDate, crewLevel: number
   logEvent(s, { id: `reno.issue:${id}`, date, type: 'reno.issue', tone: 'warning', title: `${job.clientName}: ${title}`, detail: `Dodatkowa praca ok. ${(addedCenti / 100).toFixed(1).replace('.', ',')} godz.${delayDays > 0 ? ` · przerwa ${delayDays} dn.` : ''}`, amount: null, category: null });
 }
 
+/** Dlaczego w dzień roboczy nikt nie pracuje przy kontrakcie — z nazwami wykonawców i datami, zamiast ogólnego „ekipa nieprzydzielona”. */
+function crewIdleReason(s: GameState, job: RenoJob, date: IsoDate): string {
+  const team = job.crew.teamId ? s.ops.teams.find((t) => t.id === job.crew.teamId) : undefined;
+  if (!team) return 'Brak wykonawców: do kontraktu nie przypisano ekipy, a właściciel nie pracuje (zmień wykonawców w wycenie nowego kontraktu lub przypisz ekipę)';
+  const why: string[] = [];
+  for (const m of team.members) {
+    if (m.kind === 'sub') {
+      const name = subById(s, m.id)?.name.replace(' (fikcyjna)', '') ?? m.id;
+      const mine = subcontractsOfJob(s, job.id).filter((c) => c.subId === m.id);
+      const running = mine.filter((c) => c.status === 'accepted' || c.status === 'in_progress');
+      const waiting = running.find((c) => date < addDays(c.startDate, c.delayDays));
+      if (waiting) why.push(`podwykonawca ${name} zacznie dopiero ${formatDatePL(addDays(waiting.startDate, waiting.delayDays))}${waiting.delayDays > 0 ? ' (opóźniony start)' : ' (jest zajęty innym kontraktem)'}`);
+      else if (running.length > 0) why.push(`podwykonawca ${name} wykonał już swój zakres`);
+      else if (mine.some((c) => c.status === 'offered')) why.push(`oferta podwykonawcy ${name} czeka na Twoją akceptację w „Podwykonawcy”`);
+      else why.push(`podwykonawca ${name} nie ma jeszcze umowy przy tym kontrakcie — poproś go o ofertę w „Podwykonawcy”`);
+    } else if (m.kind === 'employee') {
+      const e = employmentById(s, m.id);
+      const p = e ? personById(s, e.personId) : undefined;
+      if (!e || !employmentActiveOn(e, date)) why.push(`pracownik ${p ? personName(p) : m.id} nie ma aktywnej umowy w tym dniu`);
+    }
+  }
+  return `Brak dostępnych wykonawców: ${why.length ? why.join('; ') : 'nikt z ekipy nie jest dziś dostępny'}`;
+}
+
 function workJob(s: GameState, b: Business, job: RenoJob, date: IsoDate, used: Set<string>): void {
   const order = s.serviceOrders.find((o) => o.id === job.orderId)!;
   const commitment = s.commitments.find((c) => c.id === order.commitmentId);
@@ -1188,7 +1303,7 @@ function workJob(s: GameState, b: Business, job: RenoJob, date: IsoDate, used: S
   if (cd.blocked) { job.blockedDays += 1; job.stage = 'materials'; job.blockedReason = cd.blocked; return; }
   if (cd.raw <= 0) {
     // zespół bez właściciela nie pracuje w weekendy — to nie jest przestój; w dzień roboczy brak ludzi to przestój
-    if (weekdayIndex(date) < 5) { job.blockedDays += 1; job.blockedReason = 'Brak dostępnych wykonawców (ekipa nieprzydzielona lub nieobecna)'; }
+    if (weekdayIndex(date) < 5) { job.blockedDays += 1; job.blockedReason = crewIdleReason(s, job, date); }
     return;
   }
   let p = Math.min(cd.raw, total - job.progressCenti);

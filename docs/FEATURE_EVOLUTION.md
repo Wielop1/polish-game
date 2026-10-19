@@ -170,6 +170,7 @@ Każde uproszczenie jest świadome i opisane w `LEGAL_SOURCES.md` lub `DECISIONS
 38. **Zapas wspólny**: materiały są wspólne dla kontraktów; braki liczone z priorytetem wcześniejszego startu; brak rezerwacji zakupów per kontrakt i dostaw (FE-CREW-01, FE-IND-01).
 39. **Rentowność**: koszty stałe pokazane osobno, ale nie rozdzielane na kontrakty; prognoza płynności jest szacunkiem (płace wg bieżących umów, składki właściciela wg ostatniego miesiąca) (FE-PROFIT-01).
 40. **Przyszłe rozszerzenia (nie implementować teraz)**: urlopy, L4, PPK, nadgodziny; szkolenia i rozwój pracowników; morale, lojalność i odejścia; kierownicy ekip; delegowanie całych firm; pojazdy w leasingu; magazyny i logistyka; umowy B2B i przetargi; zaawansowane prawo pracy; rozwinięta księgowość i usługi doradcy podatkowego (FE-EMP-01, FE-CREW-01, FE-FLEET-01, FE-ACC-01).
+41. **Kalendarz zajętości przy wycenie** (`quoteSchedule`, karta zapytania i kreator wyceny): oś dni liczona z budżetu czasu właściciela (ta sama prawda co przy podpisie umowy); oferty bez podpisanej umowy są tylko wylistowane (nie rezerwują czasu); „najbliższy wolny start” uwzględnia dobę właściciela oraz wybranych pracowników i pojazd, ale nie sprzęt ani zapas materiałów; karta zapytania zakłada domyślny scenariusz (`defaultQuoteInput`: właściciel pracuje sam, domyślne godziny i czas) (FE-IND-01).
 
 ## 15. Pomysły na przyszłość (zachowane)
 

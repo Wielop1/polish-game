@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { activeBusiness, businessState, profileOf } from '../../engine/business.ts';
-import { addDays, formatDatePL } from '../../engine/date.ts';
+import { addDays, formatDatePL, weekdayIndex } from '../../engine/date.ts';
 import { formatPLN, zl } from '../../engine/money.ts';
 import {
   defaultQuoteInput, enquiryRateBps, equipmentStatus, jobFinancials, jobForecast, materialAvailable, materialPrice, ownedEquipment, previewQuote, renoDashboard, reputation, skillLevel,
   skillProgress, speedBps, splitKey, stockKey, stockQty, grossOfNet, equipmentBookValue,
 } from '../../engine/renovation.ts';
 import type { QuoteInput } from '../../engine/renovation.ts';
+import type { GameState, RenoEnquiry } from '../../engine/state.ts';
 import {
   ADVERTISING, COMPLEXITY_LABEL, EQUIPMENT, MATERIALS, MATERIAL_BY_ID, QUALITY_REQ_LABEL, SERVICES, SERVICE_BY_ID, SKILL_THRESHOLD_CENTI, SPECIALIZATION_COURSE, STANDARDS,
 } from '../../engine/renovationCatalog.ts';
@@ -18,7 +19,8 @@ import { liquidityForecast, teamLoad } from '../../engine/profitability.ts';
 import { activeEmployments, monthlyEmployerCost, personById, personLevel, personName, wageOn } from '../../engine/workforce.ts';
 import { vehicleDef } from '../../engine/fleet.ts';
 import { subPrice } from '../../engine/subcontractors.ts';
-import { crewKey, parseCrewKey } from '../../engine/renovation.ts';
+import { resourceBusy } from '../../engine/teams.ts';
+import { crewKey, parseCrewKey, quoteSchedule } from '../../engine/renovation.ts';
 import type { CrewMember } from '../../engine/renovation.ts';
 import { useGameStore } from '../../store/gameStore.ts';
 import { ProgressBar } from '../components/charts.tsx';
@@ -172,6 +174,58 @@ export function RenoDashboardScreen() {
 
 /* ---------- 2. Zapytania klientów ---------- */
 
+/** Werdykt „czy zdążę?” na karcie zapytania: czy oczekiwany termin klienta jest wolny, kto go zajmuje i kiedy najwcześniej mogę zacząć. */
+function EnquiryAvailability({ game, enq }: { game: GameState; enq: RenoEnquiry }) {
+  const v = useMemo(() => {
+    const base = defaultQuoteInput(game, enq);
+    const tomorrow = addDays(game.clock.today, 1);
+    const wish = enq.desiredStart > tomorrow ? enq.desiredStart : tomorrow;
+    const q: QuoteInput = { ...base, startDate: wish };
+    const sch = quoteSchedule(game, q);
+    const end = addDays(wish, base.durationDays - 1);
+    const blocking = sch.busy.filter((b) => b.kind === 'job' && b.from <= end && wish <= b.to);
+    const clash = sch.days.some((d) => d.date >= wish && d.date <= end && d.overload);
+    const strip = sch.days.filter((d) => d.date >= addDays(wish, -3)).slice(0, 21);
+    return { q, sch, wish, end, blocking, clash, strip, firstFree: sch.suggestedStart };
+  }, [game, enq]);
+  const { q, wish, end, blocking, clash, strip, firstFree } = v;
+  const label = (d: string) => `${d.slice(8)}.${d.slice(5, 7)}`;
+  const delay = firstFree ? Math.round((Date.parse(firstFree) - Date.parse(wish)) / 86_400_000) : null;
+  const tooLate = delay !== null && delay > enq.flexDays;
+  const inWish = (d: string) => d >= wish && d <= end;
+  return (
+    <div className={cx('mt-3 rounded-xl border p-3 text-xs', clash ? (tooLate || firstFree === null ? 'border-loss/40 bg-loss/5' : 'border-gold/40 bg-gold/5') : 'border-gain/30 bg-gain/5')} data-testid={`enquiry-availability-${enq.id}`} data-state={clash ? 'busy' : 'free'}>
+      <div className={cx('text-sm font-semibold', clash ? (tooLate || firstFree === null ? 'text-loss' : 'text-gold') : 'text-gain')}>
+        {clash ? '✖ Masz zajęty termin' : '✓ Termin klienta jest wolny'}
+      </div>
+      <p className="mt-0.5 text-slate-300">
+        {clash
+          ? <>Klient chce <strong>{label(wish)}–{label(end)}</strong> ({q.durationDays} dni po {q.hoursPerDay} godz.). {blocking.length > 0 ? <>W tym czasie trwa: {blocking.map((b) => `${b.label.split(' — ')[0]} (do ${label(b.to)})`).join(', ')}. </> : <>Doba się nie zmieści (etat, sen, obowiązki). </>}</>
+          : <>Zmieścisz <strong>{label(wish)}–{label(end)}</strong> ({q.durationDays} dni po {q.hoursPerDay} godz.) bez kolizji z innymi kontraktami.</>}
+        {clash && (firstFree
+          ? <>Najwcześniej możesz zacząć <strong>{label(firstFree)}</strong> ({delay === 0 ? 'bez opóźnienia' : `${delay} dn. po życzeniu klienta`}){tooLate ? ` — klient dopuszcza tylko ±${enq.flexDays} dn., więc może odmówić lub poprosić o inną datę` : ''}.</>
+          : ' W ciągu 120 dni nie ma wolnego terminu na tę pracę.')}
+      </p>
+      <div className="mt-2 grid gap-0.5" style={{ gridTemplateColumns: `repeat(${strip.length}, minmax(0, 1fr))` }} aria-label="Najbliższe dni" data-testid={`enquiry-strip-${enq.id}`}>
+        {strip.map((d) => (
+          <div
+            key={d.date}
+            title={`${formatDatePL(d.date)}: ${d.commitments > 0 ? `zajęte kontraktami ${d.commitments} godz.` : 'wolne'}${d.overload ? ' — ta praca się nie zmieści' : ''}`}
+            className={cx(
+              'rounded-sm py-0.5 text-center text-[10px] leading-tight',
+              d.overload ? 'bg-loss/30 text-loss' : d.commitments > 0 ? 'bg-sky/20 text-sky' : 'bg-ink-800 text-slate-400',
+              inWish(d.date) && 'ring-1 ring-gold',
+            )}
+          >{Number(d.date.slice(8))}</div>
+        ))}
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-slate-500">
+        <span>szare — wolne</span><span className="text-sky">niebieskie — zajęte, ale się mieści</span><span className="text-loss">czerwone — nie zmieści się</span><span className="text-gold">ramka — termin klienta</span>
+      </div>
+    </div>
+  );
+}
+
 export function RenoEnquiriesScreen() {
   const { game, biz, isReno } = useReno();
   const select = useGameStore((s) => s.selectEnquiry);
@@ -213,6 +267,7 @@ export function RenoEnquiriesScreen() {
                     <Row k="Maks. czas realizacji" v={`${e.maxDays} dni`} />
                     <Row k="Odpowiedz do" v={formatDatePL(e.respondBy)} tone="text-gold" />
                   </dl>
+                  <EnquiryAvailability game={game} enq={e} />
                   <div className="mt-3 flex gap-2">
                     <Button variant="primary" data-testid={`quote-${e.id}`} onClick={() => { select(e.id); navigate('renoQuotes'); }}>Wyceń</Button>
                     <Button variant="ghost" onClick={() => decline(e.id)}>Odrzuć</Button>
@@ -236,6 +291,84 @@ export function RenoEnquiriesScreen() {
 
 /* ---------- 3. Wyceny ---------- */
 
+const MONTHS_SHORT = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
+
+/** Kalendarz zajętości przy wycenie: dni zajęte kontraktami, kolizje wycenianej pracy i najbliższy wolny termin. Kliknięcie dnia ustawia początek prac. */
+function QuoteCalendar({ game, enq, q, planWarnings, onPick }: { game: GameState; enq: RenoEnquiry; q: QuoteInput; planWarnings: string[]; onPick: (date: string) => void }) {
+  const sched = useMemo(() => quoteSchedule(game, q), [game, q.startDate, q.durationDays, q.hoursPerDay, q.teamId, q.supervision, q.vehicleId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dur = Number.isInteger(q.durationDays) && q.durationDays >= 1 ? q.durationDays : 1;
+  const selEnd = addDays(q.startDate, dur - 1);
+  const inSel = (d: string) => d >= q.startDate && d <= selEnd;
+  const windowOverload = sched.days.find((d) => inSel(d.date) && d.overload);
+  const resourceClash = planWarnings.some((w) => /przydzielony do kontraktu|Pojazd jest już/.test(w));
+  const ok = !windowOverload && !resourceClash;
+  const lead = weekdayIndex(sched.days[0]!.date);
+  const cells: (typeof sched.days[number] | null)[] = [...Array.from({ length: lead }, () => null), ...sched.days];
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks = Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+  const label = (d: string) => `${d.slice(8)}.${d.slice(5, 7)}`;
+  return (
+    <div className="space-y-3 rounded-xl border border-ink-700 p-3 text-sm" data-testid="quote-calendar">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 className="font-semibold text-slate-200">Twój kalendarz</h4>
+        <span className="text-xs text-slate-500">Ta praca zajmie Ci {sched.ownerHours} godz. dziennie · kliknij dzień, by ustawić start</span>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[10px] tracking-wide text-slate-500 uppercase">{['pn', 'wt', 'śr', 'cz', 'pt', 'so', 'nd'].map((x) => <div key={x}>{x}</div>)}</div>
+      <div className="space-y-1">
+        {weeks.map((wk, wi) => (
+          <div key={wi} className="grid grid-cols-7 gap-1">
+            {wk.map((d, di) => d === null ? <div key={di} /> : (
+              <button
+                key={d.date}
+                type="button"
+                onClick={() => onPick(d.date)}
+                title={`${formatDatePL(d.date)}: kontrakty i obowiązki zajmują ${d.commitments} godz.; po tej wycenie zostaje ${d.free} godz.${d.overload ? ' — NIE MIEŚCI SIĘ' : ''}`}
+                data-testid={`qcal-${d.date}`}
+                data-state={d.overload ? 'overload' : d.commitments > 0 ? 'busy' : 'free'}
+                className={cx(
+                  'rounded-md px-0.5 py-1 text-center text-[11px] leading-tight transition hover:brightness-125',
+                  d.overload ? 'bg-loss/25 text-loss' : d.commitments > 0 ? 'bg-sky/15 text-sky' : 'bg-ink-800 text-slate-300',
+                  inSel(d.date) && 'ring-2 ring-gold',
+                )}
+              >
+                <div className="font-semibold">{d.date.slice(8) === '01' || (wi === 0 && di === lead) ? `${Number(d.date.slice(8))} ${MONTHS_SHORT[Number(d.date.slice(5, 7)) - 1]}` : Number(d.date.slice(8))}</div>
+                <div className="text-[10px] opacity-80">{d.commitments > 0 ? `zajęte ${d.commitments}h` : 'wolne'}</div>
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+        <span><span className="mr-1 inline-block size-2 rounded-sm bg-ink-800 ring-1 ring-ink-600" />wolne</span>
+        <span><span className="mr-1 inline-block size-2 rounded-sm bg-sky/40" />zajęte kontraktami (mieści się)</span>
+        <span><span className="mr-1 inline-block size-2 rounded-sm bg-loss/50" />nie zmieści się</span>
+        <span><span className="mr-1 inline-block size-2 rounded-sm ring-2 ring-gold" />wybrany termin</span>
+      </div>
+      <div className={cx('rounded-lg border px-3 py-2 text-xs', ok ? 'border-gain/30 bg-gain/5 text-gain' : 'border-loss/40 bg-loss/5 text-loss')} data-testid="quote-availability">
+        {ok ? `✓ Termin ${label(q.startDate)}–${label(selEnd)} jest wolny.` : windowOverload ? `✖ Kolizja od ${label(windowOverload.date)}: brakuje ${-windowOverload.free} godz. w dobie.` : '✖ Ktoś z ekipy lub pojazd jest zajęty w tym terminie (szczegóły w ostrzeżeniach).'}
+        {!ok && (sched.suggestedStart
+          ? <> Najbliższy wolny start: <strong>{label(sched.suggestedStart)}</strong> <Button variant="secondary" className="ml-1 px-2 py-0.5 text-xs" onClick={() => onPick(sched.suggestedStart!)} data-testid="qcal-suggest">Ustaw {label(sched.suggestedStart)}</Button></>
+          : ' Nie ma wolnego terminu w ciągu 120 dni — skróć czas, zmniejsz godziny dziennie albo zleć pracę ekipie.')}
+      </div>
+      <p className="text-xs text-slate-500">Klient chciałby zacząć od <strong className="text-slate-300">{formatDatePL(enq.desiredStart)}</strong> (elastyczność ±{enq.flexDays} dni), a skończyć w {enq.maxDays} dni od startu.</p>
+      <div>
+        <div className="mb-1 text-xs text-slate-400">Zajęte terminy</div>
+        {sched.busy.length === 0 ? <p className="text-xs text-slate-500">Brak kontraktów ani ofert w kalendarzu — wszystko wolne.</p> : (
+          <ul className="space-y-1 text-xs" data-testid="quote-busy">
+            {sched.busy.map((b) => (
+              <li key={b.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-slate-300">{b.label}</span>
+                <span className="text-slate-400">{formatDatePL(b.from)} – {formatDatePL(b.to)} · {b.hoursPerDay} godz./dz. <Badge tone={b.kind === 'job' ? 'sky' : 'neutral'}>{b.kind === 'job' ? 'kontrakt' : 'oferta bez umowy'}</Badge></span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {sched.busy.some((b) => b.kind === 'pending') && <p className="mt-1 text-xs text-slate-500">Oferty bez podpisanej umowy jeszcze nie rezerwują czasu — jeśli klient je przyjmie, ich terminy też zajmą Ci kalendarz.</p>}
+      </div>
+    </div>
+  );
+}
+
 function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   const game = useGameStore((s) => s.game)!;
   const send = useGameStore((s) => s.sendQuote);
@@ -255,7 +388,7 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   const field = 'w-full rounded-xl border border-ink-600 bg-ink-900/80 px-3 py-2 text-slate-100 focus:border-sky focus:outline-none';
   // podwykonawcy gotowi wziąć całe zlecenie (poziom jakości ≥ trudność), z ceną za 100% zakresu
   const subLevel = (quality: number) => Math.max(1, Math.min(5, Math.round((quality - 40) / 10)));
-  const subOptions = game.ops.subcontractors.filter((x) => x.services.includes(enq.serviceId)).map((x) => ({ sub: x, price: subPrice(x, enq.serviceId, enq.units, enq.complexity, 10_000), fits: subLevel(x.quality) >= p.difficulty }));
+  const subOptions = game.ops.subcontractors.filter((x) => x.services.includes(enq.serviceId)).map((x) => ({ sub: x, price: subPrice(x, enq.serviceId, enq.units, enq.complexity, 10_000), fits: subLevel(x.quality) >= p.difficulty, busyUntil: resourceBusy(game, 'sub', x.id, q.startDate, addDays(q.startDate, Math.max(1, Number.isNaN(q.durationDays) ? 1 : q.durationDays) - 1))?.to ?? null }));
   // skład wykonawców: z gotowej ekipy albo wybrany tu (właściciel / zatrudnieni pracownicy / podwykonawcy)
   const members: CrewMember[] = !q.teamId ? [{ kind: 'owner', id: 'owner' }] : parseCrewKey(q.teamId) ?? game.ops.teams.find((tm) => tm.id === q.teamId)?.members ?? [{ kind: 'owner', id: 'owner' }];
   const has = (kind: CrewMember['kind'], id: string) => members.some((m) => m.kind === kind && m.id === id);
@@ -300,8 +433,8 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
               {employees.map(({ e, name, level }) => (
                 <label key={e.id} className="flex items-center gap-2 text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('employee', e.id)} onChange={() => toggle('employee', e.id)} data-testid={`crew-employee-${e.id}`} />{name} <span className={cx('text-xs', level >= p.difficulty ? 'text-slate-500' : 'text-gold')}>· {e.role.toLowerCase()}, poziom {level}/{p.difficulty}</span></label>
               ))}
-              {subOptions.map(({ sub, price: sp, fits }) => (
-                <label key={sub.id} className="flex items-center gap-2 text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('sub', sub.id)} onChange={() => toggle('sub', sub.id)} data-testid={`crew-sub-${sub.id}`} />{sub.name.replace(' (fikcyjna)', '')} <span className={cx('text-xs', fits ? 'text-slate-500' : 'text-gold')}>· podwykonawca, {formatPLN(sp, { round: true })} za całość{fits ? '' : ' (słabsze kompetencje)'}</span></label>
+              {subOptions.map(({ sub, price: sp, fits, busyUntil }) => (
+                <label key={sub.id} className="flex items-center gap-2 text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('sub', sub.id)} onChange={() => toggle('sub', sub.id)} data-testid={`crew-sub-${sub.id}`} />{sub.name.replace(' (fikcyjna)', '')} <span className={cx('text-xs', fits ? 'text-slate-500' : 'text-gold')}>· podwykonawca, {formatPLN(sp, { round: true })} za całość{fits ? '' : ' (słabsze kompetencje)'}</span>{busyUntil && <span className="text-xs text-loss"> · zajęty do {formatDatePL(busyUntil)}</span>}</label>
               ))}
             </div>
             {employees.length === 0 && <p className="text-xs text-slate-500">Zatrudnieni pracownicy pojawią się tu automatycznie (od dnia rozpoczęcia pracy) — nie trzeba tworzyć ekipy.</p>}
@@ -343,6 +476,7 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
           <div className="flex flex-wrap gap-2 text-xs"><span className="self-center text-slate-400">Cena = koszt + narzut:</span>{[1_500, 2_500, 3_500].map((m) => <Button key={m} variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => setMarkup(m)}>{m / 100}%</Button>)}</div>
         </div>
         <div className="space-y-3 text-sm" data-testid="quote-preview">
+          <QuoteCalendar game={game} enq={enq} q={q} planWarnings={p.warnings} onPick={(date) => set({ startDate: date })} />
           <dl className="divide-y divide-ink-700/60 rounded-xl border border-ink-700 px-3">
             <Row k="Materiały (cena z dziś)" v={<Money value={p.planned.materials} />} />
             <Row k={`Robocizna (${(p.plannedCenti / 100).toFixed(1).replace('.', ',')} godz.)`} v={<Money value={p.planned.labor} />} />
