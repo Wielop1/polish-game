@@ -23,6 +23,7 @@ export type Screen =
   | 'bizSettlement' | 'bizReport' | 'planning' | 'bizAccounting'
   | 'renoDashboard' | 'renoEnquiries' | 'renoQuotes' | 'renoContracts' | 'renoSchedule' | 'renoStock' | 'renoReputation'
   | 'hrEmployees' | 'hrRecruitment' | 'opsSubcontractors' | 'opsTeams' | 'opsSchedule' | 'opsVehicles' | 'opsProfit'
+  | 'marketLocal' | 'marketCompetition' | 'marketMarketing' | 'marketStrategy' | 'marketDemand'
   | 'game';
 
 export interface Notice {
@@ -90,7 +91,8 @@ interface GameStore {
   maintainEquipment: (itemId: string) => boolean;
   buyMaterial: (key: string, qty: number) => boolean;
   buyMissingForJob: (jobId: string) => boolean;
-  setAdvertising: (level: 'none' | 'local' | 'intensive') => boolean;
+  setMarketingBudget: (channel: string, monthlyNet: number) => boolean;
+  setPositioning: (positioning: string) => boolean;
   addSpecialization: (serviceId: string) => boolean;
   declineEnquiry: (enquiryId: string) => boolean;
   sendQuote: (enquiryId: string, input: QuoteInput) => boolean;
@@ -226,7 +228,8 @@ export const useGameStore = create<GameStore>((set, get) => {
     maintainEquipment: (id) => exec((g) => commands.maintainEquipment(g, id)),
     buyMaterial: (key, qty) => exec((g) => commands.buyMaterial(g, key, qty)),
     buyMissingForJob: (id) => exec((g) => commands.buyMissingForJob(g, id)),
-    setAdvertising: (level) => exec((g) => commands.setAdvertising(g, level)),
+    setMarketingBudget: (channel, monthlyNet) => exec((g) => commands.setMarketingBudget(g, channel, monthlyNet)),
+    setPositioning: (positioning) => exec((g) => commands.setPositioning(g, positioning)),
     addSpecialization: (id) => exec((g) => commands.addSpecialization(g, id)),
     declineEnquiry: (id) => exec((g) => commands.declineEnquiry(g, id)),
     sendQuote: (enquiryId, input) => {

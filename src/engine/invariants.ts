@@ -1,4 +1,5 @@
 import { employmentContracts } from './contracts.ts';
+import { CHANNELS } from './marketConfig.ts';
 import { netWorthBreakdown } from './selectors.ts';
 import type { GameState } from './state.ts';
 import { budgetFor } from './time.ts';
@@ -396,6 +397,30 @@ export function checkInvariants(s: GameState): string[] {
     const d = docById.get(v.docId);
     if (!d || d.part !== 'capital' || d.taxAmount !== 0 || d.net !== v.cost) fail(`pojazd ${v.id}: brak dokumentu zakupu bez kosztu podatkowego`);
     if (v.conditionBps < 0 || v.conditionBps > 10_000) fail(`pojazd ${v.id}: stan poza zakresem`);
+  }
+  // 14. Rynek (v0.7): konkurenci, budżety marketingowe, strategia i odwołania zapytań do konkurentów.
+  const m = s.market;
+  const compIds = new Set<string>();
+  for (const c of m.competitors) {
+    if (compIds.has(c.id)) fail(`konkurent ${c.id}: zduplikowany identyfikator`);
+    compIds.add(c.id);
+    if ((c.status === 'exited') !== (c.exitedOn !== null)) fail(`konkurent ${c.id}: status „${c.status}” niezgodny z datą wyjścia`);
+    if (c.status === 'exited' && (c.backlogHours !== 0 || c.backlogValue !== 0)) fail(`konkurent ${c.id}: wycofany z rynku z niezerową zaległością pracy`);
+    if (c.backlogHours === 0 && c.backlogValue !== 0) fail(`konkurent ${c.id}: wartość zaległości bez godzin`);
+    if (c.month.revenue < 0 || c.month.hours < 0) fail(`konkurent ${c.id}: ujemne wyniki miesiąca`);
+  }
+  if (m.initializedOn === null && (m.competitors.length > 0 || m.current !== null)) fail('rynek nie jest uruchomiony, a zawiera konkurentów lub bieżący miesiąc');
+  if (m.initializedOn !== null && m.competitors.filter((c) => c.status === 'active').length === 0 && m.competitors.length === 0) fail('rynek uruchomiony bez konkurentów');
+  for (const [ch, v] of Object.entries(m.marketing.budgets)) if (!(ch in CHANNELS) || v < 0) fail(`marketing: nieprawidłowy budżet kanału ${ch}`);
+  for (const [ch, v] of Object.entries(m.marketing.reach)) if (!(ch in CHANNELS) || v < 0) fail(`marketing: nieprawidłowa widoczność kanału ${ch}`);
+  if (m.strategy.previous !== null && m.strategy.previous === m.strategy.positioning) fail('strategia: poprzednie pozycjonowanie równe obecnemu');
+  const last = m.months.at(-1);
+  for (let i = 1; i < m.months.length; i++) if (m.months[i]!.month <= m.months[i - 1]!.month) fail('rynek: miesiące nie są chronologiczne');
+  if (m.current && last && m.current.month <= last.month) fail('rynek: bieżący miesiąc nie jest po ostatnim zamkniętym');
+  for (const e of s.reno.enquiries) {
+    if (e.rivals > 0 && (!e.rivalId || !compIds.has(e.rivalId))) fail(`zapytanie ${e.id}: nieznany konkurent ${e.rivalId}`);
+    if (e.rivalAwarded && !e.rivalId) fail(`zapytanie ${e.id}: zlecenie przyznane konkurentowi bez konkurenta`);
+    if (e.rivalAwarded && (e.status === 'open' || e.status === 'quoted')) fail(`zapytanie ${e.id}: przyznane konkurentowi, a nadal otwarte`);
   }
   return errors;
 }

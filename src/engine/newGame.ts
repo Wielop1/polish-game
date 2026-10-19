@@ -3,6 +3,7 @@ import { CITIES, ECONOMY_V01, GAME_START, LIFESTYLE, SAVINGS, START_HOME, START_
 import { addDays, addMonths, diffDays } from './date.ts';
 import { createRng } from './rng.ts';
 import { emptyAccounting, emptyOps, emptyReno } from './industryDefaults.ts';
+import { initialMarketState } from './market.ts';
 import { logEvent, postTransaction } from './core.ts';
 import { typicalMonthlyNet } from './payroll.ts';
 import { processDay } from './simulate.ts';
@@ -212,6 +213,7 @@ export function createNewGame(input: NewGameInput): GameState {
     taxLosses: [],
     healthSettlements: [],
     reno: emptyReno(),
+    market: initialMarketState(),
     accounting: emptyAccounting(),
     ops: emptyOps(seed),
   };

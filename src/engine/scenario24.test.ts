@@ -4,7 +4,7 @@ import { activeBusiness } from './business.ts';
 import { addDays, diffDays } from './date.ts';
 import { checkInvariants } from './invariants.ts';
 import { zl } from './money.ts';
-import { defaultQuoteInput, jobFinancials, previewQuote, renoDashboard } from './renovation.ts';
+import { defaultQuoteInput, jobFinancials, jobShortage, previewQuote, renoDashboard } from './renovation.ts';
 import { netWorth } from './selectors.ts';
 import { advanceDays } from './simulate.ts';
 import type { GameState } from './state.ts';
@@ -20,7 +20,7 @@ import { opsGame, ok } from './testkit.ts';
 function play(seed: string, months: number): GameState {
   let s = opsGame({ seed, equip: ['paint-basic', 'sprayer', 'paint-basic', 'laser'], business: zl(150_000) });
   s = ok(commands.hireAccountingOffice(s, 'standard'));
-  s = ok(commands.setAdvertising(s, 'intensive'));
+  for (const [ch, amount] of [['search', zl(800)], ['portals', zl(600)], ['local_ads', zl(400)]] as const) s = ok(commands.setMarketingBudget(s, ch, amount));
   const end = addDays('2026-02-01', months * 30);
   let day = 0;
   while (s.clock.today < end) {
@@ -43,7 +43,8 @@ function play(seed: string, months: number): GameState {
       if (r.ok) s = r.state;
     }
     if (day === 90 && s.ops.vehicles.length === 0) { const r = commands.buyVehicle(s, 'van-small'); if (r.ok) s = r.state; }
-    for (const e of s.reno.enquiries.filter((x) => x.status === 'open')) {
+    // rynek (v0.7) daje kilkaset zapytań rocznie, a firma o takiej mocy obsłuży najwyżej kilka dziennie — wyceniamy dwa najstarsze (reszta wygasa), żeby test nie kopiował stanu setki razy
+    for (const e of s.reno.enquiries.filter((x) => x.status === 'open').slice(0, 2)) {
       let q: ReturnType<typeof defaultQuoteInput> = { ...defaultQuoteInput(s, e), advanceBps: 1_500 };
       if (e.serviceId === 'malowanie') {
         for (const tm of s.ops.teams) {
@@ -74,7 +75,7 @@ function play(seed: string, months: number): GameState {
     for (const c of s.ops.subcontracts.filter((x) => x.status === 'offered')) { const r = commands.acceptSubOffer(s, c.id); if (r.ok) s = r.state; }
     for (const c of s.ops.subcontracts.filter((x) => x.status === 'delivered')) { const r = commands.acceptSubWork(s, c.id); if (r.ok) s = r.state; }
     for (const j of s.reno.jobs.filter((x) => x.stage !== 'done' && x.stage !== 'cancelled')) {
-      if (diffDays(j.startDate, s.clock.today) <= 3) { const r = commands.buyMissingForJob(s, j.id); if (r.ok) s = r.state; }
+      if (diffDays(j.startDate, s.clock.today) <= 3 && Object.keys(jobShortage(s, j)).length > 0) { const r = commands.buyMissingForJob(s, j.id); if (r.ok) s = r.state; }
     }
     for (const c of s.reno.complaints.filter((x) => x.status === 'open')) { const r = commands.resolveComplaint(s, c.id, 'repair'); if (r.ok) s = r.state; }
     for (const it of s.reno.equipment) if (it.conditionBps < 3_500) { const r = commands.maintainEquipment(s, it.id); if (r.ok) s = r.state; }

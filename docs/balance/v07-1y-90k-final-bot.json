@@ -1,0 +1,956 @@
+{
+ "generatedAt": "2026-10-19T14:28:00.875Z",
+ "params": {
+  "years": 1,
+  "runs": 1,
+  "prefix": "bal",
+  "policies": [
+   "solo",
+   "owner+1",
+   "team3",
+   "team5",
+   "subs-only",
+   "grow",
+   "mixed"
+  ],
+  "capital": 9000000,
+  "marketing": null
+ },
+ "errors": [],
+ "summary": {
+  "params": {
+   "years": 1,
+   "runs": 1,
+   "prefix": "bal",
+   "policies": [
+    "solo",
+    "owner+1",
+    "team3",
+    "team5",
+    "subs-only",
+    "grow",
+    "mixed"
+   ],
+   "capital": 9000000
+  },
+  "policies": [
+   {
+    "policy": "solo",
+    "label": "Samozatrudnienie (sam właściciel)",
+    "runs": 1,
+    "inquiriesPerYear": {
+     "mean": 310,
+     "median": 310,
+     "p10": 310,
+     "p90": 310
+    },
+    "contractsPerYear": {
+     "mean": 52,
+     "median": 52,
+     "p10": 52,
+     "p90": 52
+    },
+    "conversion": 0.16774193548387098,
+    "quoteWinRate": 0.5652173913043478,
+    "declinedShare": 0.7032258064516129,
+    "unansweredShare": 0,
+    "revenuePerYear": {
+     "mean": 140972.93,
+     "median": 140972.93,
+     "p10": 140972.93,
+     "p90": 140972.93
+    },
+    "contractMargin": 0.7201212317854215,
+    "revenuePerWorkHour": 90.66716189447145,
+    "capacityUse": 0.7774200000000001,
+    "fixedCostsPerMonth": {
+     "mean": 1984.5733333333335,
+     "median": 1984.5733333333335,
+     "p10": 1984.5733333333335,
+     "p90": 1984.5733333333335
+    },
+    "payrollUtilization": null,
+    "minBusinessCash": {
+     "mean": 11704.08,
+     "median": 11704.08,
+     "p10": 11704.08,
+     "p90": 11704.08
+    },
+    "insolvencyRate": 0,
+    "netWorthGrowthPerYear": {
+     "mean": 36956.53,
+     "median": 36956.53,
+     "p10": 36956.53,
+     "p90": 36956.53
+    },
+    "operatingProfitPerYear": {
+     "mean": 77702.72,
+     "median": 77702.72,
+     "p10": 77702.72,
+     "p90": 77702.72
+    },
+    "ownerInjectionsPerYear": {
+     "mean": 0,
+     "median": 0,
+     "p10": 0,
+     "p90": 0
+    },
+    "avgEmployees": 0,
+    "marketShare": 0.026499302649930265,
+    "lostCapacityPerYear": 0,
+    "lostToRivalsPerYear": 16,
+    "competitorUtil": 0.7789416666666666,
+    "competitorExits": 0,
+    "competitorEntries": 0,
+    "invariantFailures": 0
+   },
+   {
+    "policy": "owner+1",
+    "label": "Właściciel + 1 pracownik",
+    "runs": 1,
+    "inquiriesPerYear": {
+     "mean": 273,
+     "median": 273,
+     "p10": 273,
+     "p90": 273
+    },
+    "contractsPerYear": {
+     "mean": 91,
+     "median": 91,
+     "p10": 91,
+     "p90": 91
+    },
+    "conversion": 0.3333333333333333,
+    "quoteWinRate": 0.6893939393939394,
+    "declinedShare": 0.5164835164835165,
+    "unansweredShare": 0,
+    "revenuePerYear": {
+     "mean": 227985.75,
+     "median": 227985.75,
+     "p10": 227985.75,
+     "p90": 227985.75
+    },
+    "contractMargin": 0.568026115667317,
+    "revenuePerWorkHour": 90.57728751743123,
+    "capacityUse": 0.6581059813753584,
+    "fixedCostsPerMonth": {
+     "mean": 4527.6125,
+     "median": 4527.6125,
+     "p10": 4527.6125,
+     "p90": 4527.6125
+    },
+    "payrollUtilization": 0.5629281549000735,
+    "minBusinessCash": {
+     "mean": 10054.08,
+     "median": 10054.08,
+     "p10": 10054.08,
+     "p90": 10054.08
+    },
+    "insolvencyRate": 0,
+    "netWorthGrowthPerYear": {
+     "mean": 35993.48,
+     "median": 35993.48,
+     "p10": 35993.48,
+     "p90": 35993.48
+    },
+    "operatingProfitPerYear": {
+     "mean": 75170.51,
+     "median": 75170.51,
+     "p10": 75170.51,
+     "p90": 75170.51
+    },
+    "ownerInjectionsPerYear": {
+     "mean": 0,
+     "median": 0,
+     "p10": 0,
+     "p90": 0
+    },
+    "avgEmployees": 0.9123287671232877,
+    "marketShare": 0.04377880184331797,
+    "lostCapacityPerYear": 0,
+    "lostToRivalsPerYear": 19,
+    "competitorUtil": 0.7694666666666667,
+    "competitorExits": 0,
+    "competitorEntries": 0,
+    "invariantFailures": 0
+   },
+   {
+    "policy": "team3",
+    "label": "Firma z 3 pracownikami",
+    "runs": 1,
+    "inquiriesPerYear": {
+     "mean": 497,
+     "median": 497,
+     "p10": 497,
+     "p90": 497
+    },
+    "contractsPerYear": {
+     "mean": 161,
+     "median": 161,
+     "p10": 161,
+     "p90": 161
+    },
+    "conversion": 0.323943661971831,
+    "quoteWinRate": 0.6192307692307693,
+    "declinedShare": 0.4768611670020121,
+    "unansweredShare": 0,
+    "revenuePerYear": {
+     "mean": 334724.42,
+     "median": 334724.42,
+     "p10": 334724.42,
+     "p90": 334724.42
+    },
+    "contractMargin": 0.2762599752954983,
+    "revenuePerWorkHour": 107.86497077191784,
+    "capacityUse": 0.45018310810810813,
+    "fixedCostsPerMonth": {
+     "mean": 12038.151666666667,
+     "median": 12038.151666666667,
+     "p10": 12038.151666666667,
+     "p90": 12038.151666666667
+    },
+    "payrollUtilization": 0.5320183599119532,
+    "minBusinessCash": {
+     "mean": 17.3,
+     "median": 17.3,
+     "p10": 17.3,
+     "p90": 17.3
+    },
+    "insolvencyRate": 1,
+    "netWorthGrowthPerYear": {
+     "mean": -110599.56,
+     "median": -110599.56,
+     "p10": -110599.56,
+     "p90": -110599.56
+    },
+    "operatingProfitPerYear": {
+     "mean": -51986.86,
+     "median": -51986.86,
+     "p10": -51986.86,
+     "p90": -51986.86
+    },
+    "ownerInjectionsPerYear": {
+     "mean": 45000,
+     "median": 45000,
+     "p10": 45000,
+     "p90": 45000
+    },
+    "avgEmployees": 2.4465753424657533,
+    "marketShare": 0.08048666354702855,
+    "lostCapacityPerYear": 5,
+    "lostToRivalsPerYear": 40,
+    "competitorUtil": 0.7504583333333333,
+    "competitorExits": 0,
+    "competitorEntries": 0,
+    "invariantFailures": 0
+   },
+   {
+    "policy": "team5",
+    "label": "Firma z 5 pracownikami",
+    "runs": 1,
+    "inquiriesPerYear": {
+     "mean": 506,
+     "median": 506,
+     "p10": 506,
+     "p90": 506
+    },
+    "contractsPerYear": {
+     "mean": 198,
+     "median": 198,
+     "p10": 198,
+     "p90": 198
+    },
+    "conversion": 0.391304347826087,
+    "quoteWinRate": 0.5963855421686747,
+    "declinedShare": 0.3438735177865613,
+    "unansweredShare": 0,
+    "revenuePerYear": {
+     "mean": 392518.18,
+     "median": 392518.18,
+     "p10": 392518.18,
+     "p90": 392518.18
+    },
+    "contractMargin": 0.25706121433662005,
+    "revenuePerWorkHour": 101.1892551011201,
+    "capacityUse": 0.4089697429231659,
+    "fixedCostsPerMonth": {
+     "mean": 20384.645833333332,
+     "median": 20384.645833333332,
+     "p10": 20384.645833333332,
+     "p90": 20384.645833333332
+    },
+    "payrollUtilization": 0.4263531408324486,
+    "minBusinessCash": {
+     "mean": 0.19,
+     "median": 0.19,
+     "p10": 0.19,
+     "p90": 0.19
+    },
+    "insolvencyRate": 1,
+    "netWorthGrowthPerYear": {
+     "mean": -188155.01,
+     "median": -188155.01,
+     "p10": -188155.01,
+     "p90": -188155.01
+    },
+    "operatingProfitPerYear": {
+     "mean": -143714.55,
+     "median": -143714.55,
+     "p10": -143714.55,
+     "p90": -143714.55
+    },
+    "ownerInjectionsPerYear": {
+     "mean": 45000,
+     "median": 45000,
+     "p10": 45000,
+     "p90": 45000
+    },
+    "avgEmployees": 3.7424657534246575,
+    "marketShare": 0.10231481481481482,
+    "lostCapacityPerYear": 6,
+    "lostToRivalsPerYear": 51,
+    "competitorUtil": 0.7465083333333333,
+    "competitorExits": 0,
+    "competitorEntries": 0,
+    "invariantFailures": 0
+   },
+   {
+    "policy": "subs-only",
+    "label": "Tylko podwykonawcy",
+    "runs": 1,
+    "inquiriesPerYear": {
+     "mean": 443,
+     "median": 443,
+     "p10": 443,
+     "p90": 443
+    },
+    "contractsPerYear": {
+     "mean": 73,
+     "median": 73,
+     "p10": 73,
+     "p90": 73
+    },
+    "conversion": 0.16478555304740405,
+    "quoteWinRate": 0.5615384615384615,
+    "declinedShare": 0.7065462753950339,
+    "unansweredShare": 0,
+    "revenuePerYear": {
+     "mean": 178160.91,
+     "median": 178160.91,
+     "p10": 178160.91,
+     "p90": 178160.91
+    },
+    "contractMargin": 0.2839714390771803,
+    "revenuePerWorkHour": 116.44427814197292,
+    "capacityUse": 0,
+    "fixedCostsPerMonth": {
+     "mean": 3756.3033333333333,
+     "median": 3756.3033333333333,
+     "p10": 3756.3033333333333,
+     "p90": 3756.3033333333333
+    },
+    "payrollUtilization": null,
+    "minBusinessCash": {
+     "mean": 2788.64,
+     "median": 2788.64,
+     "p10": 2788.64,
+     "p90": 2788.64
+    },
+    "insolvencyRate": 0,
+    "netWorthGrowthPerYear": {
+     "mean": -68302.8,
+     "median": -68302.8,
+     "p10": -68302.8,
+     "p90": -68302.8
+    },
+    "operatingProfitPerYear": {
+     "mean": 5516.97,
+     "median": 5516.97,
+     "p10": 5516.97,
+     "p90": 5516.97
+    },
+    "ownerInjectionsPerYear": {
+     "mean": 30000,
+     "median": 30000,
+     "p10": 30000,
+     "p90": 30000
+    },
+    "avgEmployees": 0,
+    "marketShare": 0.03618421052631579,
+    "lostCapacityPerYear": 1,
+    "lostToRivalsPerYear": 31,
+    "competitorUtil": 0.7653583333333333,
+    "competitorExits": 0,
+    "competitorEntries": 0,
+    "invariantFailures": 0
+   },
+   {
+    "policy": "grow",
+    "label": "Rosnąca firma (do 5 pracowników, gdy obłożona)",
+    "runs": 1,
+    "inquiriesPerYear": {
+     "mean": 457,
+     "median": 457,
+     "p10": 457,
+     "p90": 457
+    },
+    "contractsPerYear": {
+     "mean": 67,
+     "median": 67,
+     "p10": 67,
+     "p90": 67
+    },
+    "conversion": 0.14660831509846828,
+    "quoteWinRate": 0.5630252100840336,
+    "declinedShare": 0.7396061269146609,
+    "unansweredShare": 0,
+    "revenuePerYear": {
+     "mean": 191504.95,
+     "median": 191504.95,
+     "p10": 191504.95,
+     "p90": 191504.95
+    },
+    "contractMargin": 0.5826068203458971,
+    "revenuePerWorkHour": 112.9582802472631,
+    "capacityUse": 0.6639553648068671,
+    "fixedCostsPerMonth": {
+     "mean": 4498.135,
+     "median": 4498.135,
+     "p10": 4498.135,
+     "p90": 4498.135
+    },
+    "payrollUtilization": 0.5676646018545157,
+    "minBusinessCash": {
+     "mean": 6496,
+     "median": 6496,
+     "p10": 6496,
+     "p90": 6496
+    },
+    "insolvencyRate": 0,
+    "netWorthGrowthPerYear": {
+     "mean": 14980.76,
+     "median": 14980.76,
+     "p10": 14980.76,
+     "p90": 14980.76
+    },
+    "operatingProfitPerYear": {
+     "mean": 57594.47,
+     "median": 57594.47,
+     "p10": 57594.47,
+     "p90": 57594.47
+    },
+    "ownerInjectionsPerYear": {
+     "mean": 30000,
+     "median": 30000,
+     "p10": 30000,
+     "p90": 30000
+    },
+    "avgEmployees": 0.27671232876712326,
+    "marketShare": 0.03495512517713746,
+    "lostCapacityPerYear": 0,
+    "lostToRivalsPerYear": 17,
+    "competitorUtil": 0.7553833333333333,
+    "competitorExits": 0,
+    "competitorEntries": 0,
+    "invariantFailures": 0
+   },
+   {
+    "policy": "mixed",
+    "label": "Pracownicy (2) + podwykonawcy",
+    "runs": 1,
+    "inquiriesPerYear": {
+     "mean": 496,
+     "median": 496,
+     "p10": 496,
+     "p90": 496
+    },
+    "contractsPerYear": {
+     "mean": 175,
+     "median": 175,
+     "p10": 175,
+     "p90": 175
+    },
+    "conversion": 0.3528225806451613,
+    "quoteWinRate": 0.5756578947368421,
+    "declinedShare": 0.3870967741935484,
+    "unansweredShare": 0,
+    "revenuePerYear": {
+     "mean": 356406.64,
+     "median": 356406.64,
+     "p10": 356406.64,
+     "p90": 356406.64
+    },
+    "contractMargin": 0.24872710003382653,
+    "revenuePerWorkHour": 95.14249485455268,
+    "capacityUse": 0.6919539220647775,
+    "fixedCostsPerMonth": {
+     "mean": 8468.299166666666,
+     "median": 8468.299166666666,
+     "p10": 8468.299166666666,
+     "p90": 8468.299166666666
+    },
+    "payrollUtilization": 0.6239013683676302,
+    "minBusinessCash": {
+     "mean": 2.38,
+     "median": 2.38,
+     "p10": 2.38,
+     "p90": 2.38
+    },
+    "insolvencyRate": 1,
+    "netWorthGrowthPerYear": {
+     "mean": -101601.33,
+     "median": -101601.33,
+     "p10": -101601.33,
+     "p90": -101601.33
+    },
+    "operatingProfitPerYear": {
+     "mean": -12971.6,
+     "median": -12971.6,
+     "p10": -12971.6,
+     "p90": -12971.6
+    },
+    "ownerInjectionsPerYear": {
+     "mean": 39176.74,
+     "median": 39176.74,
+     "p10": 39176.74,
+     "p90": 39176.74
+    },
+    "avgEmployees": 1.7068493150684931,
+    "marketShare": 0.08582089552238806,
+    "lostCapacityPerYear": 1,
+    "lostToRivalsPerYear": 60,
+    "competitorUtil": 0.7560666666666667,
+    "competitorExits": 0,
+    "competitorEntries": 0,
+    "invariantFailures": 0
+   }
+  ],
+  "notes": [
+   "„Firma z 3 pracownikami”: niewypłacalność w 100% przebiegów.",
+   "„Firma z 5 pracownikami”: niewypłacalność w 100% przebiegów.",
+   "„Pracownicy (2) + podwykonawcy”: niewypłacalność w 100% przebiegów."
+  ]
+ },
+ "runs": [
+  {
+   "seed": "bal-1",
+   "policy": "solo",
+   "years": 1,
+   "days": 365,
+   "inquiries": 310,
+   "quotesSent": 92,
+   "contracts": 52,
+   "contractsDone": 47,
+   "unanswered": 0,
+   "declined": 218,
+   "revenueNet": 14097293,
+   "economicResult": 10151760,
+   "workHours": 1554.8400000000001,
+   "ownerHours": 1616,
+   "payrollTotal": 0,
+   "payrollIdle": 0,
+   "fixedCostsTotal": 2381488,
+   "marketingSpend": 660000,
+   "minBusinessCash": 1170408,
+   "insolvent": false,
+   "insolvencyDay": null,
+   "netWorthStart": 9000000,
+   "capital": 9000000,
+   "netWorthEnd": 12695653,
+   "ownerInjections": 0,
+   "ownerDraws": 0,
+   "avgEmployees": 0,
+   "avgOpenBacklog": 4.087671232876712,
+   "capacityHours": 2000,
+   "lostCapacity": 0,
+   "lostToRivals": 16,
+   "marketShare": 0.026499302649930265,
+   "competitorsEnd": 15,
+   "competitorExits": 0,
+   "competitorEntries": 0,
+   "avgCompetitorUtil": 0.7789416666666666,
+   "declineReasons": {
+    "owner:termin zbyt późny": 170,
+    "owner:błąd: Brak specjalizacji „Montaż paneli podłog": 11,
+    "owner:błąd: Brak specjalizacji „Drobne prace wykończ": 11,
+    "owner:błąd: Za niski poziom umiejętności (2) na to z": 9,
+    "owner:konflikt: Kolizja czasu: 16 maja 2026 br": 3,
+    "owner:konflikt: Kolizja czasu: 28 czerwca 2026": 3,
+    "owner:konflikt: Kolizja czasu: 18 marca 2026 b": 2,
+    "owner:konflikt: Kolizja czasu: 31 maja 2026 br": 2,
+    "owner:konflikt: Kolizja czasu: 25 marca 2026 b": 1,
+    "owner:konflikt: Kolizja czasu: 23 marca 2026 b": 1,
+    "owner:konflikt: Kolizja czasu: 30 maja 2026 br": 1,
+    "owner:konflikt: Kolizja czasu: 24 maja 2026 br": 1
+   },
+   "invariantErrors": [],
+   "yearly": [
+    {
+     "year": 2026,
+     "netWorth": 12232311,
+     "businessCash": 0,
+     "contractsDone": 42
+    }
+   ]
+  },
+  {
+   "seed": "bal-1",
+   "policy": "grow",
+   "years": 1,
+   "days": 365,
+   "inquiries": 457,
+   "quotesSent": 119,
+   "contracts": 67,
+   "contractsDone": 59,
+   "unanswered": 0,
+   "declined": 338,
+   "revenueNet": 19150495,
+   "economicResult": 11157209,
+   "workHours": 1695.3600000000004,
+   "ownerHours": 1480,
+   "payrollTotal": 2227967,
+   "payrollIdle": 963229,
+   "fixedCostsTotal": 5397762,
+   "marketingSpend": 2260000,
+   "minBusinessCash": 649600,
+   "insolvent": false,
+   "insolvencyDay": null,
+   "netWorthStart": 9000000,
+   "capital": 9000000,
+   "netWorthEnd": 10498076,
+   "ownerInjections": 3000000,
+   "ownerDraws": 0,
+   "avgEmployees": 0.27671232876712326,
+   "avgOpenBacklog": 5.063013698630137,
+   "capacityHours": 2553.4246575342463,
+   "lostCapacity": 0,
+   "lostToRivals": 17,
+   "marketShare": 0.03495512517713746,
+   "competitorsEnd": 15,
+   "competitorExits": 0,
+   "competitorEntries": 0,
+   "avgCompetitorUtil": 0.7553833333333333,
+   "declineReasons": {
+    "owner:termin zbyt późny": 270,
+    "team:błąd: Nikt w ekipie nie ma umiejętności wymaga": 59,
+    "owner:błąd: Za niski poziom umiejętności (2) na to z": 36,
+    "team:termin zbyt późny": 32,
+    "owner:błąd: Brak specjalizacji „Drobne prace wykończ": 11,
+    "owner:konflikt: Kolizja czasu: 16 lipca 2026 b": 5,
+    "owner:konflikt: Kolizja czasu: 4 września 2026": 4,
+    "owner:konflikt: Kolizja czasu: 3 stycznia 2027": 4,
+    "owner:konflikt: Kolizja czasu: 21 maja 2026 br": 3,
+    "owner:konflikt: Kolizja czasu: 29 maja 2026 br": 3,
+    "owner:konflikt: Kolizja czasu: 18 marca 2026 b": 2,
+    "owner:koszt powyżej budżetu klienta": 2
+   },
+   "invariantErrors": [],
+   "yearly": [
+    {
+     "year": 2026,
+     "netWorth": 10982801,
+     "businessCash": 0,
+     "contractsDone": 51
+    }
+   ]
+  },
+  {
+   "seed": "bal-1",
+   "policy": "owner+1",
+   "years": 1,
+   "days": 365,
+   "inquiries": 273,
+   "quotesSent": 132,
+   "contracts": 91,
+   "contractsDone": 84,
+   "unanswered": 0,
+   "declined": 141,
+   "revenueNet": 22798575,
+   "economicResult": 12950186,
+   "workHours": 2517.0300000000007,
+   "ownerHours": 1512,
+   "payrollTotal": 5775801,
+   "payrollIdle": 2524440,
+   "fixedCostsTotal": 5433135,
+   "marketingSpend": 660000,
+   "minBusinessCash": 1005408,
+   "insolvent": false,
+   "insolvencyDay": null,
+   "netWorthStart": 9000000,
+   "capital": 9000000,
+   "netWorthEnd": 12599348,
+   "ownerInjections": 0,
+   "ownerDraws": 0,
+   "avgEmployees": 0.9123287671232877,
+   "avgOpenBacklog": 6.86027397260274,
+   "capacityHours": 3824.6575342465753,
+   "lostCapacity": 0,
+   "lostToRivals": 19,
+   "marketShare": 0.04377880184331797,
+   "competitorsEnd": 15,
+   "competitorExits": 0,
+   "competitorEntries": 0,
+   "avgCompetitorUtil": 0.7694666666666667,
+   "declineReasons": {
+    "owner:termin zbyt późny": 119,
+    "team:błąd: Nikt w ekipie nie ma umiejętności wymaga": 95,
+    "team:termin zbyt późny": 83,
+    "team:błąd: Ekipa nie ma dostępnych wykonawców (brak": 12,
+    "owner:błąd: Brak specjalizacji „Montaż paneli podłog": 11,
+    "owner:błąd: Brak specjalizacji „Drobne prace wykończ": 7,
+    "team:błąd: Brakuje wymaganego sprzętu: Zestaw narzę": 6,
+    "owner:błąd: Za niski poziom umiejętności (2) na to z": 3,
+    "owner:konflikt: Kolizja czasu: 18 marca 2026 b": 2,
+    "owner:konflikt: Kolizja czasu: 7 maja 2026 bra": 2,
+    "owner:konflikt: Kolizja czasu: 25 marca 2026 b": 1,
+    "owner:konflikt: Kolizja czasu: 23 marca 2026 b": 1
+   },
+   "invariantErrors": [],
+   "yearly": [
+    {
+     "year": 2026,
+     "netWorth": 12250459,
+     "businessCash": 0,
+     "contractsDone": 77
+    }
+   ]
+  },
+  {
+   "seed": "bal-1",
+   "policy": "subs-only",
+   "years": 1,
+   "days": 365,
+   "inquiries": 443,
+   "quotesSent": 130,
+   "contracts": 73,
+   "contractsDone": 51,
+   "unanswered": 0,
+   "declined": 313,
+   "revenueNet": 17816091,
+   "economicResult": 5059261,
+   "workHours": 1530.0100000000002,
+   "ownerHours": 0,
+   "payrollTotal": 0,
+   "payrollIdle": 0,
+   "fixedCostsTotal": 4507564,
+   "marketingSpend": 3060000,
+   "minBusinessCash": 278864,
+   "insolvent": false,
+   "insolvencyDay": null,
+   "netWorthStart": 9000000,
+   "capital": 9000000,
+   "netWorthEnd": 2169720,
+   "ownerInjections": 3000000,
+   "ownerDraws": 0,
+   "avgEmployees": 0,
+   "avgOpenBacklog": 8.33972602739726,
+   "capacityHours": 0,
+   "lostCapacity": 1,
+   "lostToRivals": 31,
+   "marketShare": 0.03618421052631579,
+   "competitorsEnd": 15,
+   "competitorExits": 0,
+   "competitorEntries": 0,
+   "avgCompetitorUtil": 0.7653583333333333,
+   "declineReasons": {
+    "sub:termin zbyt późny": 381,
+    "sub:koszt powyżej budżetu klienta": 181,
+    "sub:konflikt: Podwykonawca PodłogiPro Warmia": 12,
+    "sub:konflikt: Podwykonawca Wykończenia Dajtk": 3,
+    "sub:konflikt: Podwykonawca Malowanie-Serwis ": 2
+   },
+   "invariantErrors": [],
+   "yearly": [
+    {
+     "year": 2026,
+     "netWorth": 3387811,
+     "businessCash": 0,
+     "contractsDone": 47
+    }
+   ]
+  },
+  {
+   "seed": "bal-1",
+   "policy": "team3",
+   "years": 1,
+   "days": 365,
+   "inquiries": 497,
+   "quotesSent": 260,
+   "contracts": 161,
+   "contractsDone": 119,
+   "unanswered": 0,
+   "declined": 237,
+   "revenueNet": 33472442,
+   "economicResult": 9247096,
+   "workHours": 3103.18,
+   "ownerHours": 872,
+   "payrollTotal": 19473296,
+   "payrollIdle": 9113145,
+   "fixedCostsTotal": 14445782,
+   "marketingSpend": 3060000,
+   "minBusinessCash": 1730,
+   "insolvent": true,
+   "insolvencyDay": 343,
+   "netWorthStart": 9000000,
+   "capital": 9000000,
+   "netWorthEnd": -2059956,
+   "ownerInjections": 4500000,
+   "ownerDraws": 0,
+   "avgEmployees": 2.4465753424657533,
+   "avgOpenBacklog": 15.194520547945206,
+   "capacityHours": 6893.1506849315065,
+   "lostCapacity": 5,
+   "lostToRivals": 40,
+   "marketShare": 0.08048666354702855,
+   "competitorsEnd": 15,
+   "competitorExits": 0,
+   "competitorEntries": 0,
+   "avgCompetitorUtil": 0.7504583333333333,
+   "declineReasons": {
+    "team:błąd: Nikt w ekipie nie ma umiejętności wymaga": 468,
+    "team:termin zbyt późny": 438,
+    "owner:termin zbyt późny": 198,
+    "owner:błąd: Za niski poziom umiejętności (2) na to z": 40,
+    "team:błąd: Ekipa nie ma dostępnych wykonawców (brak": 27,
+    "team:błąd: Brakuje wymaganego sprzętu: Zestaw narzę": 23,
+    "owner:koszt powyżej budżetu klienta": 14,
+    "owner:błąd: Brak specjalizacji „Drobne prace wykończ": 13,
+    "team:koszt powyżej budżetu klienta": 10,
+    "owner:konflikt: Kolizja czasu: 5 lipca 2026 br": 5,
+    "owner:konflikt: Kolizja czasu: 24 maja 2026 br": 4,
+    "team:konflikt: Adam Urban jest przydzielony d": 4
+   },
+   "invariantErrors": [],
+   "yearly": [
+    {
+     "year": 2026,
+     "netWorth": -119684,
+     "businessCash": 0,
+     "contractsDone": 113
+    }
+   ]
+  },
+  {
+   "seed": "bal-1",
+   "policy": "mixed",
+   "years": 1,
+   "days": 365,
+   "inquiries": 496,
+   "quotesSent": 304,
+   "contracts": 175,
+   "contractsDone": 126,
+   "unanswered": 0,
+   "declined": 192,
+   "revenueNet": 35640664,
+   "economicResult": 8864799,
+   "workHours": 3746.0300000000007,
+   "ownerHours": 1136,
+   "payrollTotal": 13550379,
+   "payrollIdle": 5096279,
+   "fixedCostsTotal": 10161959,
+   "marketingSpend": 3060000,
+   "minBusinessCash": 238,
+   "insolvent": true,
+   "insolvencyDay": 364,
+   "netWorthStart": 9000000,
+   "capital": 9000000,
+   "netWorthEnd": -1160133,
+   "ownerInjections": 3917674,
+   "ownerDraws": 0,
+   "avgEmployees": 1.7068493150684931,
+   "avgOpenBacklog": 18.791780821917808,
+   "capacityHours": 5413.698630136986,
+   "lostCapacity": 1,
+   "lostToRivals": 60,
+   "marketShare": 0.08582089552238806,
+   "competitorsEnd": 15,
+   "competitorExits": 0,
+   "competitorEntries": 0,
+   "avgCompetitorUtil": 0.7560666666666667,
+   "declineReasons": {
+    "team:błąd: Nikt w ekipie nie ma umiejętności wymaga": 353,
+    "team:termin zbyt późny": 337,
+    "owner:termin zbyt późny": 225,
+    "sub:koszt powyżej budżetu klienta": 211,
+    "sub:termin zbyt późny": 83,
+    "owner:błąd: Za niski poziom umiejętności (2) na to z": 33,
+    "team:błąd: Ekipa nie ma dostępnych wykonawców (brak": 20,
+    "owner:koszt powyżej budżetu klienta": 20,
+    "team:błąd: Brakuje wymaganego sprzętu: Zestaw narzę": 15,
+    "sub:konflikt: Podwykonawca PodłogiPro Warmia": 13,
+    "owner:błąd: Brak specjalizacji „Drobne prace wykończ": 11,
+    "sub:konflikt: Podwykonawca Wykończenia Dajtk": 10
+   },
+   "invariantErrors": [],
+   "yearly": [
+    {
+     "year": 2026,
+     "netWorth": 275879,
+     "businessCash": 0,
+     "contractsDone": 118
+    }
+   ]
+  },
+  {
+   "seed": "bal-1",
+   "policy": "team5",
+   "years": 1,
+   "days": 365,
+   "inquiries": 506,
+   "quotesSent": 332,
+   "contracts": 198,
+   "contractsDone": 145,
+   "unanswered": 0,
+   "declined": 174,
+   "revenueNet": 39251818,
+   "economicResult": 10090120,
+   "workHours": 3879.0500000000006,
+   "ownerHours": 1344,
+   "payrollTotal": 32241341,
+   "payrollIdle": 18495144,
+   "fixedCostsTotal": 24461575,
+   "marketingSpend": 3060000,
+   "minBusinessCash": 19,
+   "insolvent": true,
+   "insolvencyDay": 273,
+   "netWorthStart": 9000000,
+   "capital": 9000000,
+   "netWorthEnd": -9815501,
+   "ownerInjections": 4500000,
+   "ownerDraws": 0,
+   "avgEmployees": 3.7424657534246575,
+   "avgOpenBacklog": 18.326027397260273,
+   "capacityHours": 9484.931506849314,
+   "lostCapacity": 6,
+   "lostToRivals": 51,
+   "marketShare": 0.10231481481481482,
+   "competitorsEnd": 15,
+   "competitorExits": 0,
+   "competitorEntries": 0,
+   "avgCompetitorUtil": 0.7465083333333333,
+   "declineReasons": {
+    "team:błąd: Nikt w ekipie nie ma umiejętności wymaga": 745,
+    "team:termin zbyt późny": 464,
+    "owner:termin zbyt późny": 139,
+    "owner:błąd: Za niski poziom umiejętności (2) na to z": 40,
+    "team:błąd: Ekipa nie ma dostępnych wykonawców (brak": 38,
+    "team:błąd: Brakuje wymaganego sprzętu: Zestaw narzę": 35,
+    "owner:koszt powyżej budżetu klienta": 34,
+    "team:koszt powyżej budżetu klienta": 19,
+    "owner:błąd: Brak specjalizacji „Drobne prace wykończ": 13,
+    "team:konflikt: Adam Urban jest przydzielony d": 6,
+    "owner:konflikt: Kolizja czasu: 19 lipca 2026 b": 5,
+    "owner:konflikt: Kolizja czasu: 24 maja 2026 br": 4
+   },
+   "invariantErrors": [],
+   "yearly": [
+    {
+     "year": 2026,
+     "netWorth": -6019178,
+     "businessCash": 0,
+     "contractsDone": 143
+    }
+   ]
+  }
+ ]
+}

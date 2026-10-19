@@ -7,6 +7,7 @@ import { zl } from './money.ts';
 import { crewDay, complaintBps, defaultQuoteInput, jobFinancials, jobQuality, previewQuote, quoteSchedule, renoDashboard } from './renovation.ts';
 import { deferredAdvances, netWorth } from './selectors.ts';
 import { advanceDays } from './simulate.ts';
+import { GameStateSchema } from './state.ts';
 import type { GameState } from './state.ts';
 import { bizBalance, buyAll, contract, craftEnquiry, docsFor, fail, hireEmployee, jobOf, ok, opsGame, runUntil, toDate } from './testkit.ts';
 import { crewProfitability, fixedCosts, liquidityForecast, teamLoad } from './profitability.ts';
@@ -678,6 +679,9 @@ describe('podwykonawca zajęty innym kontraktem', () => {
     const reason = jobOf(stuck, c2.job.id).blockedReason!;
     expect(reason).toMatch(/zacznie dopiero/);
     expect(reason).not.toMatch(/nieprzydzielona/);
+    // przyczyna przestoju (z nazwą podwykonawcy i datą) musi mieścić się w limicie pola — inaczej zapis przestaje się wczytywać
+    expect(reason.length).toBeLessThanOrEqual(400);
+    expect(GameStateSchema.safeParse(stuck).success).toBe(true);
   });
 });
 

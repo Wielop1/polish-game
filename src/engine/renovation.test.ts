@@ -8,11 +8,14 @@ import type { CommandResult } from './commands.ts';
 import { recordHistory } from './core.ts';
 import { addDays, diffDays } from './date.ts';
 import { checkInvariants } from './invariants.ts';
+import { expectedDailyDemand, playerVisibility } from './market.ts';
+import { macroAt } from './macro.ts';
+import { RENOVATION_MARKET } from './renovationMarket.ts';
 import { zl } from './money.ts';
 import { createNewGame } from './newGame.ts';
 import {
-  clientAcceptanceBps, complaintBps, decideQuote, defaultQuoteInput, enquiryRateBps, jobFinancials, jobForecast, jobQuality, materialAvailable, materialPrice,
-  crewKey, previewQuote, quoteSchedule, renoDashboard, reputation, skillLevel, speedBps, stockKey,
+  clientAcceptanceBps, complaintBps, decideQuote, defaultQuoteInput, jobFinancials, jobForecast, jobQuality, materialAvailable, materialPrice,
+  crewKey, playerMarketView, previewQuote, quoteSchedule, renoDashboard, reputation, skillLevel, speedBps, stockKey,
 } from './renovation.ts';
 import type { QuoteInput } from './renovation.ts';
 import { ACCOUNTING_PLANS } from './renovationCatalog.ts';
@@ -68,7 +71,7 @@ function craftEnquiry(s: GameState, o: Partial<RenoEnquiry> = {}): RenoEnquiry {
   s.parties[clientId] = { id: clientId, name: 'Klient testowy (fikcyjny)', role: 'service' };
   const enq: RenoEnquiry = {
     id, businessId: activeBusiness(s)!.id, clientId, clientName: 'Klient testowy (fikcyjny)', location: 'Jaroty', serviceId: 'malowanie', units: 60, complexity: 'standard', qualityReq: 2,
-    desiredStart: addDays(s.clock.today, 5), maxDays: 30, budgetGross: zl(3_000), walkAwayGross: zl(3_400), haggler: false, flexDays: 3, receivedOn: s.clock.today, respondBy: addDays(s.clock.today, 7), status: 'open', ...o,
+    desiredStart: addDays(s.clock.today, 5), maxDays: 30, budgetGross: zl(3_000), walkAwayGross: zl(3_400), haggler: false, flexDays: 3, receivedOn: s.clock.today, respondBy: addDays(s.clock.today, 7), status: 'open', segment: 'standard', source: null, rivals: 0, rivalId: null, rivalUtility: 0, rivalAwarded: false, ...o,
   };
   s.reno.enquiries.push(enq);
   return enq;
@@ -878,20 +881,28 @@ describe('10. reputacja, reklama i zapytania', () => {
     expect(reputation(aged).score).toBeLessThan(reputation(high).score);
   });
 
-  it('szansa na zapytanie zależy od reputacji, reklamy, sezonu, dostępności i cen oferowanych', () => {
+  it('widoczność firmy (źródło zapytań) zależy od reputacji, marketingu, sezonu popytu i zajętości kolejki prac', () => {
     const s = renoGame();
-    const base = enquiryRateBps(s, s.clock.today);
+    const view0 = playerMarketView(s, s.clock.today);
+    const base = playerVisibility(s, 'standard', 'malowanie', view0, s.clock.today);
+    // reputacja: kilka dobrych opinii zwiększa widoczność
     const rep = structuredClone(s);
     for (let i = 0; i < 6; i++) rep.reno.reviews.push({ id: `h${i}`, jobId: `j${i}`, date: s.clock.today, rating10: 50, parts: { quality: 50, punctuality: 50, conformity: 50, price: 50, communication: 50 }, comment: '' });
-    expect(enquiryRateBps(rep, rep.clock.today).total).toBeGreaterThan(base.total);
-    const ad = ok(commands.setAdvertising(s, 'local'));
-    expect(enquiryRateBps(ad, ad.clock.today).total).toBeGreaterThan(base.total);
-    expect(enquiryRateBps(s, '2026-07-10').parts.season).toBeGreaterThan(enquiryRateBps(s, '2026-01-10').parts.season);
-    const booked = contract(s).s;
-    expect(enquiryRateBps(booked, booked.clock.today).parts.availability).toBeLessThan(base.parts.availability);
-    const dear = structuredClone(s);
-    dear.reno.quotes.push({ ...contract(s, { sign: false }).s.reno.quotes.at(-1)!, priceNet: zl(90_000) });
-    expect(enquiryRateBps(dear, dear.clock.today).parts.price).toBeLessThan(base.parts.price);
+    expect(playerVisibility(rep, 'standard', 'malowanie', playerMarketView(rep, rep.clock.today), rep.clock.today)).toBeGreaterThan(base);
+    // marketing: budżet daje widoczność dopiero po zamknięciu miesiąca (opóźnienie), a nie od razu
+    let ad = ok(commands.setMarketingBudget(s, 'local_ads', zl(400)));
+    expect(playerVisibility(ad, 'standard', 'malowanie', playerMarketView(ad, ad.clock.today), ad.clock.today)).toBe(base);
+    ad = toDate(ad, '2026-04-02');
+    expect(ad.market.marketing.reach.local_ads).toBeGreaterThan(0);
+    expect(playerVisibility(ad, 'standard', 'malowanie', playerMarketView(ad, ad.clock.today), ad.clock.today)).toBeGreaterThan(base);
+    // brak specjalizacji w usłudze zmniejsza widoczność w tej usłudze
+    expect(playerVisibility(s, 'standard', 'panele', view0, s.clock.today)).toBeLessThan(base);
+    // zajęta kolejka obniża widoczność
+    const busy = { ...view0, queueGateBps: 6_000 };
+    expect(playerVisibility(s, 'standard', 'malowanie', busy, s.clock.today)).toBeLessThan(base);
+    // sezon: popyt w lipcu większy niż w styczniu
+    const demand = (date: string) => expectedDailyDemand(s, date, RENOVATION_MARKET, macroAt(s.seed, date.slice(0, 7))).reduce((a, x) => a + x.expected, 0);
+    expect(demand('2026-05-12')).toBeGreaterThan(demand('2026-01-13'));
   });
 
   it('zapytania powstają deterministycznie (ten sam seed → te same), mają komplet danych i nie przekraczają limitu otwartych', () => {
@@ -915,18 +926,20 @@ describe('10. reputacja, reklama i zapytania', () => {
     }
   });
 
-  it('reklama: opłata miesięczna to dokument kosztowy; zmiana poziomu w tym samym miesiącu nie daje darmowego okresu; odnowienie 1. dnia miesiąca', () => {
+  it('marketing: budżet kanału obowiązuje od 1. dnia następnego miesiąca i jest pobierany jako dokument kosztowy; walidacje komendy', () => {
     let s = renoGame();
     const docs0 = s.documents.length;
-    s = ok(commands.setAdvertising(s, 'local'));
-    expect(s.documents.length).toBe(docs0 + 1);
-    expect(s.documents.at(-1)).toMatchObject({ kind: 'cost', net: zl(400) });
-    s = ok(commands.setAdvertising(s, 'none'));
-    s = ok(commands.setAdvertising(s, 'local')); // ten sam miesiąc: już opłacony
-    expect(s.documents.length).toBe(docs0 + 1);
-    expect(fail(commands.setAdvertising(s, 'local'))).toMatch(/już ustawiony/);
+    s = ok(commands.setMarketingBudget(s, 'local_ads', zl(400)));
+    expect(s.documents.length).toBe(docs0); // nic nie jest pobierane w dniu ustawienia
+    expect(fail(commands.setMarketingBudget(s, 'local_ads', zl(400)))).toMatch(/już ustawiony/);
+    expect(fail(commands.setMarketingBudget(s, 'nie-ma', zl(100)))).toMatch(/Nieznany kanał/);
+    expect(fail(commands.setMarketingBudget(s, 'search', zl(20_000)))).toMatch(/od 0 do 10 000/);
     s = toDate(s, '2026-04-02');
-    expect(s.documents.filter((d) => d.description.startsWith('Reklama')).map((d) => d.issueDate.slice(0, 7))).toEqual(['2026-02', '2026-03', '2026-04']);
+    expect(s.documents.filter((d) => d.description.startsWith('Marketing: Reklamy lokalne')).map((d) => d.issueDate.slice(0, 7))).toEqual(['2026-03', '2026-04']);
+    expect(s.documents.filter((d) => d.description.startsWith('Marketing')).every((d) => d.kind === 'cost' && d.net === zl(400))).toBe(true);
+    s = ok(commands.setMarketingBudget(s, 'local_ads', 0));
+    s = toDate(s, '2026-05-02');
+    expect(s.documents.filter((d) => d.description.startsWith('Marketing')).length).toBe(2); // wyłączony budżet nie jest pobierany
     consistent(s);
   });
 });
@@ -1053,7 +1066,7 @@ describe('12. scenariusz 12 miesięcy prowadzenia firmy remontowej', () => {
   function play(seed: string, months = 12): GameState {
     let s = renoGame({ seed, equip: ['paint-basic', 'sprayer'] });
     s = ok(commands.hireAccountingOffice(s, 'standard'));
-    s = ok(commands.setAdvertising(s, 'local'));
+    s = ok(commands.setMarketingBudget(s, 'local_ads', zl(400)));
     const end = addDays('2026-02-01', months * 30 + 5);
     while (s.clock.today < end) {
       s = advanceDays(s, 1);

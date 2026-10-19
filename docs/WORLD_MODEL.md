@@ -40,7 +40,7 @@
 | **Asset** (aktywo) | Nieruchomość, pojazd, wyposażenie, papiery wartościowe, udziały, **kaucja zwrotna**. | ⚠️ tylko kaucja (`assets`, v0.2) |
 | **Liability** (pasywo) | Kredyt, leasing, zaległości podatkowe. W v0.1 tylko zwykłe zobowiązania. | ⚠️ częściowo (`Obligation`) |
 | **Ownership** (własność) | Relacja *podmiot → aktywo/udział* z ułamkiem i datami. | ❌ |
-| **Market / Region** (rynek) | Regionalne ceny, popyt, konkurenci. | ❌ |
+| **Market / Region** (rynek) | Regionalne ceny, popyt, konkurenci. | 🟡 `market` (v0.7): jedno miasto (Olsztyn) i jedna branża (remonty): popyt, koniunktura, konkurenci (`Competitor`), marketing, pozycjonowanie firmy; wiele miast i danych GUS — później |
 
 ## 3. Relacje (docelowo)
 

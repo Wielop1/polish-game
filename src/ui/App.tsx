@@ -17,6 +17,7 @@ import { BizCalendarScreen, BizDocsScreen, BizFinanceScreen, BizOrdersScreen, Bi
 import { BizReportScreen, BizSettlementScreen, PlanningScreen } from './screens/AnnualScreens.tsx';
 import { HrEmployeesScreen, HrRecruitmentScreen, MultiScheduleScreen, ProfitabilityScreen, SubcontractorsScreen, TeamsScreen, VehiclesScreen } from './screens/WorkforceScreens.tsx';
 import { BizAccountingScreen } from './screens/AccountingScreen.tsx';
+import { MarketCompetitionScreen, MarketDemandScreen, MarketLocalScreen, MarketMarketingScreen, MarketStrategyScreen } from './screens/MarketScreens.tsx';
 import { RenoContractsScreen, RenoDashboardScreen, RenoEnquiriesScreen, RenoQuotesScreen, RenoReputationScreen, RenoScheduleScreen, RenoStockScreen } from './screens/RenovationScreens.tsx';
 import { CharacterScreen } from './screens/CharacterScreen.tsx';
 import { DashboardScreen } from './screens/DashboardScreen.tsx';
@@ -128,6 +129,18 @@ const NAV_SECTIONS: NavSection[] = [
       },
     ],
   },
+  {
+    title: 'Rynek',
+    blocks: [{
+      items: [
+        { id: 'marketLocal', label: 'Rynek lokalny', icon: 'trend' },
+        { id: 'marketCompetition', label: 'Konkurencja', icon: 'user' },
+        { id: 'marketMarketing', label: 'Marketing', icon: 'bell' },
+        { id: 'marketStrategy', label: 'Strategia firmy', icon: 'shield' },
+        { id: 'marketDemand', label: 'Analiza popytu', icon: 'list' },
+      ],
+    }],
+  },
   { title: 'System', blocks: [{ items: [{ id: 'game', label: 'Nowa gra / Wczytaj', icon: 'save' }] }] },
 ];
 const sectionItems = (sec: NavSection) => sec.blocks.flatMap((b) => b.items);
@@ -186,6 +199,11 @@ function renderScreen(screen: Screen) {
     case 'opsSchedule': return <MultiScheduleScreen />;
     case 'opsVehicles': return <VehiclesScreen />;
     case 'opsProfit': return <ProfitabilityScreen />;
+    case 'marketLocal': return <MarketLocalScreen />;
+    case 'marketCompetition': return <MarketCompetitionScreen />;
+    case 'marketMarketing': return <MarketMarketingScreen />;
+    case 'marketStrategy': return <MarketStrategyScreen />;
+    case 'marketDemand': return <MarketDemandScreen />;
     case 'game': return <GameScreen />;
   }
 }
@@ -239,6 +257,7 @@ export function App() {
                 >
                   <Icon name="chevronRight" className={cx('size-3.5 transition-transform', expanded && 'rotate-90')} />
                   <span className="flex-1">{sec.title}</span>
+                  {!expanded && attention > 0 && sectionItems(sec).some((n) => n.id === 'decisions') && <span data-testid="attention-badge" className="grid min-w-5 place-items-center rounded-full bg-gold px-1.5 text-[11px] font-bold text-ink-950 normal-case">{attention}</span>}
                   {groupAlert(sec) && <span aria-hidden="true" data-testid={`group-dot-${sec.title}`} className="size-1.5 rounded-full bg-gold" />}
                 </button>
                 {expanded && sec.blocks.map((blk, bi) => (
@@ -270,7 +289,7 @@ export function App() {
             );
           })}
         </nav>
-        <p className="text-[11px] leading-relaxed text-slate-500">v0.6 · pracownicy, ekipy i podwykonawcy. Symulacja — nie porada prawna ani podatkowa.</p>
+        <p className="text-[11px] leading-relaxed text-slate-500">v0.7 · rynek lokalny, konkurencja i marketing. Symulacja — nie porada prawna ani podatkowa.</p>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

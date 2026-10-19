@@ -1,4 +1,4 @@
-import { activeBusiness, isSuspendedOn, issueDocument } from './business.ts';
+import { activeBusiness, businessState, isSuspendedOn, issueDocument } from './business.ts';
 import { grossOfNet, purchaseCost, requireBusiness, requireCash, supplier, SUPPLIER_PARTY, vatRateNow } from './opsCommon.ts';
 export { availableCash, grossOfNet, SUPPLIER_PARTY, vatRateNow } from './opsCommon.ts';
 import { CommandError, createObligation, ensureParty, logEvent, nextCounter } from './core.ts';
@@ -8,10 +8,16 @@ import { RULES_2026 as R } from './legal.ts';
 import { formatPLN, mulBps, roundDiv, zl } from './money.ts';
 import type { Grosze } from './money.ts';
 import { createRng } from './rng.ts';
+import { awardToRival, contestRival, processMarketDay, recordPlayerWin } from './market.ts';
+import type { MarketHooks, PlayerInquiry, PlayerView } from './market.ts';
+import { macroAt } from './macro.ts';
+import { SEGMENTS } from './marketConfig.ts';
+import type { SegmentId } from './marketConfig.ts';
+import { RENOVATION_MARKET } from './renovationMarket.ts';
 import {
-  ADVERTISING, BASE_ENQUIRY_BPS, CANCEL_AFTER_DEADLINE_DAYS, CLIENT_NAMES, COMPLAINT_WINDOW_DAYS, COMPLEXITY_HOURS_BPS, DELAY_PENALTY_BPS_PER_WEEK,
-  DELAY_PENALTY_CAP_BPS, DISTRICTS, EQUIPMENT, EQUIPMENT_BY_ID, MATERIAL_BY_ID, MAX_OPEN_ENQUIRIES, OTHER_COSTS_BPS, OWN_LABOR_RATE_DEFAULT, QUALITY_REQ_LABEL,
-  QUALITY_THRESHOLD, SEASONALITY_BPS, loadPoints, normCentiOf, SERVICES, SERVICE_BY_ID, SKILL_QUALITY, SKILL_SPEED_BPS, SKILL_START_CENTI, SKILL_THRESHOLD_CENTI, SPECIALIZATION_COURSE, STANDARDS,
+  CANCEL_AFTER_DEADLINE_DAYS, COMPLAINT_WINDOW_DAYS, DELAY_PENALTY_BPS_PER_WEEK,
+  DELAY_PENALTY_CAP_BPS, EQUIPMENT, EQUIPMENT_BY_ID, MATERIAL_BY_ID, OTHER_COSTS_BPS, OWN_LABOR_RATE_DEFAULT, QUALITY_REQ_LABEL,
+  QUALITY_THRESHOLD, loadPoints, normCentiOf, referencePrice, SERVICE_BY_ID, SKILL_QUALITY, SKILL_SPEED_BPS, SKILL_START_CENTI, SKILL_THRESHOLD_CENTI, SPECIALIZATION_COURSE, STANDARDS,
 } from './renovationCatalog.ts';
 import type { MaterialStandard as Std, ServiceDef } from './renovationCatalog.ts';
 import { inventoryValue, equipmentValue } from './selectors.ts';
@@ -144,7 +150,8 @@ export function materialPrice(s: GameState, key: string, date: IsoDate): Grosze 
   const def = MATERIAL_BY_ID.get(materialId);
   if (!def) throw new CommandError('Nieznany materiał.');
   const factor = 9_500 + createRng(s.seed, `reno:price:${key}:${monthKey(date)}`).int(0, 1_000);
-  return Math.max(1, roundDiv(roundDiv(def.priceNet * STANDARDS[std].priceBps, 10_000) * factor, 10_000));
+  const macroFactor = macroAt(s.seed, monthKey(date)).materialsBps;
+  return Math.max(1, roundDiv(roundDiv(roundDiv(def.priceNet * STANDARDS[std].priceBps, 10_000) * factor, 10_000) * macroFactor, 10_000));
 }
 
 export function materialAvailable(s: GameState, key: string, date: IsoDate): boolean {
@@ -189,12 +196,7 @@ export function materialNeeds(serviceId: string, units: number, complexity: Comp
 
 export const normCenti = (serviceId: string, units: number, complexity: Complexity): number => normCentiOf(serviceId, units, complexity);
 
-/** Orientacyjna cena rynkowa netto zlecenia — baza budżetu klienta i wskaźnika cen. */
-export function referencePrice(serviceId: string, units: number, complexity: Complexity, qualityReq: number): Grosze {
-  const def = SERVICE_BY_ID.get(serviceId)!;
-  const q = qualityReq === 3 ? 11_200 : qualityReq === 1 ? 9_500 : 10_000;
-  return roundTo(mulBps(mulBps(def.referencePerUnit * units, COMPLEXITY_HOURS_BPS[complexity]), q), zl(10));
-}
+export { referencePrice };
 
 /* ---------- Reputacja ---------- */
 
@@ -213,8 +215,6 @@ export function reputation(s: GameState, date: IsoDate = s.clock.today): Reputat
   const stars = sum / w;
   return { score: Math.round(stars * 20), stars: Math.round(stars * 10) / 10, reviews: reno(s).reviews.length };
 }
-
-const repFactorBps = (score: number) => 4_000 + score * 80;
 
 /* ---------- Wycena ---------- */
 
@@ -581,23 +581,6 @@ export function buyMissingForJob(s: GameState, jobId: string): string {
   return parts.join(' ');
 }
 
-export function setAdvertising(s: GameState, level: 'none' | 'local' | 'intensive'): string {
-  const b = requireBusiness(s);
-  const def = ADVERTISING.find((a) => a.id === level);
-  if (!def) throw new CommandError('Nieznany poziom reklamy.');
-  const ad = reno(s).advertising;
-  if (ad.level === level) throw new CommandError('Ten poziom reklamy jest już ustawiony.');
-  const month = monthKey(s.clock.today);
-  if (def.monthlyNet > 0 && ad.paidMonth !== month) {
-    requireCash(s, b, def.monthlyNet);
-    purchaseCost(s, b, def.monthlyNet, `Reklama: ${def.label} — ${month}`);
-    ad.paidMonth = month;
-  }
-  ad.level = level;
-  ad.since = s.clock.today;
-  return level === 'none' ? 'Reklama wyłączona (bez zwrotu opłaconego miesiąca).' : `Reklama włączona: ${def.label}. Opłata miesięczna ${formatPLN(def.monthlyNet)} netto, pobierana 1. dnia miesiąca.`;
-}
-
 export function addSpecialization(s: GameState, serviceId: string): string {
   const b = requireBusiness(s);
   if (!SERVICE_BY_ID.has(serviceId)) throw new CommandError('Nieznana usługa.');
@@ -609,83 +592,79 @@ export function addSpecialization(s: GameState, serviceId: string): string {
   return `Dodano specjalizację: ${SERVICE_BY_ID.get(serviceId)!.label} (poziom 2). Kolejne poziomy zdobywasz wyłącznie wykonując prace.`;
 }
 
-/* ---------- Zapytania klientów ---------- */
+/* ---------- Zapytania klientów: rynek lokalny (v0.7) ---------- */
 
-function priceIndexBps(s: GameState): number {
-  const recent = reno(s).quotes.slice(-5);
-  if (recent.length === 0) return 10_000;
-  let sum = 0;
-  for (const q of recent) {
-    const enq = reno(s).enquiries.find((e) => e.id === q.enquiryId);
-    const ref = referencePrice(q.serviceId, q.units, q.complexity, enq?.qualityReq ?? 2);
-    sum += roundDiv(q.priceNet * 10_000, ref);
-  }
-  return roundDiv(sum, recent.length);
+/** Zapytania nie powstają już z jednej szansy dziennej: rynek (market.ts) liczy popyt, konkurencję i marketing, a branża tylko zamienia przydzielone graczowi zapytania na `RenoEnquiry`. */
+const SEGMENT_OF_REQ: Record<number, SegmentId> = { 1: 'budget', 2: 'standard', 3: 'premium' };
+export const segmentOfQualityReq = (qualityReq: number): SegmentId => SEGMENT_OF_REQ[qualityReq] ?? 'standard';
+
+/** Jakość wykonania widoczna dla rynku (portfolio): średnia z ostatnich 8 zakończonych prac; bez historii — 62 (kalibracyjne). */
+export function playerQuality(s: GameState): number {
+  const done = reno(s).jobs.filter((j) => j.stage === 'done' && j.quality !== null).slice(-8);
+  return done.length === 0 ? 62 : Math.round(done.reduce((a, j) => a + (j.quality ?? 0), 0) / done.length);
 }
 
-function availabilityBps(s: GameState, date: IsoDate): number {
-  // dostępność terminów: właściciel ma wolne godziny albo wolna jest ekipa z pracownikami (kontrakt nie musi czekać na właściciela)
-  let ok = 0;
-  for (let i = 1; i <= 14; i++) {
-    const d = addDays(date, i);
-    const ownerFree = budgetFor(s, d).free >= 2;
-    const teamFree = s.ops.teams.some((t) => t.members.some((m) => m.kind === 'employee') && !s.reno.jobs.some((j) => j.crew.teamId === t.id && j.stage !== 'done' && j.stage !== 'cancelled' && j.startDate <= d && d <= j.deadline));
-    if (ownerFree || teamFree) ok += 1;
-  }
-  return 4_000 + roundDiv(6_000 * ok, 14);
+/** Co rynek wie o graczu — wyłącznie informacje publiczne (opinie, portfolio, kolejka prac); bez gotówki, kosztów i ofert w toku. */
+export function playerMarketView(s: GameState, date: IsoDate): PlayerView {
+  const b = activeBusiness(s);
+  const active = !!b && businessState(b, date) === 'active' && reno(s).specializations.length > 0;
+  const jobsActive = reno(s).jobs.filter((j) => j.stage !== 'done' && j.stage !== 'cancelled').length;
+  const slots = 1 + s.ops.employments.filter((e) => e.status === 'active').length;
+  const queued = Math.max(0, jobsActive - slots - 1);
+  const since = addDays(date, -365);
+  return {
+    active, specializations: reno(s).specializations,
+    reputation: reputation(s, date).score, quality: playerQuality(s),
+    completed12m: reno(s).jobs.filter((j) => j.stage === 'done' && j.finishedOn !== null && j.finishedOn >= since).length,
+    queueGateBps: Math.max(6_000, 10_000 - 1_000 * queued),
+    openEnquiries: reno(s).enquiries.filter((e) => e.status === 'open' || e.status === 'quoted').length,
+  };
 }
 
-export function enquiryRateBps(s: GameState, date: IsoDate): { total: number; parts: { season: number; reputation: number; advertising: number; price: number; availability: number } } {
-  const month = parseIso(date).month;
-  const season = SEASONALITY_BPS[month]!;
-  const rep = repFactorBps(reputation(s, date).score);
-  const ad = ADVERTISING.find((a) => a.id === reno(s).advertising.level)!.leadBps;
-  const idx = priceIndexBps(s);
-  const price = clamp(10_000 + roundDiv(10_000 - idx, 2), 8_000, 12_000);
-  const avail = availabilityBps(s, date);
-  let p = BASE_ENQUIRY_BPS;
-  for (const f of [season, rep, ad, price, avail]) p = roundDiv(p * f, 10_000);
-  return { total: p, parts: { season, reputation: rep, advertising: ad, price, availability: avail } };
-}
-
-function maybeGenerateEnquiry(s: GameState, b: Business, date: IsoDate): void {
-  const open = reno(s).enquiries.filter((e) => e.status === 'open' || e.status === 'quoted').length;
-  if (open >= MAX_OPEN_ENQUIRIES || reno(s).specializations.length === 0) return;
-  const rate = enquiryRateBps(s, date).total;
-  const rng = createRng(s.seed, `reno:enq:${b.id}:${date}`);
-  if (rng.int(0, 9_999) >= rate) return;
-  const specs = reno(s).specializations;
-  const others = SERVICES.filter((d) => !specs.includes(d.id));
-  const def = others.length > 0 && rng.int(0, 99) < 12 ? others[rng.int(0, others.length - 1)]! : SERVICE_BY_ID.get(specs[rng.int(0, specs.length - 1)]!)!;
-  const [lo, hi] = def.qtyRange;
-  const step = def.unit === 'm²' ? 5 : 2;
-  const units = Math.max(lo, Math.floor(rng.int(lo, hi) / step) * step);
-  const complexity: Complexity = rng.int(0, 99) < 22 ? 'trudne' : 'standard';
-  const rq = rng.int(0, 99);
-  const qualityReq = rq < 30 ? 1 : rq < 80 ? 2 : 3;
-  const norm = normCenti(def.id, units, complexity);
-  const ref = referencePrice(def.id, units, complexity, qualityReq);
-  const budgetGross = roundTo(roundDiv(ref * rng.int(78, 130), 100), zl(10));
-  const walkAwayGross = roundTo(roundDiv(budgetGross * rng.int(95, 118), 100), zl(10));
+function createEnquiryFrom(s: GameState, b: Business, date: IsoDate, inq: PlayerInquiry): boolean {
+  const spec = inq.spec;
+  const def = SERVICE_BY_ID.get(spec.serviceId)!;
   const n = nextCounter(s, 'reno:enquiry');
   const id = `enq:${n}`;
   const clientId = `party:client:${id}`;
-  const clientName = `${CLIENT_NAMES[rng.int(0, CLIENT_NAMES.length - 1)]} (klient indywidualny, fikcyjny)`;
-  ensureParty(s, { id: clientId, name: clientName, role: 'service' });
-  const location = DISTRICTS[rng.int(0, DISTRICTS.length - 1)]!;
+  ensureParty(s, { id: clientId, name: spec.clientName, role: 'service' });
+  const respondBy = addDays(date, createRng(s.seed, `reno:enq:${id}`).int(5, 9));
   const enq: RenoEnquiry = {
-    id, businessId: b.id, clientId, clientName, location, serviceId: def.id, units, complexity, qualityReq,
-    desiredStart: addDays(date, rng.int(4, 24)), maxDays: clamp(Math.ceil(norm / 100 / 3) + rng.int(2, 10), 3, 60), budgetGross: Math.max(zl(10), budgetGross),
-    walkAwayGross: Math.max(zl(10), walkAwayGross), haggler: rng.int(0, 99) < 35, flexDays: rng.int(0, 6), receivedOn: date, respondBy: addDays(date, rng.int(5, 9)), status: 'open',
+    id, businessId: b.id, clientId, clientName: spec.clientName, location: spec.location, serviceId: spec.serviceId, units: spec.units, complexity: spec.complexity, qualityReq: spec.qualityReq,
+    desiredStart: addDays(date, spec.desiredStartOffset), maxDays: spec.maxDays, budgetGross: Math.max(zl(10), spec.budgetGross), walkAwayGross: Math.max(zl(10), spec.walkAwayGross),
+    haggler: spec.haggler, flexDays: spec.flexDays, receivedOn: date, respondBy, status: 'open',
+    segment: inq.segment, source: inq.source, rivals: inq.rivals, rivalId: inq.rivalId, rivalUtility: inq.rivalUtility, rivalAwarded: false,
   };
   reno(s).enquiries.push(enq);
-  logEvent(s, { id: `reno.enquiry:${id}`, date, type: 'reno.enquiry', tone: 'neutral', title: `Nowe zapytanie: ${def.label}, ${units} ${def.unit} (${location})`, detail: `${clientName} · budżet ok. ${formatPLN(enq.budgetGross, { round: true })} brutto · odpowiedz do ${formatDatePL(enq.respondBy)}`, amount: null, category: null });
+  logEvent(s, { id: `reno.enquiry:${id}`, date, type: 'reno.enquiry', tone: 'neutral', title: `Nowe zapytanie: ${def.label}, ${spec.units} ${def.unit} (${spec.location})`, detail: `${spec.clientName} · klient ${SEGMENTS[inq.segment].label.toLowerCase()} · budżet ok. ${formatPLN(enq.budgetGross, { round: true })} brutto${inq.rivals > 0 ? ` · porównuje oferty (${inq.rivals + 1} firm)` : ' · pyta tylko Ciebie'} · odpowiedz do ${formatDatePL(respondBy)}`, amount: null, category: null });
+  return true;
+}
+
+function marketHooks(s: GameState, b: Business, date: IsoDate): MarketHooks {
+  return {
+    industry: RENOVATION_MARKET,
+    view: playerMarketView(s, date),
+    createEnquiry: (inq) => createEnquiryFrom(s, b, date, inq),
+    charge: (description, net) => { purchaseCost(s, b, net, description, null, date); },
+  };
+}
+
+function winEnquiry(s: GameState, enq: RenoEnquiry): void {
+  enq.status = 'won';
+  recordPlayerWin(s);
+}
+
+/** Gracz nie zdobył zlecenia: klient, który porównywał oferty, trafia do najsilniejszego konkurenta z zestawu. */
+function loseEnquiry(s: GameState, enq: RenoEnquiry): void {
+  enq.status = 'lost';
+  awardToRival(s, enq);
 }
 
 export function declineEnquiry(s: GameState, enquiryId: string): string {
   const e = reno(s).enquiries.find((x) => x.id === enquiryId);
   if (!e || e.status !== 'open') throw new CommandError('To zapytanie nie jest już otwarte.');
   e.status = 'declined';
+  awardToRival(s, e);
   return 'Zapytanie odrzucone.';
 }
 
@@ -768,29 +747,37 @@ function processQuotes(s: GameState, date: IsoDate): void {
   for (const q of reno(s).quotes) {
     const enq = reno(s).enquiries.find((e) => e.id === q.enquiryId)!;
     if (q.status === 'sent' && date >= q.decideOn) {
+      // klient porównujący oferty najpierw wybiera między Tobą a najsilniejszym konkurentem; dopiero potem ocenia cenę, termin i warunki
+      const contest = contestRival(s, { id: q.id, priceGross: grossOfNet(q.priceNet, q.vatRateBps), startDate: q.startDate }, enq, { quality: clamp(playerQuality(s) + STANDARDS[q.standard].quality, 0, 100), reputation: reputation(s, date).score }, date);
+      if (contest.contested && !contest.playerWins) {
+        q.status = 'rejected'; q.note = contest.reason; loseEnquiry(s, enq);
+        logEvent(s, { id: `reno.quote:${q.id}:rejected`, date, type: 'reno.quote', tone: 'negative', title: `Klient wybrał konkurencję: ${enq.clientName}`, detail: `Powód: ${contest.reason.replace('klient wybrał ofertę konkurencji ', '')}. Szansa na wygraną wynosiła ok. ${Math.round(contest.winProbBps / 100)}%.`, amount: null, category: null });
+        continue;
+      }
       const d = decideQuote(s, q, enq, date);
       if (d.outcome === 'accept') {
-        q.status = 'accepted'; q.acceptedOn = date; q.signBy = addDays(date, 5); enq.status = 'won';
+        q.status = 'accepted'; q.acceptedOn = date; q.signBy = addDays(date, 5); winEnquiry(s, enq);
         logEvent(s, { id: `reno.quote:${q.id}:accepted`, date, type: 'reno.quote', tone: 'positive', title: `Klient zaakceptował ofertę: ${enq.clientName}`, detail: `Podpisz umowę do ${formatDatePL(q.signBy)} — inaczej oferta wygaśnie.`, amount: null, category: null });
       } else if (d.outcome === 'counter') {
         q.status = 'counter'; q.counter = d.counter; q.note = d.reason;
         const c = d.counter!;
         logEvent(s, { id: `reno.quote:${q.id}:counter`, date, type: 'reno.quote', tone: 'warning', title: `Klient proponuje zmianę warunków: ${enq.clientName}`, detail: c.kind === 'discount' ? `Rabat ${c.discountBps / 100}% od ceny netto. Odpowiedz w ciągu 5 dni.` : `Zmiana terminu: start ${formatDatePL(c.newStart!)}, czas realizacji ${c.newDuration} dni. Odpowiedz w ciągu 5 dni.`, amount: null, category: null });
       } else {
-        q.status = 'rejected'; q.note = d.reason; enq.status = 'lost';
+        q.status = 'rejected'; q.note = d.reason; loseEnquiry(s, enq);
         logEvent(s, { id: `reno.quote:${q.id}:rejected`, date, type: 'reno.quote', tone: 'negative', title: `Klient odrzucił ofertę: ${enq.clientName}`, detail: `Powód: ${d.reason}`, amount: null, category: null });
       }
     } else if (q.status === 'counter' && date > addDays(q.decideOn, 5)) {
-      q.status = 'expired'; enq.status = 'lost';
+      q.status = 'expired'; loseEnquiry(s, enq);
       logEvent(s, { id: `reno.quote:${q.id}:expired`, date, type: 'reno.quote', tone: 'warning', title: `Klient nie doczekał się odpowiedzi: ${enq.clientName}`, detail: 'Negocjacje wygasły.', amount: null, category: null });
     } else if (q.status === 'accepted' && q.signBy && date > q.signBy) {
-      q.status = 'expired'; enq.status = 'lost';
+      q.status = 'expired'; loseEnquiry(s, enq);
       logEvent(s, { id: `reno.quote:${q.id}:unsigned`, date, type: 'reno.quote', tone: 'warning', title: `Oferta wygasła bez podpisania umowy: ${enq.clientName}`, detail: '', amount: null, category: null });
     }
   }
   for (const e of reno(s).enquiries) {
     if (e.status === 'open' && date > e.respondBy) {
       e.status = 'expired';
+      awardToRival(s, e);
       logEvent(s, { id: `reno.enquiry:${e.id}:expired`, date, type: 'reno.enquiry', tone: 'warning', title: `Zapytanie wygasło bez odpowiedzi: ${e.clientName}`, detail: 'Brak odpowiedzi pogarsza opinię o komunikacji.', amount: null, category: null });
     }
   }
@@ -802,7 +789,7 @@ export function respondToCounter(s: GameState, quoteId: string, action: 'accept'
   const enq = reno(s).enquiries.find((e) => e.id === q.enquiryId)!;
   const today = s.clock.today;
   if (action === 'decline') {
-    q.status = 'declined'; enq.status = 'lost';
+    q.status = 'declined'; loseEnquiry(s, enq);
     return 'Odrzucono propozycję klienta — negocjacje zakończone.';
   }
   if (action === 'hold') {
@@ -810,8 +797,8 @@ export function respondToCounter(s: GameState, quoteId: string, action: 'accept'
     q.held = true;
     const { pAccept } = clientAcceptanceBps(s, q, enq, today);
     const win = createRng(s.seed, `reno:hold:${q.id}`).int(0, 9_999) < roundDiv(pAccept * 6_000, 10_000);
-    if (win) { q.status = 'accepted'; q.acceptedOn = today; q.signBy = addDays(today, 5); enq.status = 'won'; q.counter = null; return 'Klient przyjął Twoje pierwotne warunki. Podpisz umowę.'; }
-    q.status = 'rejected'; q.note = 'klient nie zgodził się na podtrzymane warunki'; enq.status = 'lost';
+    if (win) { q.status = 'accepted'; q.acceptedOn = today; q.signBy = addDays(today, 5); winEnquiry(s, enq); q.counter = null; return 'Klient przyjął Twoje pierwotne warunki. Podpisz umowę.'; }
+    q.status = 'rejected'; q.note = 'klient nie zgodził się na podtrzymane warunki'; loseEnquiry(s, enq);
     return 'Klient nie zgodził się i zrezygnował.';
   }
   const c = q.counter;
@@ -824,7 +811,7 @@ export function respondToCounter(s: GameState, quoteId: string, action: 'accept'
     q.startDate = c.newStart!;
     q.durationDays = c.newDuration!;
   }
-  q.status = 'accepted'; q.acceptedOn = today; q.signBy = addDays(today, 5); enq.status = 'won';
+  q.status = 'accepted'; q.acceptedOn = today; q.signBy = addDays(today, 5); winEnquiry(s, enq);
   return 'Zaakceptowano zmianę warunków. Podpisz umowę.';
 }
 
@@ -1295,7 +1282,7 @@ function crewIdleReason(s: GameState, job: RenoJob, date: IsoDate): string {
       if (!e || !employmentActiveOn(e, date)) why.push(`pracownik ${p ? personName(p) : m.id} nie ma aktywnej umowy w tym dniu`);
     }
   }
-  return `Brak dostępnych wykonawców: ${why.length ? why.join('; ') : 'nikt z ekipy nie jest dziś dostępny'}`;
+  return `Brak dostępnych wykonawców: ${why.length ? why.join('; ') : 'nikt z ekipy nie jest dziś dostępny'}`.slice(0, 380); // limit pola w zapisie (blockedReason ≤ 400 znaków)
 }
 
 function workJob(s: GameState, b: Business, job: RenoJob, date: IsoDate, used: Set<string>): void {
@@ -1474,7 +1461,7 @@ function handover(s: GameState, b: Business, job: RenoJob, date: IsoDate): void 
 /** Prawdopodobieństwo reklamacji (pkt bazowe): rośnie wraz z niską jakością, problemami, poprawkami, opóźnieniem i niedopasowaniem standardu materiałów. */
 export function complaintBps(job: RenoJob, quality: number, extra = 0): number {
   const bps = (80 - quality) * 220 + job.issues.length * 250 + (job.reworkDone ? 800 : 0) + (job.lateDays > 0 ? 400 : 0) + (STANDARDS[job.standard].level < job.qualityReq ? 600 : 0) + extra;
-  return clamp(bps, 100, 7_500);
+  return clamp(Math.round((bps * SEGMENTS[segmentOfQualityReq(job.qualityReq)].complaintFactorBps) / 10_000), 100, 7_500);
 }
 
 function scheduleComplaint(s: GameState, job: RenoJob, date: IsoDate, quality: number): void {
@@ -1560,20 +1547,10 @@ function processComplaints(s: GameState, date: IsoDate): void {
 
 /* ---------- Przetwarzanie dnia i rejestracja modułu ---------- */
 
-function chargeAdvertising(s: GameState, b: Business, date: IsoDate): void {
-  const ad = reno(s).advertising;
-  const month = monthKey(date);
-  if (ad.level === 'none' || ad.paidMonth === month || parseIso(date).day !== 1) return;
-  const def = ADVERTISING.find((a) => a.id === ad.level)!;
-  purchaseCost(s, b, def.monthlyNet, `Reklama: ${def.label} — ${month}`, null, date);
-  ad.paidMonth = month;
-}
-
 export function processRenovation(s: GameState, b: Business, date: IsoDate): void {
   const key = `reno:day:${b.id}:${date}`;
   if (s.processed[key]) return;
   s.processed[key] = true;
-  chargeAdvertising(s, b, date);
   processSubcontracts(s, date);
   // zasoby (pracownicy, podwykonawcy, sprzęt, pojazdy) nie mogą pracować przy dwóch kontraktach tego samego dnia; wcześniejszy kontrakt ma pierwszeństwo
   const used = new Set<string>();
@@ -1585,7 +1562,7 @@ export function processRenovation(s: GameState, b: Business, date: IsoDate): voi
   }
   processQuotes(s, date);
   processComplaints(s, date);
-  maybeGenerateEnquiry(s, b, date);
+  processMarketDay(s, date, marketHooks(s, b, date));
 }
 
 export function renovationGaps(s: GameState, b: Business, date: IsoDate): { key: string; text: string }[] {

@@ -229,16 +229,25 @@ export function processDay(s: GameState, date: IsoDate): void {
  * operacja nie jest pomijana). Zwraca nowy stan; argument pozostaje nietknięty.
  */
 export function advanceDays(state: GameState, days: number): GameState {
+  const draft = structuredClone(state);
+  advanceDaysInPlace(draft, days);
+  return draft;
+}
+
+/**
+ * Jak `advanceDays`, ale MUTUJE przekazany stan (bez kopii). Dla wywołujących na wyłączność — np. symulator balansu,
+ * który nie potrzebuje niezmiennych migawek co dzień. Wynik jest identyczny z `advanceDays`.
+ */
+export function advanceDaysInPlace(state: GameState, days: number): GameState {
   if (!Number.isInteger(days) || days < 1 || days > MAX_ADVANCE_DAYS) {
     throw new RangeError(`Liczba dni musi być całkowita z zakresu 1..${MAX_ADVANCE_DAYS}`);
   }
-  const draft = structuredClone(state);
   for (let i = 0; i < days; i++) {
-    const next = addDays(draft.clock.today, 1);
-    processDay(draft, next);
-    draft.clock.today = next;
+    const next = addDays(state.clock.today, 1);
+    processDay(state, next);
+    state.clock.today = next;
   }
-  return draft;
+  return state;
 }
 
 export function advanceOneDay(state: GameState): GameState {

@@ -246,6 +246,10 @@ export const EventTypeSchema = z.enum([
   'tax.health',
   'tax.loss',
   'reno.enquiry',
+  'market.start',
+  'market.entry',
+  'market.exit',
+  'market.positioning',
   'reno.quote',
   'reno.contract',
   'reno.work',
@@ -631,6 +635,10 @@ export const HealthSettlementSchema = z.object({
 export const MaterialStandardSchema = z.enum(['eko', 'std', 'premium']);
 export const ComplexitySchema = z.enum(['standard', 'trudne']);
 
+export const SegmentIdSchema = z.enum(['budget', 'standard', 'premium']);
+export const PositioningSchema = z.enum(['low', 'balanced', 'premium']);
+export const ChannelIdSchema = z.enum(['search', 'local_ads', 'portals', 'referrals', 'card', 'partnerships']);
+
 export const RenoEnquirySchema = z.object({
   id: IdSchema,
   businessId: IdSchema,
@@ -653,6 +661,16 @@ export const RenoEnquirySchema = z.object({
   receivedOn: IsoDateSchema,
   respondBy: IsoDateSchema,
   status: z.enum(['open', 'quoted', 'won', 'lost', 'expired', 'declined']),
+  /** v0.7: segment klienta, kanał, przez który trafiło zapytanie (null = brak danych/zapisy sprzed v0.7), oraz konkurencja o to zlecenie. */
+  segment: SegmentIdSchema,
+  source: ChannelIdSchema.nullable(),
+  /** Liczba konkurentów, z którymi klient porównuje oferty (0 = klient zapytał tylko tę firmę). */
+  rivals: z.number().int().min(0),
+  /** Najsilniejszy konkurent w zestawie klienta i jego ocena oferty (punkty ×100); do rozstrzygnięcia przy decyzji klienta. */
+  rivalId: IdSchema.nullable(),
+  rivalUtility: z.number().int(),
+  /** Czy zlecenie zostało już przyznane konkurentowi (zapobiega podwójnemu księgowaniu obciążenia konkurenta). */
+  rivalAwarded: z.boolean(),
 });
 
 export const RenoCostPlanSchema = z.object({
@@ -765,7 +783,7 @@ export const RenoJobSchema = z.object({
   lateDays: z.number().int().min(0),
   penaltyNet: NonNegGroszeSchema,
   /** Początek okresu bezczynności z powodu braków/awarii — do opisu w harmonogramie. */
-  blockedReason: z.string().max(120).nullable(),
+  blockedReason: z.string().max(400).nullable(),
 });
 
 export const EquipmentItemSchema = z.object({
@@ -822,7 +840,6 @@ export const RenovationStateSchema = z.object({
   specializations: z.array(z.string()),
   /** Doświadczenie (setne godziny efektywnej pracy) per usługa — rośnie wyłącznie od wykonanej pracy. */
   skillXp: z.record(z.string(), z.number().int().min(0)),
-  advertising: z.object({ level: z.enum(['none', 'local', 'intensive']), since: IsoDateSchema.nullable(), paidMonth: z.string().nullable() }),
   enquiries: z.array(RenoEnquirySchema),
   quotes: z.array(RenoQuoteSchema),
   jobs: z.array(RenoJobSchema),
@@ -833,6 +850,86 @@ export const RenovationStateSchema = z.object({
   complaints: z.array(RenoComplaintSchema),
 });
 
+
+/* ---------- Rynek lokalny, konkurencja, marketing i strategia (v0.7) ---------- */
+
+export const CompetitorSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(80),
+  status: z.enum(['active', 'exited']),
+  enteredOn: IsoDateSchema,
+  exitedOn: IsoDateSchema.nullable(),
+  size: z.enum(['solo', 'small', 'medium']),
+  workers: z.number().int().min(1).max(30),
+  services: z.array(z.string()).min(1),
+  positioning: PositioningSchema,
+  /** Poziom cen względem ceny referencyjnej (10 000 = cena referencyjna). */
+  priceBps: z.number().int().min(4_000).max(25_000),
+  quality: z.number().int().min(0).max(100),
+  reputation: z.number().int().min(0).max(100),
+  marketingMonthly: NonNegGroszeSchema,
+  /** Skuteczna widoczność z marketingu (waga ×10 000), wygładzona opóźnieniem efektu. */
+  marketingReach: z.number().int().min(0),
+  /** Zaległość pracy: godziny i wartość dodana (cena bez materiałów) jeszcze nie wykonanych zleceń. */
+  backlogHours: z.number().int().min(0),
+  backlogValue: NonNegGroszeSchema,
+  /** Uproszczony stan ekonomiczny (bez księgowości i podatków); może być ujemny. */
+  cash: z.number().int(),
+  monthsInLoss: z.number().int().min(0),
+  highUtilMonths: z.number().int().min(0),
+  lowUtilMonths: z.number().int().min(0),
+  /** Bieżący miesiąc: zdobyte zlecenia, przepracowane godziny, zrealizowana wartość. */
+  month: z.object({ won: z.number().int().min(0), hours: z.number().int().min(0), revenue: NonNegGroszeSchema }),
+  /** Poprzedni zamknięty miesiąc (null tuż po wejściu na rynek). */
+  last: z.object({ utilizationBps: z.number().int(), profit: z.number().int(), won: z.number().int().min(0) }).nullable(),
+});
+
+export const MarketMonthSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  phase: z.enum(['wzrost', 'stabilizacja', 'spowolnienie', 'recesja']),
+  index: z.number().int(),
+  /** Całkowity popyt (projekty w mieście), z tego szukający wykonawcy, zapytania do gracza, zlecenia wygrane przez gracza i przez konkurentów. */
+  demand: z.number().int().min(0),
+  seekers: z.number().int().min(0),
+  playerInquiries: z.number().int().min(0),
+  playerLostCapacity: z.number().int().min(0),
+  playerWon: z.number().int().min(0),
+  rivalWon: z.number().int().min(0),
+  unserved: z.number().int().min(0),
+  competitors: z.number().int().min(0),
+  avgPriceBps: z.number().int(),
+  avgReputation: z.number().int(),
+  /** Średnie obłożenie aktywnych konkurentów w miesiącu (ważone liczbą wykonawców; pkt bazowe) — wskaźnik nadmiaru/niedoboru mocy na rynku. */
+  competitorUtilBps: z.number().int().min(0),
+  marketingSpend: NonNegGroszeSchema,
+});
+
+export const MarketStateSchema = z.object({
+  cityId: z.string().min(1),
+  industryId: z.string().min(1),
+  /** Dzień uruchomienia modelu rynku dla tej gry (null = jeszcze nie uruchomiony; zapisy sprzed v0.7 startują „od teraz”, bez historii wstecz). */
+  initializedOn: IsoDateSchema.nullable(),
+  competitors: z.array(CompetitorSchema),
+  marketing: z.object({
+    /** Miesięczny budżet netto per kanał (klucze = ChannelId). */
+    budgets: z.record(z.string(), NonNegGroszeSchema),
+    /** Skuteczna widoczność per kanał (waga ×10 000), wygładzona opóźnieniem efektu. */
+    reach: z.record(z.string(), z.number().int().min(0)),
+    lastChargedMonth: z.string().nullable(),
+    spend: z.array(z.object({ month: z.string(), channel: z.string(), amount: NonNegGroszeSchema })),
+  }),
+  strategy: z.object({
+    positioning: PositioningSchema,
+    previous: PositioningSchema.nullable(),
+    changedOn: IsoDateSchema.nullable(),
+    lastChargedMonth: z.string().nullable(),
+    history: z.array(z.object({ date: IsoDateSchema, from: PositioningSchema, to: PositioningSchema, note: z.string().max(200) })),
+  }),
+  /** Zamknięte miesiące (najnowsze na końcu) i bieżący miesiąc w toku. */
+  months: z.array(MarketMonthSchema),
+  current: MarketMonthSchema.nullable(),
+  lastEntryMonth: z.string().nullable(),
+});
 
 /* ---------- Pracownicy, ekipy, podwykonawcy, pojazdy (v0.6) ---------- */
 
@@ -1078,6 +1175,8 @@ export const GameStateSchema = z.object({
   healthSettlements: z.array(HealthSettlementSchema),
   /** Moduł branży remontowej (v0.5). Pusty, dopóki gracz nie prowadzi takiej działalności. */
   reno: RenovationStateSchema,
+  /** Rynek lokalny, konkurenci, marketing i pozycjonowanie firmy (v0.7; wspólna warstwa dla branż). */
+  market: MarketStateSchema,
   accounting: AccountingSchema,
   /** Pracownicy, rekrutacja, podwykonawcy, ekipy, przydziały zasobów i pojazdy (v0.6; wspólny silnik, nie moduł branży). */
   ops: OpsSchema,
@@ -1115,6 +1214,9 @@ export type TaxLoss = z.infer<typeof TaxLossSchema>;
 export type HealthSettlement = z.infer<typeof HealthSettlementSchema>;
 export type RenoEnquiry = z.infer<typeof RenoEnquirySchema>;
 export type RenoQuote = z.infer<typeof RenoQuoteSchema>;
+export type Competitor = z.infer<typeof CompetitorSchema>;
+export type MarketMonth = z.infer<typeof MarketMonthSchema>;
+export type MarketState = z.infer<typeof MarketStateSchema>;
 export type RenoJob = z.infer<typeof RenoJobSchema>;
 export type RenoCostPlan = z.infer<typeof RenoCostPlanSchema>;
 export type EquipmentItem = z.infer<typeof EquipmentItemSchema>;

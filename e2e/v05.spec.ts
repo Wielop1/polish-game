@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test';
 const nav = async (page: Page, name: string) => {
   const menu = page.getByRole('navigation', { name: 'Główna nawigacja' });
   const item = menu.getByRole('button', { name, exact: true });
-  if (!(await item.first().isVisible())) for (const h of await menu.locator('button[aria-expanded="false"]').all()) await h.click();
+  for (let i = 0; i < 6 && !(await item.first().isVisible()); i++) await menu.locator('button[aria-expanded="false"]').first().click();
   await item.click();
 };
 

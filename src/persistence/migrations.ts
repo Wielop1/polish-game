@@ -182,3 +182,46 @@ export function migrateV5ToV6(raw: unknown, buildPool: (seed: string) => unknown
   };
   return s;
 }
+
+/** Wartości zamrożone na potrzeby migracji v6 → v7 (kopia, nie import z konfiguracji rynku). */
+const V7 = {
+  /** Dawna reklama → budżety kanałów (zachowany miesięczny koszt: 400 zł lokalna; 1 100 zł intensywna = wyszukiwarka 600 + portale 500). */
+  adBudgets: { local: { local_ads: 40_000 }, intensive: { search: 60_000, portals: 50_000 } } as Record<string, Record<string, number>>,
+  /** Maks. widoczność i nasycenie kanałów — do ustawienia startowej widoczności tak, by migracja nie „wyzerowała” trwającej reklamy. */
+  channels: { local_ads: { maxReach: 5_500, saturation: 70_000 }, search: { maxReach: 11_000, saturation: 160_000 }, portals: { maxReach: 9_000, saturation: 110_000 } } as Record<string, { maxReach: number; saturation: number }>,
+} as const;
+
+/**
+ * v6 → v7: rynek lokalny, konkurencja, marketing i pozycjonowanie. Historia finansowa, dokumenty i kontrakty zostają nietknięte.
+ * Nie generujemy wstecznie konkurentów, zdarzeń ani przychodów: `market.initializedOn = null` — model rynku startuje „od teraz”
+ * w pierwszym przetworzonym dniu firmy remontowej. Dawna reklama (`reno.advertising`) staje się budżetami kanałów marketingowych
+ * (ten sam miesięczny koszt, widoczność od razu na poziomie docelowym). Zapytania sprzed v0.7 dostają segment wg wymagań jakościowych
+ * i brak konkurencji (nie były porównywane z innymi firmami).
+ */
+export function migrateV6ToV7(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) throw new Error('Zapis v6 ma nieprawidłową strukturę stanu.');
+  const s = structuredClone(raw) as Json;
+  const ad = s.reno?.advertising as { level?: string; paidMonth?: string | null } | undefined;
+  const budgets: Record<string, number> = { ...(V7.adBudgets[ad?.level ?? 'none'] ?? {}) };
+  const reach: Record<string, number> = {};
+  for (const [ch, b] of Object.entries(budgets)) {
+    const def = V7.channels[ch]!;
+    reach[ch] = Math.round((def.maxReach * b) / (b + def.saturation));
+  }
+  s.market = {
+    cityId: 'olsztyn', industryId: 'renovation', initializedOn: null, competitors: [],
+    marketing: { budgets, reach, lastChargedMonth: ad?.paidMonth ?? null, spend: [] },
+    strategy: { positioning: 'balanced', previous: null, changedOn: null, lastChargedMonth: null, history: [] },
+    months: [], current: null, lastEntryMonth: null,
+  };
+  delete s.reno.advertising;
+  for (const e of s.reno.enquiries as Json[]) {
+    e.segment = e.qualityReq === 1 ? 'budget' : e.qualityReq === 3 ? 'premium' : 'standard';
+    e.source = null;
+    e.rivals = 0;
+    e.rivalId = null;
+    e.rivalUtility = 0;
+    e.rivalAwarded = false;
+  }
+  return s;
+}

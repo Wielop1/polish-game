@@ -8,6 +8,7 @@ import type { Grosze } from './money.ts';
 import { issueDocument, US_PARTY, ZUS_PARTY } from './business.ts';
 import { requireActiveBusiness, requireCash } from './opsCommon.ts';
 import { createRng } from './rng.ts';
+import { macroAt } from './macro.ts';
 import {
   FIRST_NAMES, LAST_NAMES, LEVEL_START_XP, LISTING_DAYS, LISTING_TIERS, MARKET_GROSS_BY_LEVEL, MAX_CANDIDATES_PER_LISTING, MAX_EMPLOYEES, ROLE_BY_ID, levelFromXp,
 } from './renovationCatalog.ts';
@@ -140,7 +141,8 @@ function makeCandidate(s: GameState, l: JobListing, date: IsoDate): void {
   const [year, month, day] = date.split('-').map(Number) as [number, number, number];
   const birth = addDays(addMonths(`${year - age}-${String(month).padStart(2, '0')}-01`, 0), day - 1 + rng.int(0, 200));
   const base = MARKET_GROSS_BY_LEVEL[level]!;
-  const expected = Math.max(R.minWage, roundTo(roundDiv(base * rng.int(90, 122), 100), zl(10)));
+  // presja płacowa z koniunktury (v0.7): oczekiwania rynkowe rosną w dobrej, maleją w złej koniunkturze; płaca minimalna obowiązuje zawsze
+  const expected = Math.max(R.minWage, roundTo(roundDiv(roundDiv(base * rng.int(90, 122), 100) * macroAt(s.seed, date.slice(0, 7)).wageBps, 10_000), zl(10)));
   const xpBand = (LEVEL_START_XP[Math.min(5, level + 1)] ?? LEVEL_START_XP[5]!) - LEVEL_START_XP[level]!;
   const pn = nextCounter(s, 'hr:person');
   const person: WorkerPerson = {

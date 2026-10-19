@@ -3,7 +3,7 @@ import { checkInvariants } from '../engine/invariants.ts';
 import { netWorth, playerAccount } from '../engine/selectors.ts';
 import { GameStateSchema } from '../engine/state.ts';
 import type { GameState } from '../engine/state.ts';
-import { migrateV1ToV2, migrateV2ToV3, migrateV3ToV4, migrateV4ToV5, migrateV5ToV6 } from './migrations.ts';
+import { migrateV1ToV2, migrateV2ToV3, migrateV3ToV4, migrateV4ToV5, migrateV5ToV6, migrateV6ToV7 } from './migrations.ts';
 import { buildSubcontractors } from '../engine/industryDefaults.ts';
 
 /**
@@ -14,7 +14,7 @@ import { buildSubcontractors } from '../engine/industryDefaults.ts';
  * starych zapisów nigdy nie wyrzucamy. Zapis z NOWSZEJ wersji niż znana jest odrzucany.
  */
 export const SAVE_FORMAT = 'polski-tycoon-save';
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 export const SaveMetaSchema = z.object({
   playerName: z.string(),
@@ -39,6 +39,7 @@ export const MIGRATIONS: Record<number, (state: unknown) => unknown> = {
   3: migrateV3ToV4,
   4: migrateV4ToV5,
   5: (state) => migrateV5ToV6(state, buildSubcontractors),
+  6: migrateV6ToV7,
 };
 
 export function metaOf(state: GameState): SaveMeta {

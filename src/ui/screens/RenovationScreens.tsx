@@ -2,21 +2,23 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { activeBusiness, businessState, profileOf } from '../../engine/business.ts';
 import { addDays, formatDatePL, weekdayIndex } from '../../engine/date.ts';
-import { formatPLN, zl } from '../../engine/money.ts';
+import { formatPLN, mulBps, zl } from '../../engine/money.ts';
 import {
-  defaultQuoteInput, enquiryRateBps, equipmentStatus, jobFinancials, jobForecast, materialAvailable, materialPrice, ownedEquipment, previewQuote, renoDashboard, reputation, skillLevel,
+  defaultQuoteInput, equipmentStatus, referencePrice, jobFinancials, jobForecast, materialAvailable, materialPrice, ownedEquipment, previewQuote, renoDashboard, reputation, skillLevel,
   skillProgress, speedBps, splitKey, stockKey, stockQty, grossOfNet, equipmentBookValue,
 } from '../../engine/renovation.ts';
 import type { QuoteInput } from '../../engine/renovation.ts';
 import type { GameState, RenoEnquiry, RenoQuote } from '../../engine/state.ts';
 import { commands } from '../../engine/commands.ts';
 import {
-  ADVERTISING, COMPLEXITY_LABEL, EQUIPMENT, MATERIALS, MATERIAL_BY_ID, QUALITY_REQ_LABEL, SERVICES, SERVICE_BY_ID, SKILL_THRESHOLD_CENTI, SPECIALIZATION_COURSE, STANDARDS,
+  COMPLEXITY_LABEL, EQUIPMENT, MATERIALS, MATERIAL_BY_ID, QUALITY_REQ_LABEL, SERVICES, SERVICE_BY_ID, SKILL_THRESHOLD_CENTI, SPECIALIZATION_COURSE, STANDARDS,
 } from '../../engine/renovationCatalog.ts';
 import type { MaterialStandard } from '../../engine/state.ts';
 import { budgetFor } from '../../engine/time.ts';
 import { businessLiquidity } from '../../engine/selectors.ts';
 import { liquidityForecast, teamLoad } from '../../engine/profitability.ts';
+import { marketOverview, marketPrices } from '../../engine/marketAnalytics.ts';
+import { SEGMENTS } from '../../engine/marketConfig.ts';
 import { activeEmployments, monthlyEmployerCost, personById, personLevel, personName, wageOn } from '../../engine/workforce.ts';
 import { vehicleDef } from '../../engine/fleet.ts';
 import { subPrice } from '../../engine/subcontractors.ts';
@@ -235,7 +237,7 @@ export function RenoEnquiriesScreen() {
   if (!biz || !isReno) return <NoReno title="Zapytania klientów" />;
   const open = game.reno.enquiries.filter((e) => e.status === 'open');
   const history = [...game.reno.enquiries].filter((e) => e.status !== 'open').reverse().slice(0, 8);
-  const rate = enquiryRateBps(game, game.clock.today);
+  const mkt = marketOverview(game);
   const stateNow = businessState(biz, game.clock.today);
   const openCount = game.reno.enquiries.filter((e) => e.status === 'open' || e.status === 'quoted').length;
   const noEnquiryReason =
@@ -251,7 +253,7 @@ export function RenoEnquiriesScreen() {
       <ScreenHeader title="Zapytania klientów" subtitle="Klienci indywidualni pytają o usługi z Twoich specjalizacji. Odpowiedz na czas — szybka oferta poprawia ocenę komunikacji." />
       <ParamNote />
       <Card title="Otwarte zapytania">
-        {open.length === 0 ? <Empty><span data-testid="no-enquiries">Brak otwartych zapytań.</span> {noEnquiryReason ?? <>Szansa na nowe zapytanie dziś: {fmtPct(rate.total)} — zależy od reputacji, reklamy, sezonu, dostępności i cen (ekran „Reputacja i reklamacje”).</>}</Empty> : (
+        {open.length === 0 ? <Empty><span data-testid="no-enquiries">Brak otwartych zapytań.</span> {noEnquiryReason ?? <>Zapytania zależą od popytu na rynku ({mkt.macro.phase}), sezonu, Twojego marketingu, opinii i konkurencji — średnio {mkt.inquiriesPerMonth.toFixed(1).replace('.', ',')} miesięcznie (ekrany „Rynek”, „Marketing”, „Analiza popytu”).</>}</Empty> : (
           <ul className="grid gap-3 lg:grid-cols-2" data-testid="enquiries-list">
             {open.map((e) => {
               const def = SERVICE_BY_ID.get(e.serviceId)!;
@@ -261,7 +263,8 @@ export function RenoEnquiriesScreen() {
                   <div className="flex items-start justify-between gap-2"><strong className="text-slate-100">{def.label}</strong><Badge tone={spec ? 'gain' : 'neutral'}>{spec ? 'Twoja specjalizacja' : 'poza specjalizacją'}</Badge></div>
                   <div className="mt-1 text-slate-300">{e.units} {def.unit} · {e.location} · {COMPLEXITY_LABEL[e.complexity]}</div>
                   <dl className="mt-2 divide-y divide-ink-700/60">
-                    <Row k="Klient" v={e.clientName.split(' (')[0]} />
+                    <Row k="Klient" v={<>{e.clientName.split(' (')[0]} <Badge tone={e.segment === 'premium' ? 'gold' : e.segment === 'budget' ? 'neutral' : 'sky'}>{SEGMENTS[e.segment].label.toLowerCase()}</Badge></>} />
+                    <Row k="Konkurencja" v={e.rivals === 0 ? 'pyta tylko Ciebie' : `porównuje oferty ${e.rivals + 1} firm`} tone={e.rivals === 0 ? 'text-gain' : 'text-slate-300'} />
                     <Row k="Szacowany budżet (brutto)" v={<Money value={e.budgetGross} round />} />
                     <Row k="Wymagania jakościowe" v={QUALITY_REQ_LABEL[e.qualityReq]} />
                     <Row k="Oczekiwany start" v={`${formatDatePL(e.desiredStart)} (±${e.flexDays} dn.)`} />
@@ -387,6 +390,8 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   const num = (v: string) => (v.trim() === '' ? NaN : Number(v.replace(',', '.')));
   const setMarkup = (bps: number) => { const net = Math.round((p.planned.total * (10_000 + bps)) / 10_000 / 1_000) * 1_000; setPriceText(String(net / 100)); };
   const field = 'w-full rounded-xl border border-ink-600 bg-ink-900/80 px-3 py-2 text-slate-100 focus:border-sky focus:outline-none';
+  const mp = marketPrices(game);
+  const refPrice = referencePrice(enq.serviceId, enq.units, enq.complexity, enq.qualityReq);
   // podwykonawcy gotowi wziąć całe zlecenie (poziom jakości ≥ trudność), z ceną za 100% zakresu
   const subLevel = (quality: number) => Math.max(1, Math.min(5, Math.round((quality - 40) / 10)));
   const subOptions = game.ops.subcontractors.filter((x) => x.services.includes(enq.serviceId)).map((x) => ({ sub: x, price: subPrice(x, enq.serviceId, enq.units, enq.complexity, 10_000), fits: subLevel(x.quality) >= p.difficulty, busyUntil: resourceBusy(game, 'sub', x.id, q.startDate, addDays(q.startDate, Math.max(1, Number.isNaN(q.durationDays) ? 1 : q.durationDays) - 1))?.to ?? null }));
@@ -492,6 +497,11 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
             <Row k="Minimalny czas pracy" v={`${p.minDays} dni po ${input.hoursPerDay} godz.`} />
             <Row k={`Poziom umiejętności / wymagany`} v={`${p.level} / ${p.difficulty}`} />
           </dl>
+          <div className="rounded-xl border border-ink-700 p-3 text-xs text-slate-400" data-testid="quote-competition">
+            <div className="mb-1 font-semibold text-slate-200">Klient {SEGMENTS[enq.segment].label.toLowerCase()} · {enq.rivals === 0 ? 'pyta tylko Ciebie' : `porównuje oferty ${enq.rivals + 1} firm`}</div>
+            {mp && <div className="mb-1 text-slate-300" data-testid="market-price-hint">Orientacyjnie rynek wycenia to zlecenie na {formatPLN(mulBps(refPrice, mp.lowBps), { round: true })}–{formatPLN(mulBps(refPrice, mp.highBps), { round: true })} (cena referencyjna {formatPLN(refPrice, { round: true })}); budżet klienta to ok. {formatPLN(enq.budgetGross, { round: true })} brutto.</div>}
+            {SEGMENTS[enq.segment].description} {enq.rivals > 0 ? 'Wygrasz z konkurencją ceną, jakością (standard materiałów), opiniami i terminem — nie samą najniższą ceną. Dopiero potem klient ocenia warunki oferty.' : 'Nie porównuje ofert, ale nadal może odrzucić zbyt drogą ofertę lub zły termin.'}
+          </div>
           {p.errors.length > 0 && <ul className="space-y-1 text-xs text-loss" role="alert">{p.errors.map((e) => <li key={e}>✖ {e}</li>)}</ul>}
           {p.warnings.length > 0 && <ul className="space-y-1 text-xs text-gold">{p.warnings.map((w) => <li key={w}>⚠ {w}</li>)}</ul>}
           {Object.keys(p.stockShortage).length > 0 && <p className="text-xs text-slate-400">Materiały do zakupu po podpisaniu umowy: {Object.entries(p.stockShortage).map(([k, n]) => `${MATERIAL_BY_ID.get(splitKey(k).materialId)!.label} × ${n}`).join(', ')}.</p>}
@@ -806,11 +816,11 @@ export function RenoStockScreen() {
 
 export function RenoReputationScreen() {
   const { game, biz, isReno } = useReno();
-  const setAd = useGameStore((s) => s.setAdvertising);
+  const navigate = useGameStore((s) => s.navigate);
   const resolve = useGameStore((s) => s.resolveComplaint);
   if (!biz || !isReno) return <NoReno title="Reputacja i reklamacje" />;
   const rep = reputation(game);
-  const rate = enquiryRateBps(game, game.clock.today);
+  const mkt = marketOverview(game);
   const reviews = [...game.reno.reviews].reverse().slice(0, 10);
   const complaints = [...game.reno.complaints].filter((c) => c.status !== 'pending').reverse();
   const CSTATUS = { pending: 'zaplanowana', open: 'czeka na decyzję', repairing: 'poprawki w toku', resolved: 'rozwiązana', refunded: 'rabat przyznany', escalated: 'eskalowana (negatywna opinia)' } as const;
@@ -819,21 +829,13 @@ export function RenoReputationScreen() {
       <ScreenHeader title="Reputacja i reklamacje" subtitle="Opinie klientów wpływają na liczbę zapytań i szanse na akceptację ofert." />
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard testId="reno-reputation" label="Reputacja" icon="trend" accent="gold" value={`${rep.stars.toString().replace('.', ',')}★`} hint={`${rep.reviews} opinii · start 3,5★`} />
-        <StatCard label="Szansa na zapytanie dziś" icon="bell" accent="sky" value={fmtPct(rate.total)} hint="łącznie z modyfikatorami" />
-        <StatCard label="Sezon" icon="calendar" accent="violet" value={fmtPct(rate.parts.season)} hint="popyt miesiąca (parametr)" />
-        <StatCard label="Dostępność terminów" icon="clock" accent="gain" value={fmtPct(rate.parts.availability)} hint="wolne godziny w 14 dni" />
+        <StatCard label="Zapytania / mies." icon="bell" accent="sky" value={mkt.inquiriesPerMonth.toFixed(1).replace('.', ',')} hint="średnia z 6 mies. (rynek + marketing)" />
+        <StatCard label="Koniunktura" icon="calendar" accent="violet" value={mkt.macro.phase} hint="wpływa na popyt i budżety klientów" />
+        <StatCard label="Konwersja" icon="clock" accent="gain" value={mkt.conversionBps === null ? '—' : fmtPct(mkt.conversionBps)} hint="zapytania → umowy (6 mies.)" />
       </div>
-      <Card title="Reklama">
-        <div className="grid gap-2 sm:grid-cols-3" data-testid="advertising">
-          {ADVERTISING.map((a) => (
-            <div key={a.id} className={cx('rounded-xl border p-3 text-sm', game.reno.advertising.level === a.id ? 'border-sky bg-sky/10' : 'border-ink-600')}>
-              <div className="font-medium text-slate-100">{a.label}</div>
-              <div className="mt-1 text-xs text-slate-400">{a.monthlyNet > 0 ? `${formatPLN(a.monthlyNet, { round: true })} netto / mies.` : 'bez kosztów'} · zapytań ×{(a.leadBps / 10_000).toFixed(1).replace('.', ',')}</div>
-              <Button variant="secondary" className="mt-2" disabled={game.reno.advertising.level === a.id} onClick={() => setAd(a.id)} data-testid={`ad-${a.id}`}>{game.reno.advertising.level === a.id ? 'Aktywna' : 'Wybierz'}</Button>
-            </div>
-          ))}
-        </div>
-        <p className="mt-2 text-xs text-slate-500">Opłata (dokument kosztowy) jest pobierana przy włączeniu i 1. dnia każdego miesiąca. Zmiana poziomu w tym samym miesiącu nie daje darmowego okresu.</p>
+      <Card title="Marketing i widoczność">
+        <p className="text-sm text-slate-300">Opinie klientów zwiększają widoczność firmy w kanałach marketingowych i szanse w porównaniu ofert z konkurencją. Budżet reklamowy rozdzielasz między kanały na osobnym ekranie.</p>
+        <div className="mt-3 flex flex-wrap gap-2"><Button variant="secondary" onClick={() => navigate('marketMarketing')} data-testid="go-marketing">Przejdź do Marketingu</Button><Button variant="ghost" onClick={() => navigate('marketStrategy')}>Strategia firmy</Button></div>
       </Card>
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="Opinie klientów">

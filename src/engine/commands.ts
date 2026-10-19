@@ -6,7 +6,7 @@ import type { RegisterInput } from './business.ts';
 import { applyForJob, resignFromJob, respondToJobOffer } from './jobs.ts';
 import { resolveLifeEvent } from './lifeEvents.ts';
 import { signLease } from './housing.ts';
-import { addSpecialization, assignCrew, assignVehicle, buyEquipment, buyMaterial, buyMissingForJob, declineEnquiry, maintainEquipment, resolveComplaint, respondToCounter, sendQuote, setAdvertising, signContract, terminateJob } from './renovation.ts';
+import { addSpecialization, assignCrew, assignVehicle, buyEquipment, buyMaterial, buyMissingForJob, declineEnquiry, maintainEquipment, resolveComplaint, respondToCounter, sendQuote, signContract, terminateJob } from './renovation.ts';
 import type { CrewMember, QuoteInput } from './renovation.ts';
 import { hireAccountingOffice, terminateAccountingOffice } from './accounting.ts';
 import { closeListing, giveNotice, makeOffer, publishListing, rejectCandidate, setWage } from './workforce.ts';
@@ -16,6 +16,7 @@ import { createTeam, deleteTeam, updateTeam } from './teams.ts';
 import type { TeamMember } from './teams.ts';
 import { buyVehicle } from './fleet.ts';
 import { transferFunds } from './savings.ts';
+import { setMarketingBudget, setPositioning } from './market.ts';
 import type { Grosze } from './money.ts';
 import type { GameState, Lifestyle, TaxForm } from './state.ts';
 import { LifestyleSchema } from './state.ts';
@@ -103,7 +104,8 @@ export const commands = {
   maintainEquipment: (state: GameState, itemId: string) => runCommand(state, (d) => maintainEquipment(d, itemId)),
   buyMaterial: (state: GameState, key: string, qty: number) => runCommand(state, (d) => buyMaterial(d, key, qty)),
   buyMissingForJob: (state: GameState, jobId: string) => runCommand(state, (d) => buyMissingForJob(d, jobId)),
-  setAdvertising: (state: GameState, level: 'none' | 'local' | 'intensive') => runCommand(state, (d) => setAdvertising(d, level)),
+  setMarketingBudget: (state: GameState, channel: string, monthlyNet: Grosze) => runCommand(state, (d) => setMarketingBudget(d, channel, monthlyNet)),
+  setPositioning: (state: GameState, positioning: string) => runCommand(state, (d) => setPositioning(d, positioning)),
   addSpecialization: (state: GameState, serviceId: string) => runCommand(state, (d) => addSpecialization(d, serviceId)),
   declineEnquiry: (state: GameState, enquiryId: string) => runCommand(state, (d) => declineEnquiry(d, enquiryId)),
   sendQuote: (state: GameState, enquiryId: string, input: QuoteInput) => runCommand(state, (d) => sendQuote(d, enquiryId, input)),

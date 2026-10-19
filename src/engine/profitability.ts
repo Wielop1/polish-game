@@ -78,7 +78,7 @@ export function fixedCosts(s: GameState, month: string): FixedCosts {
   const sum = (prefix: string) => docs.filter((d) => d.description.startsWith(prefix)).reduce((a, d) => a + d.taxAmount, 0);
   const vehicleFixed = s.ops.vehicles.filter((v) => monthKey(v.purchasedOn) <= month).reduce((a, v) => a + vehicleDef(v).fixedMonthly, 0);
   const owner = s.obligations.filter((o) => o.scope === 'business' && o.issueDate.startsWith(month) && (o.category === 'zus_spoleczne' || o.category === 'zus_zdrowotna')).reduce((a, o) => a + o.amount, 0);
-  const advertising = sum('Reklama');
+  const advertising = sum('Marketing') + sum('Reklama') + sum('Pozycjonowanie');
   const accounting = sum('Obsługa księgowa');
   const recruitment = sum('Ogłoszenie o pracę');
   return { month, payrollTotal: pay.total, payrollAllocated: pay.allocated, payrollIdle: pay.idle, vehicleFixed, advertising, accounting, recruitment, ownerContributions: owner, total: pay.idle + vehicleFixed + advertising + accounting + recruitment + owner };

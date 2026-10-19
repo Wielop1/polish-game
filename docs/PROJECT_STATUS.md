@@ -1,13 +1,29 @@
 # PROJECT_STATUS — stan projektu
 
-> Aktualizuj po każdym zadaniu. Opisuje **stan faktyczny**, nie plany. Ostatnia aktualizacja: 2026-10-18.
+> Aktualizuj po każdym zadaniu. Opisuje **stan faktyczny**, nie plany. Ostatnia aktualizacja: 2026-10-19.
 
 ## Wersja
 
-**v0.6.0 — Pracownicy, ekipy i rozwój firmy** (zakończona; v0.7 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 6` (migracje v1 → … → v6). Wcześniej: v0.5 (branża remontowa), v0.4 (rozliczenia roczne), v0.3 (JDG), v0.2.1, v0.2, v0.1.
-Rejestr rozwoju mechanik: [`FEATURE_EVOLUTION.md`](FEATURE_EVOLUTION.md) · rejestr reguł prawnych: [`LEGAL_SOURCES.md`](LEGAL_SOURCES.md).
+**v0.7.0 — Rynek, konkurencja i balans gospodarki** (zakończona; v0.8 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 7` (migracje v1 → … → v7). Wcześniej: v0.6 (pracownicy, ekipy, podwykonawcy; commit bazowy 979bae3 + poprawki UI do e4e04e4), v0.5 (branża remontowa), v0.4 (rozliczenia roczne), v0.3 (JDG), v0.2.1, v0.2, v0.1.
+Rejestr rozwoju mechanik: [`FEATURE_EVOLUTION.md`](FEATURE_EVOLUTION.md) · rejestr reguł prawnych: [`LEGAL_SOURCES.md`](LEGAL_SOURCES.md) · analiza balansu: [`BALANCE_REPORT.md`](BALANCE_REPORT.md).
 
-## Co działa (v0.6, zweryfikowane testami)
+## Co działa (v0.7, zweryfikowane testami)
+
+Wszystko z v0.1–v0.6 plus:
+
+- **Rynek lokalny jako wspólna warstwa silnika** (`market.ts`, `marketConfig.ts`, `macro.ts`, `renovationMarket.ts`; ADR-055–059): popyt miasta (kalibracyjnie ≈ 300 projektów/mies. na 170 tys. mieszkańców) → klienci szukający wykonawców → zestaw 2–3 firm → zapytania do gracza. Oddzielone: popyt rynkowy, szukający wykonawców, zapytania, konwersja i możliwa liczba obsłużonych kontraktów. Stary mechanizm „szansy dziennej” usunięty; zatrudnienie samo nie zwiększa liczby zapytań.
+- **Konkurenci**: 15 firm na start (solo / mała / średnia) z usługami, pozycjonowaniem, cenami, jakością, reputacją, marketingiem, zaległością pracy i uproszczoną gotówką; zmieniają ceny, marketing i moce, wychodzą z rynku i wchodzą nowi; **nie znają stanu gracza** (test). Gracz widzi oszacowania (wielkość jako przedział, ceny względem średniej, gwiazdki ±).
+- **Segmenty klientów** (budżetowy / standardowy / premium): wrażliwość na cenę, oczekiwana jakość, reputacja, termin, budżet, negocjacje, ryzyko reklamacji (wpływa na `complaintBps`); struktura zależna od koniunktury.
+- **Wybór oferty przez klienta**: klient porównujący firmy wybiera między Tobą a najsilniejszym konkurentem (cena względem budżetu, jakość z uwzględnieniem standardu materiałów, reputacja, termin, dopasowanie marki); przegrane zlecenie trafia do konkurenta; po wygranej działa dotychczasowa decyzja klienta. Nie wygrywa się samą najniższą ceną.
+- **Marketing**: 6 kanałów (wyszukiwarka, reklamy lokalne, portale, polecenia, wizytówka, współpraca z przedsiębiorcami) z malejącymi korzyściami, opóźnieniem efektu, wrażliwością na koniunkturę i „tłokiem”; budżet rozdziela gracz, obowiązuje od 1. dnia następnego miesiąca (dokument kosztowy „Marketing: …”); koszt pozyskania zapytania i umowy; dawna reklama (3 poziomy) zastąpiona.
+- **Strategia firmy**: pozycjonowanie niska cena / zrównoważone / premium; wdrażanie liniowo 90 dni, odstęp ≥ 60 dni, koszt utrzymania, historia decyzji; reputacja nie jest zerowana.
+- **Koniunktura i sezonowość**: miesięczna koniunktura w 4 fazach **zakotwiczona w istniejącym klimacie rocznym** (to samo źródło co ryzyko zwolnień); wpływ na popyt, skłonność do wydatków, ceny materiałów, oczekiwania płacowe kandydatów (płaca minimalna obowiązuje zawsze) i konkurentów; sezonowość ogólna i per usługa; elastyczność popytu względem cen rynkowych.
+- **UI** (sekcja „Rynek”): Rynek lokalny, Konkurencja, Marketing, Strategia firmy, Analiza popytu (lejek, segmenty, moc, **rentowność zatrudnienia**); karta zapytania pokazuje segment i konkurencję, kreator wyceny — orientacyjne ceny rynkowe; „Reputacja i reklamacje” kieruje do Marketingu. Parametry modelu oznaczone jako „kalibracyjne”.
+- **Symulator balansu** (`npm run balance`, ADR-061, `tools/balance/`): ten sam silnik, bot gra przez `commands.*`, 7 strategii firmy, wątki robocze, raport JSON i podsumowanie, tryb szybki i debug jednego seeda (`--trace`). Wyniki i wnioski: [`BALANCE_REPORT.md`](BALANCE_REPORT.md).
+- **Zapisy**: `migrateV6ToV7` — bez danych wstecznych (model rynku startuje „od teraz”), dawna reklama → budżety kanałów, zapytania dostają segment; test na prawdziwym zapisie wygenerowanym przez v0.6 przed zmianami (`save-v6.json`). **Poprawka znaleziona testem migracji:** limit `blockedReason` zwiększony (120 → 400 znaków), bo komunikat przestoju z nazwą podwykonawcy mógł uniemożliwić wczytanie zapisu.
+- **Menu i E2E**: poprawka z wcześniejszej sesji (licznik „decyzje do podjęcia” widoczny także przy zwiniętej sekcji „Życie”; helper `nav` w testach); E2E uruchomione w pełni (`LD_LIBRARY_PATH`, `AGENTS.md` §5).
+
+## Co działa (v0.6 — bez zmian, poza opisanymi wyżej)
 
 Wszystko z v0.1–v0.5 plus:
 
@@ -36,19 +52,19 @@ Zweryfikowane w v0.3 (VERIFIED): skala i kwota zmniejszająca, liniowy 19%, limi
 
 ## Czego NIE ma (świadomie poza zakresem)
 
-Spółki i wspólnicy, zatrudnianie pracowników, branża remontowa, giełda, nieruchomości inwestycyjne, kredyty i leasing, integracje z urzędami i KSeF, backend. **Vercel**: repo przygotowane do importu (`vercel.json`, `npm ci`, build statyczny); projekt Vercel jest tworzony przez właściciela. Pełna lista uproszczeń (po v0.4): `FEATURE_EVOLUTION.md` §14.
+Spółki i wspólnicy, giełda, nieruchomości inwestycyjne, kredyty i leasing, kolejne branże i miasta (rynek ma architekturę pod nie, ale jest tylko Olsztyn i remonty), dane GUS (parametry rynku są kalibracyjne), integracje z urzędami i KSeF, multiplayer, backend. **Vercel**: repo przygotowane do importu (`vercel.json`, `npm ci`, build statyczny); push na `main` wdraża.
 
 ## Wykonane testy (2026-10-19)
 
 | Polecenie | Wynik |
 |---|---|
-| `npm run typecheck` | ✅ bez błędów |
-| `npm test` (Vitest) | ✅ **359/359** (w tym 5 testów UI: kropki menu i klucz członka ekipy; 4 testy wyboru wykonawców w wycenie, 1 test renderu zajętości terminów, 2 testy zajętego podwykonawcy, 1 test podpisu ze zmianą wykonawcy), w tym 2 testy kalendarza wyceny w silniku i 51 testów v0.6: rekrutacja i zatrudnianie (16), podwykonawcy, ekipy, pojazdy, rentowność, zaliczki (27), scenariusz 24 miesięcy i deterministyczność (2) oraz 6 testów migracji v5 → v6 |
-| `npm run build` | ✅ JS 861 kB / 255 kB gzip, CSS 45 kB / 7,8 kB gzip |
-| `npm run test:e2e` (Chromium) | ✅ **28/28** (23 wcześniejsze + 3 z v0.6 + kropka menu + zlecenie podwykonawcy: rekrutacja i zatrudnienie z listą płac, wszystkie nowe ekrany, menu mobilne) |
+| `npm run typecheck` (`tsc -b`, w tym `tools/`) | ✅ bez błędów |
+| `npm test` (Vitest) | ✅ **395/395** (16 plików): w tym 27 testów rynku (`market.test.ts`: koniunktura, popyt i sezonowość, alokacja i konkurencja, segmenty, marketing, strategia, limity mocy, powtarzalność, niezmienniki), 4 testy migracji v6 → v7 na prawdziwym zapisie z v0.6, 5 testów symulatora balansu (`tools/balance/balance.test.ts`), test renderu ekranów zajętości/podpisu |
+| `npm run build` | ✅ |
+| `npm run test:e2e` (Chromium, `LD_LIBRARY_PATH`) | ✅ **31/31** (28 wcześniejszych + 3 nowe: ekrany rynku, marketing i strategia, zapis/menu mobilne) |
+| `npm run balance` | ⚠️ działa; serie kalibracyjne 3-letnie wykonane, **końcowa seria 5-letnia z ostatnią wersją bota NIE została dokończona** (przerwana) — raport ma więc dane z różnych wersji bota (patrz [`BALANCE_REPORT.md`](BALANCE_REPORT.md) §2) |
 
-Scenariusz 24 miesięcy (`scenario24.test.ts`): reklama, biuro, rekrutacja pracownika i ekipa bez nadzoru właściciela, pojazd, wyceny z ekipą lub samodzielnie, podwykonawcy dla zleceń bez ekipy; niezmienniki co miesiąc; pracownik z ≥ 12 listami płac, ≥ 3 kontrakty ekipy, ≥ 3 rozliczeni podwykonawcy, pojazd użyty, równoległe kontrakty, zaliczki bez przychodu do wykonania usługi, deterministyczność i wznowienie po zapisie.
-Usterki ujawnione przez testy podczas prac (naprawione): wspólny zapas materiałów liczony podwójnie przy równoległych kontraktach; tytuł zdarzenia > 200 znaków (powiadomienie księgowe) odrzucał zapis; niezmiennik wymagał rezerwacji czasu także dla kontraktów delegowanych; dokument w całości pokryty zaliczką podwykonawcy; umowy z podwykonawcą bez wykonanej pracy rozliczane jako „zero”. Zmiany w starszych testach: wersje zapisu (5 → 6), zwrot zaliczki (zobowiązanie zamiast kosztu), drugi egzemplarz sprzętu dozwolony, domeny źródeł urzędowych.
+Usterki ujawnione przez testy i symulator podczas v0.7 (naprawione): limit `blockedReason` (120 znaków) mógł uniemożliwić wczytanie zapisu; ujemne zero (`-0`) w stanie psuło porównania po zapisie JSON; test scenariusza 24 miesięcy kopiował stan setki razy (rynek daje ~400 zapytań rocznie) — ograniczony do wyceny 2 zapytań dziennie.
 
 ## Znane problemy i uproszczenia
 
@@ -56,12 +72,12 @@ Pełna lista w `FEATURE_EVOLUTION.md` §14. Najważniejsze:
 1. **Firma wymaga finansowania właściciela**: składki, podatki i VAT są płacone z rachunku firmowego; przy braku środków powstaje zaległość bez odsetek (odsetki za zwłokę — FE-BANK-02).
 2. **Podatek jest symulacją**: zaokrąglenia do zł SIMPLIFIED; brak ulg (IP Box, B+R, internetowa, prorodzinna) i kilku pracodawców u pracownika; zeznania roczne to rekordy z saldem; zaliczki: przychód dopiero po wykonaniu usługi (ADV-PIT SIMPLIFIED); pojazdy bez reguł podatkowych.
 3. **Lata po 2026**: reguły z 2026 r. są przenoszone i oznaczone `carriedForward` (UI ostrzega).
-4. **Ekonomia zatrudnienia**: pracownik kosztuje stale (ok. 7 tys. zł miesięcznie przy 5,4 tys. brutto), a popyt jest ograniczony (kilka zapytań miesięcznie, więcej przy reklamie i reputacji) — przy małym wolumenie zatrudnienie jest nieopłacalne (bezczynność), podwykonawcy dają zmienny koszt. To zamierzone, ale wymaga uwagi przy balansie.
+4. **Ekonomia zatrudnienia (analiza: `BALANCE_REPORT.md`)**: w v0.7 zatrudnienie nie tworzy popytu — liczba zapytań zależy od rynku, marketingu, reputacji i konkurencji. Wyniki symulatora: samozatrudnienie i „właściciel + 1 pracownik” są opłacalne, firma rosnąca stopniowo bywa opłacalna, a firmy z ≥ 3 pracownikami od startu są nierentowne i przy małym kapitale niewypłacalne (obłożenie pracowników ok. 40–50%, próg opłacalności ≈ 70–75%; umiejętności przypisane do stanowiska ograniczają wypełnianie bezczynności). To skutek modelu rynku i cienkich marż, nie błąd; koszty pracodawcy nie były zmieniane.
 5. Rozbieżności źródeł rozstrzygnięte w v0.4 (patrz `LEGAL_SOURCES.md`); parametry prawne tylko 2026 — **brak automatycznego przejścia na 2027**.
 6. **Prawo pracy i rynek**: brak urlopów, L4, PPK, nadgodzin, umów na okres próbny i czas określony, odejść pracowników, kierowników ekip (FE-EMP-01, FE-CREW-01); stopa wypadkowa po 31.03.2026 niezweryfikowana. Z poprzednich wersji: potwierdzenia przez `window.confirm`, brak routera, asynchroniczny autozapis, zapis rośnie (~2,8 MB po 10 latach z JDG); `LD_LIBRARY_PATH` dla e2e (`AGENTS.md` §5).
 
 ## Następne zadanie (propozycja — wymaga zatwierdzenia)
 
-**v0.7 — kandydaci** (kolejność do decyzji właściciela): balans ekonomii zatrudnienia i popytu (więcej klientów dla firm z ekipami, kontrakty B2B i przetargi), kierownicy ekip i rozwój pracowników (szkolenia, urlopy, L4, odejścia), albo weryfikacja i wdrożenie VAT 8% i faktur zaliczkowych. Bez spółek, giełdy i kredytów do osobnej decyzji.
+**v0.8 — kandydaci** (kolejność do decyzji właściciela): (1) generaliści i pomocnicy oraz kierownicy ekip (wypełnianie bezczynności pracowników — główny czynnik nierentowności zespołów w BALANCE_REPORT), z urlopami, L4 i odejściami; (2) klienci powracający, umowy ramowe i zlecenia B2B/przetargi jako stabilny popyt dla większych firm; (3) drugi rynek (miasto lub branża) i dane GUS zamiast parametrów kalibracyjnych; (4) kredyty i leasing (kapitał na rozwój — drugi czynnik: niewypłacalność przy małym kapitale).
 
-Nie rozpoczynać v0.7 bez zatwierdzenia.
+Nie rozpoczynać v0.8 bez zatwierdzenia.

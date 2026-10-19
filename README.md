@@ -1,7 +1,7 @@
 # POLSKI TYCOON
 
 Symulator życia i przedsiębiorczości w Polsce — otwarty sandbox ekonomiczny w przeglądarce.
-Stan projektu: **v0.6 (etat + JDG + branża remontowa, pracownicy, ekipy, podwykonawcy, pojazdy, rentowność)** — patrz [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
+Stan projektu: **v0.7 (etat + JDG + branża remontowa, pracownicy i podwykonawcy, rynek lokalny: popyt, konkurencja, marketing, segmenty klientów, koniunktura)** — patrz [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
 
 ```bash
 npm install
@@ -9,6 +9,8 @@ npm run dev        # http://localhost:5173
 npm test           # testy silnika i zapisów
 npm run build      # build produkcyjny (dist/)
 npm run test:e2e   # testy przeglądarkowe (Playwright)
+npm run balance -- --quick                      # symulator balansu (narzędzie developerskie), krótka próba
+npm run balance -- --years 5 --runs 20          # pełniejsza seria; --policies, --capital, --trace <seed> (patrz docs/BALANCE_REPORT.md)
 ```
 
 Dla agentów (Codex / Claude Code): zacznij od [`AGENTS.md`](AGENTS.md). Dokumentacja: [`docs/`](docs/).

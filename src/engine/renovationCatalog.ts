@@ -1,4 +1,4 @@
-import { zl } from './money.ts';
+import { mulBps, roundDiv, zl } from './money.ts';
 import type { Grosze } from './money.ts';
 
 /**
@@ -143,19 +143,8 @@ export const SKILL_QUALITY = [0, 52, 64, 72, 80, 87] as const;
 export const DISTRICTS = ['Śródmieście', 'Zatorze', 'Jaroty', 'Nagórki', 'Pieczewo', 'Kortowo', 'Dajtki', 'Podleśna', 'Likusy', 'Mazurskie'] as const;
 export const CLIENT_NAMES = ['Anna W.', 'Marek K.', 'Ewa N.', 'Piotr Z.', 'Joanna S.', 'Tomasz B.', 'Karolina M.', 'Paweł D.', 'Magdalena L.', 'Robert G.', 'Agnieszka T.', 'Krzysztof R.'] as const;
 
-export interface AdvertisingDef { id: 'none' | 'local' | 'intensive'; label: string; monthlyNet: Grosze; leadBps: number }
-export const ADVERTISING: readonly AdvertisingDef[] = [
-  { id: 'none', label: 'Bez reklamy (polecenia i wizytówki)', monthlyNet: 0, leadBps: 10_000 },
-  { id: 'local', label: 'Reklama lokalna (ogłoszenia, social media)', monthlyNet: zl(400), leadBps: 16_000 },
-  { id: 'intensive', label: 'Reklama intensywna (kampania + portale)', monthlyNet: zl(1_100), leadBps: 23_000 },
-];
-
-/** Sezonowość popytu (miesiąc 1–12), pkt bazowe. PARAMETR SYMULACYJNY. */
+/** Sezonowość popytu (miesiąc 1–12), pkt bazowe. PARAMETR SYMULACYJNY (używany przez rynek: `renovationMarket.ts`; reklama i szansa dzienna zastąpione w v0.7 modelem rynku). */
 export const SEASONALITY_BPS = [0, 7_000, 8_000, 9_500, 11_000, 11_500, 10_500, 10_000, 10_000, 11_500, 12_000, 9_500, 7_000] as const;
-
-/** Bazowa dzienna szansa na nowe zapytanie (pkt bazowe, przed modyfikatorami). */
-export const BASE_ENQUIRY_BPS = 900;
-export const MAX_OPEN_ENQUIRIES = 6;
 
 export const OWN_LABOR_RATE_DEFAULT: Grosze = zl(60);
 export const OTHER_COSTS_BPS = 400;
@@ -263,3 +252,11 @@ export const SUBCONTRACTOR_SEEDS: { name: string; services: string[]; priceBps: 
 /** Norma pracy w setnych godziny (bez uwzględnienia wydajności wykonawcy) dla zakresu usługi. */
 export const normCentiOf = (serviceId: string, units: number, complexity: 'standard' | 'trudne'): number =>
   Math.round((SERVICE_BY_ID.get(serviceId)!.normCentiPerUnit * units * COMPLEXITY_HOURS_BPS[complexity]) / 10_000);
+
+/** Orientacyjna cena rynkowa netto zlecenia — baza budżetu klienta, wskaźnika cen i cen konkurentów (v0.7: przeniesiona z renovation.ts). */
+export function referencePrice(serviceId: string, units: number, complexity: Complexity, qualityReq: number): Grosze {
+  const def = SERVICE_BY_ID.get(serviceId)!;
+  const q = qualityReq === 3 ? 11_200 : qualityReq === 1 ? 9_500 : 10_000;
+  const raw = mulBps(mulBps(def.referencePerUnit * units, COMPLEXITY_HOURS_BPS[complexity]), q);
+  return Math.max(zl(10), roundDiv(raw, zl(10)) * zl(10));
+}

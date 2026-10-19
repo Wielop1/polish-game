@@ -1,0 +1,22 @@
+{
+  "today": "2026-12-08",
+  "cash": 98366,
+  "business": 9451,
+  "netWorth": -6088063,
+  "ledgerCount": 246,
+  "obligationCount": 274,
+  "eventCount": 998,
+  "documents": 148,
+  "enquiries": 46,
+  "quotes": 30,
+  "jobs": 23,
+  "doneJobs": 11,
+  "reviews": 21,
+  "employments": 2,
+  "teams": 5,
+  "subcontracts": 8,
+  "vehicles": 0,
+  "payslips": 17,
+  "advertisingLevel": "local",
+  "lastTxId": "tx:settle:obl:rule:transport@2026-12-05"
+}

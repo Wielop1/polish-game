@@ -60,7 +60,7 @@ export function craftEnquiry(s: GameState, o: Partial<RenoEnquiry> = {}): RenoEn
   s.parties[clientId] = { id: clientId, name: 'Klient testowy (fikcyjny)', role: 'service' };
   const enq: RenoEnquiry = {
     id, businessId: activeBusiness(s)!.id, clientId, clientName: 'Klient testowy (fikcyjny)', location: 'Jaroty', serviceId: 'malowanie', units: 60, complexity: 'standard', qualityReq: 2,
-    desiredStart: addDays(s.clock.today, 5), maxDays: 40, budgetGross: zl(6_000), walkAwayGross: zl(6_800), haggler: false, flexDays: 3, receivedOn: s.clock.today, respondBy: addDays(s.clock.today, 7), status: 'open', ...o,
+    desiredStart: addDays(s.clock.today, 5), maxDays: 40, budgetGross: zl(6_000), walkAwayGross: zl(6_800), haggler: false, flexDays: 3, receivedOn: s.clock.today, respondBy: addDays(s.clock.today, 7), status: 'open', segment: 'standard', source: null, rivals: 0, rivalId: null, rivalUtility: 0, rivalAwarded: false, ...o,
   };
   s.reno.enquiries.push(enq);
   return enq;

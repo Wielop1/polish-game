@@ -64,6 +64,7 @@ Brak backendu, bazy zewnętrznej, logowania, płatnych API, generatywnego AI. Pa
 | `industry.ts` · `industries.ts` · `industryDefaults.ts` | **Interfejs modułów branżowych** (`IndustryModule`: `onRegister`, `processDay`, `gaps`) i rejestr; moduł działa na wspólnym silnikiem (dokumenty, zobowiązania, czas, rachunki) — nie liczy podatków i nie księguje na własną rękę |
 | `renovation.ts` · `renovationCatalog.ts` | Moduł **remontów** (v0.5): zapytania, wyceny, negocjacje, kontrakt (`ServiceOrder kind: renovation` + `RenoJob`), materiały i zapas, sprzęt, realizacja, jakość, reklamacje, reputacja; katalog usług/materiałów/sprzętu (parametry symulacyjne) |
 | `workforce.ts` · `teams.ts` · `subcontractors.ts` · `fleet.ts` · `profitability.ts` · `opsCommon.ts` | **Wspólny silnik firmy (v0.6)**: pracownicy, rekrutacja, umowy, listy płac i koszty pracodawcy; ekipy i kalendarz zasobów (przydziały); podwykonawcy B2B (oferta, przedpłata, odbiór, rozliczenie); pojazdy; rentowność i prognoza płynności; wspólne kontrole gotówki i zakupów |
+| `market.ts` · `marketConfig.ts` · `macro.ts` · `renovationMarket.ts` · `marketAnalytics.ts` | **Rynek lokalny (v0.7), wspólna warstwa silnika**: popyt miasta, koniunktura miesięczna (`macroAt`, zakotwiczona w `economicClimate`), segmenty klientów, konkurenci, kanały marketingowe, pozycjonowanie firmy, alokacja klientów i rozstrzyganie konkurencji; branża przekazuje `MarketIndustry` (usługi, sezonowość, losowanie zlecenia) i `MarketHooks`; `marketConfig.ts` = cała konfiguracja (parametry kalibracyjne); `marketAnalytics.ts` = selektory dla UI i symulatora |
 | `accounting.ts` | Księgowość: biuro rachunkowe (abonament jako dokument kosztowy, powiadomienia, automatyczny wniosek o zwrot, porównanie form z obliczeń silnika) |
 | `simulate.ts` | naliczenia z reguł, rozliczenia, zmęczenie, `processDay`, `advanceDays`, `advanceToNextMonth` |
 | `schedule.ts` | Reguły dnia, termin płatności, urodziny, **projekcja** przyszłych zdarzeń (kalendarz, „najbliższe płatności”) |
@@ -119,6 +120,10 @@ interface SaveRepository { list(); get(slot); put(slot, json, savedAt, meta); re
 - `npm run build` = `tsc -b && vite build` ⇒ `dist/` (statyczny).
 - `vercel.json`: `framework: vite`, `buildCommand`, `outputDirectory: dist`, rewrite `/(.*) → /index.html` (system plików ma pierwszeństwo, więc zasoby statyczne działają).
 - Brak zmiennych środowiskowych i sekretów.
+
+### Narzędzia developerskie (`tools/`)
+
+`tools/balance/` — symulator balansu (`npm run balance`, ADR-061): `bot.ts` (strategie i bot gracza grający przez `commands.*`), `port.ts` (warstwa zależna od wersji modelu rynku), `worker.ts` + `cli.ts` (wątki robocze, parametry `--years --runs --policies --capital --quick --trace`), `report.ts` (agregacja, podsumowanie). Typy sprawdza `tsconfig.tools.json` (w `tsc -b`), testy w `tools/**/*.test.ts` (Vitest).
 
 ## 8. Strategia testowania
 

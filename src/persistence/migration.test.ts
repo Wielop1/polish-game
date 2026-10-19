@@ -18,6 +18,8 @@ import expectV4 from './fixtures/save-v4.expect.json';
 import rawV4 from './fixtures/save-v4.json?raw';
 import expectV5 from './fixtures/save-v5.expect.json';
 import rawV5 from './fixtures/save-v5.json?raw';
+import expectV6 from './fixtures/save-v6.expect.json';
+import rawV6 from './fixtures/save-v6.json?raw';
 import { contract, hireEmployee, jobOf as jobOfKit, runUntil as runUntilKit, buyAll as buyAllKit } from '../engine/testkit.ts';
 import { SAVE_VERSION, parseSave, serializeSave } from './save.ts';
 
@@ -32,9 +34,9 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
   if (!result.ok) throw new Error(`fixture v1 nie wczytał się: ${result.error}`);
   const migrated = result.state;
 
-  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 6', () => {
+  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 7', () => {
     expect(JSON.parse(rawV1).version).toBe(1);
-    expect(SAVE_VERSION).toBe(6);
+    expect(SAVE_VERSION).toBe(7);
   });
 
   it('historia finansowa zostaje nietknięta: salda, majątek netto, rejestr, zobowiązania, zdarzenia', () => {
@@ -111,7 +113,7 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
     expect(cash(s)).toBe(cash(before));
   });
 
-  it('zmigrowany zapis zapisuje się jako v6 i wczytuje identycznie', () => {
+  it('zmigrowany zapis zapisuje się w bieżącej wersji i wczytuje identycznie', () => {
     const json = serializeSave(migrated, NOW);
     expect(JSON.parse(json).version).toBe(SAVE_VERSION);
     const again = parseSave(json);
@@ -522,7 +524,7 @@ describe('migracja zapisu v5 → v6 (prawdziwy zapis wygenerowany przez v0.5: fi
     expect(parseSave(JSON.stringify(bad)).ok).toBe(false);
   });
 
-  it('łańcuch v1–v4 → v6 daje puste moduły pracowników i podwykonawców oraz spójne zapisy', () => {
+  it('łańcuch v1–v4 → bieżąca wersja daje puste moduły pracowników i podwykonawców oraz spójne zapisy', () => {
     for (const raw of [rawV1, rawV2, rawV3, rawV4]) {
       const p = parseSave(raw);
       expect(p.ok).toBe(true);
@@ -534,5 +536,86 @@ describe('migracja zapisu v5 → v6 (prawdziwy zapis wygenerowany przez v0.5: fi
     }
   });
 });
+
+describe('migracja zapisu v6 → v7 (prawdziwy zapis wygenerowany przez v0.6: firma z pracownikami, ekipami, podwykonawcami i reklamą lokalną)', () => {
+  const result = parseSave(rawV6);
+  if (!result.ok) throw new Error(`fixture v6 nie wczytał się: ${result.error}`);
+  const migrated = result.state;
+  const old = JSON.parse(rawV6).state;
+
+  it('historia finansowa, dokumenty, zobowiązania, kontrakty i oferty zostają nietknięte; majątek netto bez zmian', () => {
+    expect(JSON.parse(rawV6).version).toBe(6);
+    expect(migrated.clock.today).toBe(expectV6.today);
+    expect(cash(migrated)).toBe(expectV6.cash);
+    expect(migrated.accounts[activeBusinessOf(migrated).accountId]!.balance).toBe(expectV6.business);
+    expect(netWorth(migrated)).toBe(expectV6.netWorth);
+    expect(migrated.ledger).toEqual(old.ledger);
+    expect(migrated.ledger).toHaveLength(expectV6.ledgerCount);
+    expect(migrated.obligations).toEqual(old.obligations);
+    expect(migrated.documents).toEqual(old.documents);
+    expect(migrated.events).toEqual(old.events);
+    expect(migrated.taxPeriods).toEqual(old.taxPeriods);
+    expect(migrated.reno.jobs).toEqual(old.reno.jobs);
+    expect(migrated.reno.quotes).toEqual(old.reno.quotes);
+    expect(migrated.reno.reviews).toEqual(old.reno.reviews);
+    expect(migrated.ops).toEqual(old.ops);
+    expect(migrated.reno.jobs).toHaveLength(expectV6.jobs);
+    expect(migrated.reno.enquiries).toHaveLength(expectV6.enquiries);
+    expect(migrated.ledger.at(-1)!.id).toBe(expectV6.lastTxId);
+    expect(checkInvariants(migrated)).toEqual([]);
+  });
+
+  it('zapytania sprzed v0.7 dostają segment wg wymagań jakościowych i brak konkurencji; reszta pól bez zmian; reklama lokalna staje się budżetem kanału o tym samym koszcie', () => {
+    expect(old.reno.advertising.level).toBe(expectV6.advertisingLevel);
+    expect('advertising' in migrated.reno).toBe(false);
+    for (const [i, e] of migrated.reno.enquiries.entries()) {
+      const { segment, source, rivals, rivalId, rivalUtility, rivalAwarded, ...rest } = e;
+      expect(rest).toEqual(old.reno.enquiries[i]);
+      expect(segment).toBe(e.qualityReq === 1 ? 'budget' : e.qualityReq === 3 ? 'premium' : 'standard');
+      expect([source, rivals, rivalId, rivalUtility, rivalAwarded]).toEqual([null, 0, null, 0, false]);
+    }
+    expect(migrated.market.marketing.budgets).toEqual({ local_ads: 40_000 });
+    expect(migrated.market.marketing.reach.local_ads).toBeGreaterThan(0);
+    expect(migrated.market.marketing.lastChargedMonth).toBe(old.reno.advertising.paidMonth);
+    expect(migrated.market.strategy).toMatchObject({ positioning: 'balanced', previous: null, changedOn: null, history: [] });
+  });
+
+  it('nie generuje wstecznie konkurentów, historii rynku ani zdarzeń; model rynku startuje „od teraz” w pierwszym przetworzonym dniu', () => {
+    expect(migrated.market.initializedOn).toBeNull();
+    expect(migrated.market.competitors).toEqual([]);
+    expect(migrated.market.months).toEqual([]);
+    expect(migrated.market.current).toBeNull();
+    expect(migrated.events).toHaveLength(expectV6.eventCount);
+    const next = advanceDays(migrated, 1);
+    expect(next.market.initializedOn).toBe(next.clock.today);
+    expect(next.market.competitors.length).toBeGreaterThan(5);
+    expect(next.market.months).toEqual([]);
+    // wszystko sprzed migracji pozostaje: rejestr i dokumenty są prefiksem nowych
+    expect(next.ledger.slice(0, migrated.ledger.length)).toEqual(migrated.ledger);
+    expect(next.documents.slice(0, migrated.documents.length)).toEqual(migrated.documents);
+    expect(checkInvariants(advanceDays(migrated, 120))).toEqual([]);
+  });
+
+  it('zapis v7: round-trip identyczny, ponowne przetworzenie dnia nic nie dubluje; łańcuch v5 → v7 daje spójny stan', () => {
+    const s = advanceDays(migrated, 70);
+    const json = serializeSave(s, NOW);
+    expect(JSON.parse(json).version).toBe(SAVE_VERSION);
+    const again = parseSave(json);
+    expect(again.ok && again.state).toEqual(s);
+    if (!again.ok) return;
+    const r = structuredClone(again.state);
+    const counts = [r.ledger.length, r.obligations.length, r.documents.length, r.market.months.length, r.events.length];
+    processDay(r, r.clock.today);
+    expect([r.ledger.length, r.obligations.length, r.documents.length, r.market.months.length, r.events.length]).toEqual(counts);
+    const p5 = parseSave(rawV5);
+    expect(p5.ok).toBe(true);
+    if (p5.ok) {
+      expect(p5.state.market.initializedOn).toBeNull();
+      expect(checkInvariants(advanceDays(p5.state, 60))).toEqual([]);
+    }
+  });
+});
+
+const activeBusinessOf = (s: GameState) => s.businesses.find((b) => b.status === 'active')!;
 
 const addDaysStr = (date: string, n: number): string => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);

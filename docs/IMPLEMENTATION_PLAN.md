@@ -50,7 +50,11 @@ Moduł branżowy (interfejs `IndustryModule`) z usługami malowania, gładzi, pa
 
 Wspólny system pracowników (rekrutacja, umowy o pracę, płace i koszty pracodawcy 2026), podwykonawcy B2B, ekipy z kalendarzem zasobów, równoległe kontrakty, delegowanie, pojazdy firmowe, rentowność i prognoza płynności; korekta zaliczek (zobowiązanie do wykonania usługi); zapis v6. Bez spółek, kredytów, leasingu i kolejnych branż.
 
-## v0.7+ — Kredyty, leasing, odsetki (dawniej v0.4/v0.5/v0.6)
+## v0.7 — Rynek, konkurencja i balans gospodarki ✅ (zakończona, patrz `PROJECT_STATUS.md`, `BALANCE_REPORT.md`)
+
+Wspólna warstwa rynku lokalnego (popyt miasta, koniunktura miesięczna zakotwiczona w klimacie rocznym, segmenty klientów, konkurenci, marketing w 6 kanałach, pozycjonowanie firmy, wybór oferty przez klienta), pierwszy rynek: remonty w Olsztynie (parametry kalibracyjne); ekrany Rynek lokalny / Konkurencja / Marketing / Strategia firmy / Analiza popytu; symulator balansu (`npm run balance`) i analiza ekonomii modeli zatrudnienia; zapis v7. Bez spółek, giełdy, kredytów, kolejnych branż i miast.
+
+## v0.8+ — Kredyty, leasing, odsetki (dawniej v0.4/v0.5/v0.6)
 
 Harmonogramy rat (kapitał + odsetki, w groszach, bez dryfu zaokrągleń), zdolność kredytowa (uproszczona), odsetki za zwłokę, windykacja (poziom 1). Banki jako strony z własną logiką.
 

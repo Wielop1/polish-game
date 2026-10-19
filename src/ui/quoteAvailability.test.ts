@@ -27,7 +27,7 @@ describe('zajętość terminów w UI wycen', () => {
     if (!eq.ok) throw new Error(eq.error);
     s = advanceDays(eq.state, 2);
     const biz = activeBusiness(s)!;
-    const enq: RenoEnquiry = { id: 'enq:99', businessId: biz.id, clientId: 'c', clientName: 'Klient (fikcyjny)', location: 'Jaroty', serviceId: 'malowanie', units: 60, complexity: 'standard', qualityReq: 2, desiredStart: addDays(s.clock.today, 5), maxDays: 30, budgetGross: zl(3000), walkAwayGross: zl(3400), haggler: false, flexDays: 3, receivedOn: s.clock.today, respondBy: addDays(s.clock.today, 7), status: 'open' };
+    const enq: RenoEnquiry = { id: 'enq:99', businessId: biz.id, clientId: 'c', clientName: 'Klient (fikcyjny)', location: 'Jaroty', serviceId: 'malowanie', units: 60, complexity: 'standard', qualityReq: 2, desiredStart: addDays(s.clock.today, 5), maxDays: 30, budgetGross: zl(3000), walkAwayGross: zl(3400), haggler: false, flexDays: 3, receivedOn: s.clock.today, respondBy: addDays(s.clock.today, 7), status: 'open', segment: 'standard', source: null, rivals: 0, rivalId: null, rivalUtility: 0, rivalAwarded: false };
     s.reno.enquiries.push(enq);
     // zajęty kalendarz: podpisany kontrakt w oczekiwanym terminie klienta
     const e0 = { ...enq, id: 'enq:98', clientId: 'party:client:98', desiredStart: enq.desiredStart };

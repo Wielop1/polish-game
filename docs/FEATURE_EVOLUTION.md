@@ -1,10 +1,10 @@
 # FEATURE_EVOLUTION — rejestr rozwoju mechanik
 
-> **Trwały rejestr**: porównuje mechaniki zaimplementowane w v0.1–v0.6 z ich docelowym zachowaniem w realistycznym symulatorze polskiego przedsiębiorcy. Obowiązuje wszystkich agentów (`AGENTS.md` §0): przed zadaniem sprawdź pozycje, których ono dotyka; po zadaniu **zaktualizuj wyłącznie te pozycje** (status, stan obecny, brakujące funkcje) i dopisz nowe uproszczenia. **Nie usuwaj** pozycji ani pomysłów tylko dlatego, że nie należą do bieżącego etapu — zmień im status.
+> **Trwały rejestr**: porównuje mechaniki zaimplementowane w v0.1–v0.7 z ich docelowym zachowaniem w realistycznym symulatorze polskiego przedsiębiorcy. Obowiązuje wszystkich agentów (`AGENTS.md` §0): przed zadaniem sprawdź pozycje, których ono dotyka; po zadaniu **zaktualizuj wyłącznie te pozycje** (status, stan obecny, brakujące funkcje) i dopisz nowe uproszczenia. **Nie usuwaj** pozycji ani pomysłów tylko dlatego, że nie należą do bieżącego etapu — zmień im status.
 >
 > Kolumna „Etap” to **sugestia kolejności, nie termin**. Plan wersji: `IMPLEMENTATION_PLAN.md`.
 > Legenda statusu: ✅ zaimplementowane (może być uproszczone) · 🟡 częściowo · ⬜ nie rozpoczęte · ⏸ odłożone (wymaga weryfikacji źródeł/decyzji). Priorytet: **P1** — warunkuje realizm lub kolejne etapy, **P2** — ważne, **P3** — uzupełnienie.
-> Ostatnia aktualizacja: v0.6 (2026-10-18).
+> Ostatnia aktualizacja: v0.7 (2026-10-19).
 
 ## 1. Silnik, czas i dane
 
@@ -12,61 +12,14 @@
 |---|---|---|---|---|---|---|---|---|
 | FE-CORE-01 | Pieniądze | Całkowite grosze, `mulBps`/`roundDiv`, bez float | j.w. + wielowalutowość tylko jeśli potrzebna | Zaokrąglanie podatków do złotych (`PIT-ROUNDING`), waluty obce (kontrakty zagraniczne) | P3 | LEGAL_SOURCES | ✅ | późno |
 | FE-CORE-02 | Czas i kalendarz | Dzień po dniu, ISO, pon–pt roboczy, bez świąt | Polski kalendarz: święta państwowe, dni wolne, tygodnie rozliczeniowe, urlopy | Święta i dni wolne od pracy, urlop wypoczynkowy, terminy przesuwane na dzień roboczy (płatności w sobotę/niedzielę) | P2 | FE-WORK-03, FE-TAX-01 | 🟡 | v0.4–v0.5 |
-| FE-CORE-03 | Losowość | Strumień z (seed, id zdarzenia), bez stanu RNG w zapisie | j.w. | Kalibracja rozkładów na danych z rozgrywek; kontrolowane „sezony” rynkowe | P3 | FE-ECON-01 | ✅ | w miarę potrzeb |
-| FE-CORE-04 | Rejestr, zobowiązania, niezmienniki | Rejestr, zobowiązania/należności z rachunkiem i ewidencją (prywatna/firmowa), idempotencja, tożsamość księgowa | Pełna księgowość podwójna (konta, dowody księgowe), kursy, odsetki za zwłokę, windykacja | Odsetki za zwłokę, płatności częściowe, kompensaty, korekty, zamknięcia okresów | P1 | FE-BANK-02 | 🟡 | v0.4+ |
-| FE-CORE-05 | Wersjonowanie prawa | `legal.ts` (2026), flaga `carriedForward` dla lat późniejszych | Tabele przepisów z datami i źródłami dla każdego roku, automatyczne przełączanie w grze | Zestawy wartości 2027+, mechanizm `valueAt(data)`, porównanie z poprzednim rokiem (zmiana prawa jako zdarzenie) | P1 | LEGAL_SOURCES | 🟡 | v0.4 |
-| FE-CORE-06 | Przyrost czasu i symulacja w tle | Skok o dzień / do 1. miesiąca; klon stanu na akcję | Tryb „pauza/ciągły”, automatyczne zatrzymanie na zdarzeniach wymagających decyzji | Auto-stop na decyzjach i terminach, wsad komend (kolejka poleceń) | P3 | FE-UI-01 | ⬜ | później |
-
-## 2. Praca i rynek zatrudnienia
-
-| ID | Mechanika | Stan obecny | Docelowe zachowanie | Brakujące funkcje | Pr. | Zależności | Status | Etap |
-|---|---|---|---|---|---|---|---|---|
-| FE-WORK-01 | Oferty pracy | 8 stałych fikcyjnych ofert, tylko umowa o pracę, aplikacja → decyzja (szansa z umiejętności i zmęczenia) | Dynamiczny rynek: oferty zależne od regionu, koniunktury, sezonu; rekrutacja wieloetapowa; negocjacja płacy | Odświeżanie i wygasanie ofert, negocjacje, wiele ofert naraz, referencje, CV/doświadczenie | P1 | FE-ECON-01 | 🟡 | v0.5 |
-| FE-WORK-02 | Formy zatrudnienia | Wyłącznie umowa o pracę (`employmentForm` w modelu) | Umowa zlecenie, o dzieło, B2B, praca tymczasowa, staż; różne składki i podatki | Modelowanie każdej formy i jej oskładkowania | P2 | FE-TAX-01, FE-ZUS-01 | ⬜ | v0.5+ |
-| FE-WORK-03 | Awanse i staż | Awans jako wydarzenie z decyzją; staż w firmie (ciągłość) i na stanowisku rozdzielone | Ścieżki kariery, oceny okresowe, premie roczne, podwyżki inflacyjne, zmiana działu | Oceny pracownicze, ścieżki i szczeble, podwyżki, staż jako podstawa uprawnień (urlop, wypowiedzenie, odprawa) | P2 | FE-WORK-05 | 🟡 | v0.5 |
-| FE-WORK-04 | Wypowiedzenia i zwolnienia | Okres wypowiedzenia z umowy; ryzyko zwolnienia z przyczyn (wydajność, kondycja pracodawcy, recesja) | Okresy wypowiedzenia z Kodeksu pracy zależne od stażu, zwolnienia grupowe, ochrona przed wypowiedzeniem | Okresy z Kodeksu pracy (2 tyg./1 mies./3 mies.), tryby zwolnienia, świadectwo pracy, ekwiwalent za urlop | P2 | FE-WORK-03 | 🟡 | v0.5 |
-| FE-WORK-05 | Odprawy i świadczenia | Brak | Odprawy przy zwolnieniach grupowych, zasiłek dla bezrobotnych (rejestracja w urzędzie pracy), świadczenia chorobowe | Zasiłek dla bezrobotnych, odprawy, zasiłek chorobowy i wynagrodzenie chorobowe | P1 | FE-ZUS-02 | ⬜ | v0.5 |
-| FE-WORK-06 | Umiejętności | 5 poziomów 0–5, wzrost tylko przez kursy | Umiejętności rosnące z pracy, nauki i praktyki; certyfikaty; wygasanie bez używania | Wzrost z doświadczenia, certyfikaty, dziedziny branżowe (budowlane), uprawnienia | P2 | FE-LIFE-03 | 🟡 | v0.5 |
-
-## 3. Czas, zmęczenie i zdrowie
-
-| ID | Mechanika | Stan obecny | Docelowe zachowanie | Brakujące funkcje | Pr. | Zależności | Status | Etap |
-|---|---|---|---|---|---|---|---|---|
-| FE-TIME-01 | Budżet czasu | 24 h/dobę: praca, sen, obowiązki, rezerwa na firmę, zobowiązania czasowe (kursy, zlecenia, zlecenia JDG), czas wolny jako reszta | j.w. + rodzina, dojazdy zależne od miejsc, harmonogramy zmian, tygodniowe plany | Godziny pracy zmianowej, dojazdy zależne od lokalizacji, czas na rodzinę, harmonogram tygodniowy | P2 | FE-LIFE-01 | ✅ | v0.5 |
-| FE-TIME-02 | Zmęczenie i wydajność | Zmęczenie 0–100, wydajność wpływa na premię, awans, zwolnienia, rekrutację i tempo zleceń | Rozbudowa: stres, wypalenie, regeneracja urlopem | Urlop i regeneracja, stres z długów, wpływ na zdrowie | P2 | FE-HEALTH-01 | ✅ | v0.5 |
-| FE-HEALTH-01 | Zdrowie | Brak (zmęczenie jako zastępnik) | Choroby, wizyty, ubezpieczenie zdrowotne i prywatna opieka, absencje chorobowe, zwolnienia lekarskie (L4) | Model stanu zdrowia, absencje, L4 i świadczenia chorobowe, koszty leczenia | P1 | FE-TIME-02, FE-ZUS-02 | ⬜ | v0.5–v0.6 |
-
-## 4. Mieszkanie, najem i nieruchomości
-
-| ID | Mechanika | Stan obecny | Docelowe zachowanie | Brakujące funkcje | Pr. | Zależności | Status | Etap |
-|---|---|---|---|---|---|---|---|---|
-| FE-HOUSE-01 | Najem mieszkania | 5 stałych ofert Olsztyna, przeprowadzka 1. dnia miesiąca, kaucja jako aktywo, jawne nakładanie umów | Rynek najmu (podaż, ceny, sezon), umowy terminowe/okazjonalne, podwyżki czynszu, wypowiedzenie przez wynajmującego | Dynamiczny rynek, podwyżki, potrącenia z kaucji, czynsz proporcjonalny, umowy terminowe | P2 | FE-ECON-01 | 🟡 | v0.5 |
-| FE-HOUSE-02 | Zakup mieszkania | Brak | Zakup za gotówkę/kredyt hipoteczny, koszty transakcyjne (PCC, notariusz), podatki lokalne, utrzymanie | Wycena, kredyt hipoteczny, podatek od nieruchomości, remonty własne | P1 | FE-BANK-03 | ⬜ | po prototypie |
-| FE-HOUSE-03 | Nieruchomości inwestycyjne | Brak | Najem krótko- i długoterminowy, rozliczenie najmu (ryczałt ewidencjonowany 8,5%/12,5%), flipowanie | Zakup, najemcy, pustostany, podatki, zarządzanie | P2 | FE-HOUSE-02, FE-TAX-01 | ⬜ | po prototypie |
-
-## 5. Życie prywatne, rodzina, edukacja
-
-| ID | Mechanika | Stan obecny | Docelowe zachowanie | Brakujące funkcje | Pr. | Zależności | Status | Etap |
-|---|---|---|---|---|---|---|---|---|
-| FE-LIFE-01 | Rodzina i gospodarstwo domowe | Jednoosobowe | Partner, dzieci, wspólny budżet, koszty utrzymania rodziny, świadczenia rodzinne (800+, urlopy rodzicielskie) | Encja Household, członkowie, wspólne rachunki, majątek małżeński (rozdzielność/wspólność), świadczenia | P1 | FE-CORE-04 | ⬜ | v0.6+ |
-| FE-LIFE-02 | Styl życia i jakość życia | 3 poziomy kosztów; wskaźnik 0–100 z 5 składników (nie funkcja majątku) | Zróżnicowane kategorie wydatków, wpływ na zdrowie i relacje | Kategorie wydatków (zdrowie, rozrywka, podróże), nawyki, inflacja kosztów życia | P2 | FE-ECON-01 | 🟡 | v0.5 |
-| FE-LIFE-03 | Edukacja | Kursy jako wydarzenie (+1 umiejętność) | Studia, kursy zawodowe, certyfikaty, kredyt studencki, uprawnienia zawodowe | Ścieżki edukacji, uprawnienia budowlane/zawodowe, koszty i czas | P2 | FE-WORK-06, FE-TIME-01 | 🟡 | v0.5–v0.6 |
-| FE-LIFE-04 | Wydarzenia życiowe | 7 szablonów, losowanie miesięczne zależne od stanu, decyzje z terminem | Szeroki katalog (rodzinne, zdrowotne, prawne, rynkowe), łańcuchy zdarzeń, wpływ koniunktury | Więcej szablonów, łańcuchy, wydarzenia biznesowe (kontrola, reklamacje, kradzież), kalibracja | P2 | wszystkie moduły | 🟡 | ciągle |
-
-## 6. Rachunki, banki, kredyty, oszczędności
-
-| ID | Mechanika | Stan obecny | Docelowe zachowanie | Brakujące funkcje | Pr. | Zależności | Status | Etap |
-|---|---|---|---|---|---|---|---|---|
-| FE-BANK-01 | Rachunki i oszczędności | Rachunek bieżący, oszczędnościowy (odsetki miesięczne, podatek od odsetek jako parametr), firmowy; przelewy własne | Wiele banków, lokaty, konta walutowe, limity, opłaty, debet | Lokaty terminowe, wiele banków, opłaty za prowadzenie, debet w koncie, weryfikacja podatku od odsetek | P2 | LEGAL_SOURCES | 🟡 | v0.5 |
-| FE-BANK-02 | Zaległości i windykacja | Zobowiązanie niezapłacone → zaległość, ponawiane codziennie, brak odsetek | Odsetki za zwłokę, wezwania, windykacja, komornik, wpisy do rejestrów | Odsetki, kary, egzekucja, zajęcia kont | P1 | FE-CORE-04 | 🟡 | v0.5 |
-| FE-BANK-03 | Kredyty i leasing | Brak | Kredyt gotówkowy/hipoteczny/firmowy, leasing, zdolność kredytowa, harmonogramy rat | Harmonogramy w groszach, zdolność, scoring, ubezpieczenia, leasing operacyjny/finansowy | P1 | FE-CORE-04, FE-BANK-02 | ⬜ | v0.5–v0.6 |
-
-## 7. Gospodarka regionalna
-
-| ID | Mechanika | Stan obecny | Docelowe zachowanie | Brakujące funkcje | Pr. | Zależności | Status | Etap |
-|---|---|---|---|---|---|---|---|---|
-| FE-ECON-01 | Gospodarka i koniunktura | „Klimat” gospodarczy i kondycja pracodawcy losowane rocznie (ryzyko zwolnień) | Region (Olsztyn/Warmia-Mazury i inne), sektory, inflacja, stopy procentowe, bezrobocie, ceny, sezonowość | Inflacja i waloryzacja płac/kosztów, stopy NBP, regionalne rynki pracy i zleceń, konkurenci | P1 | FE-CORE-05 | 🟡 | v0.5 |
+| FE-CORE-03 | Losowość | Strumień z (seed, id zdarzenia), bez stanu RNG w zapisie | j.w. | Kalibracja rozkładów na danych z rozgrywek; kontrolowane „sezony” rynkowe | P3 | FE-ECON-01 | Gospodarka i koniunktura | **v0.7:** miesięczna koniunktura w 4 fazach (`macroAt`) zakotwiczona w rocznym klimacie (`economicClimate`, ryzyko zwolnień): wpływ na popyt, skłonność do wydatków, ceny materiałów, oczekiwania płacowe kandydatów i kondycję konkurentów; sezonowość ogólna i per usługa | Region (Olsztyn/Warmia-Mazury i inne), sektory, inflacja, stopy procentowe, bezrobocie, ceny, sezonowość | Inflacja i waloryzacja płac/kosztów, stopy NBP, regionalne rynki pracy, dane GUS zamiast parametrów kalibracyjnych | P1 | FE-CORE-05 | 🟡 | v0.7 |
 | FE-ECON-02 | Miasta i mapa | Jedno miasto (Olsztyn) | Wiele miast, przeprowadzki, różnice cen i płac, mapa (Phaser) | Katalog miast, koszty życia, dojazdy | P3 | FE-HOUSE-01 | ⬜ | po prototypie |
+| FE-MKT-01 | Popyt lokalny (v0.7) | Popyt miasta (≈ 300 projektów/mies. na 170 tys. mieszkańców, kalibracyjnie) → szukający wykonawców (40% × wydatki × elastyczność cen) → zestaw 2–3 firm → zapytania do gracza; oddzielone: popyt rynkowy, szukający, zapytania, konwersja, moc | Wiele miast i demografia, dane GUS, mieszkania w budowie/rynek wtórny jako źródło popytu, powracający klienci | Wiele rynków lokalnych, migracje, dane GUS, zmiany demograficzne | P1 | FE-ECON-01, FE-IND-01 | 🟡 | v0.7 |
+| FE-MKT-02 | Konkurencja lokalna (v0.7) | 15 firm na start (solo/mała/średnia), uproszczona ekonomia (gotówka, zaległość pracy), decyzje o cenach, marketingu, mocach, pozycjonowaniu, wejścia i wyjścia; bez wiedzy o graczu; widok jako oszacowania | Bankructwa i przejęcia, kapitał i kredyt konkurentów, sieci powiązań firm, bardziej zaawansowane strategie | Przejęcia, ceny negocjowane indywidualnie, reakcje konkurentów na ruchy gracza (poza rynkowymi) | P2 | FE-MKT-01 | 🟡 | v0.7 |
+| FE-MKT-03 | Segmenty klientów (v0.7) | Budżetowy / standardowy / premium: wrażliwość na cenę, oczekiwana jakość, reputacja, termin, budżet, negocjacje, ryzyko reklamacji; struktura zależna od koniunktury | Segmenty branżowe (np. deweloperzy, wspólnoty), klienci powracający | Klienci instytucjonalni, umowy ramowe | P2 | FE-MKT-01 | 🟡 | v0.7 |
+| FE-MKT-04 | Marketing (v0.7) | 6 kanałów z malejącymi korzyściami, opóźnieniem efektu, tłokiem i wrażliwością na koniunkturę; budżet rozdzielany przez gracza; koszt pozyskania zapytania i umowy | Kampanie z czasem trwania, testy A/B, prawdziwe API reklamowe (poza zakresem) | Kampanie sezonowe, rozbudowane kampanie | P2 | FE-MKT-01 | 🟡 | v0.7 |
+| FE-MKT-05 | Strategia firmy (v0.7) | Pozycjonowanie: niska cena / zrównoważone / premium; wdrażanie 90 dni, odstęp 60 dni, koszt utrzymania, historia decyzji | Marka, certyfikaty, gwarancje jako osobne mechaniki | Rozwój marki, rebranding | P3 | FE-MKT-03 | 🟡 | v0.7 |
+| FE-MKT-06 | Symulator balansu (v0.7) | `npm run balance`: strategie firmy, seedy, wątki, raport JSON; bot gra przez `commands.*` | Optymalizacja strategii bota, więcej scenariuszy (kryzys, boom), porównania między branżami | Scenariusze makro, automatyczna regresja balansu w CI | P2 | FE-MKT-01..05 | 🟡 | v0.7 |
 
 ## 8. Podatki i ZUS (JDG i etat)
 
@@ -171,8 +124,18 @@ Każde uproszczenie jest świadome i opisane w `LEGAL_SOURCES.md` lub `DECISIONS
 39. **Rentowność**: koszty stałe pokazane osobno, ale nie rozdzielane na kontrakty; prognoza płynności jest szacunkiem (płace wg bieżących umów, składki właściciela wg ostatniego miesiąca) (FE-PROFIT-01).
 40. **Przyszłe rozszerzenia (nie implementować teraz)**: urlopy, L4, PPK, nadgodziny; szkolenia i rozwój pracowników; morale, lojalność i odejścia; kierownicy ekip; delegowanie całych firm; pojazdy w leasingu; magazyny i logistyka; umowy B2B i przetargi; zaawansowane prawo pracy; rozwinięta księgowość i usługi doradcy podatkowego (FE-EMP-01, FE-CREW-01, FE-FLEET-01, FE-ACC-01).
 41. **Kalendarz zajętości przy wycenie** (`quoteSchedule`, karta zapytania i kreator wyceny): oś dni liczona z budżetu czasu właściciela (ta sama prawda co przy podpisie umowy); oferty bez podpisanej umowy są tylko wylistowane (nie rezerwują czasu); „najbliższy wolny start” uwzględnia dobę właściciela oraz wybranych pracowników i pojazd, ale nie sprzęt ani zapas materiałów; karta zapytania zakłada domyślny scenariusz (`defaultQuoteInput`: właściciel pracuje sam, domyślne godziny i czas) (FE-IND-01).
+42. **Parametry rynku są kalibracyjne**: wielkość popytu, ceny konkurentów, skuteczność kanałów, sezonowość i wpływ koniunktury nie pochodzą z danych GUS; dobrano je do wiarygodnych rzędów wielkości i przetestowano symulatorem (`BALANCE_REPORT.md`). W UI oznaczone jako „kalibracyjne” (FE-MKT-01).
+43. **Jedno miasto, jedna branża**: Olsztyn i remonty; architektura (`MarketIndustry`, `MARKET_CITIES`) pozwala dodać kolejne, ale nie ma ich jeszcze (FE-MKT-01, FE-ECON-02).
+44. **Konkurenci to uproszczone, zbiorcze firmy**: 15 podmiotów reprezentujących lokalny rynek; bez księgowości i podatków, bez kredytu, bankructw w sensie prawnym i przejęć; wyjście z rynku = utrata gotówki lub długa strata (FE-MKT-02).
+45. **Klient porównuje najwyżej 3–4 firmy i wybiera po jednej ocenie**: ocena (cena, jakość, reputacja, termin, dopasowanie marki) z szumem; brak negocjacji między firmami, zniżek za pakiet, klientów powracających i poleceń indywidualnych (poza kanałem „polecenia”) (FE-MKT-01/03).
+46. **Koniunktura miesięczna zakotwiczona w rocznym klimacie**: brak inflacji, stóp, bezrobocia i dochodów gospodarstw; wskaźniki wpływu (popyt, materiały, płace) są liniowe w indeksie (FE-ECON-01).
+47. **Marketing bez kampanii czasowych**: budżet miesięczny per kanał, efekt wygładzany opóźnieniem; brak testów, wydarzeń sezonowych i interakcji między kanałami (FE-MKT-04).
+48. **Reputacja i jakość widoczne dla rynku są uproszczone**: reputacja z opinii (jak dotąd), jakość = średnia z 8 ostatnich zakończonych prac (62 bez historii); standard materiałów w ofercie koryguje jakość ±7 (FE-MKT-03).
+49. **Symulator balansu**: bot jest przewidywalny i jednakowy dla strategii (cena 88–98% budżetu klienta, jedna własna praca naraz, brak podwójnego obiecywania terminów), nie optymalizuje strategii; kopiowanie stanu przy komendach ogranicza skalę (kilkadziesiąt przebiegów 3-letnich na kwadrans na 4–6 wątkach) (FE-MKT-06).
 
 ## 15. Pomysły na przyszłość (zachowane)
+
+**Rozbudowa rynku (zapisane w v0.7):** wiele lokalnych rynków i miast · migracje firm między miastami · rzeczywiste dane GUS (populacja, mieszkania, dochody, ceny usług) · sieci powiązań firm (podwykonawstwo, polecenia, wspólne zakupy) · bardziej zaawansowane strategie konkurentów (reakcje na ruchy gracza, ceny dynamiczne) · bankructwa i przejęcia · zmiany demograficzne · rozbudowane kampanie reklamowe (czasowe, sezonowe, testy) · klienci powracający i klienci instytucjonalni.
 
 Mapa miasta (Phaser) · tryb kariery „wyzwania” bez narzuconej fabuły · reputacja i sieć kontaktów · rynek pracy z agencjami · sezonowość branż · inflacja i waloryzacja umów · zdarzenia prawne (zmiany przepisów w trakcie gry) · kontrole skarbowe/ZUS · ubezpieczenia (OC, majątkowe) · samochód i koszty jego użytkowania w firmie · leasing samochodu (limity kosztów) · współpraca z biurem rachunkowym (koszt vs ryzyko błędów) · tryb nauki (podgląd obliczeń podatkowych krok po kroku) · eksport raportów firmy.
 
