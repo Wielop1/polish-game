@@ -32,6 +32,7 @@ import { ProgressBar } from '../components/charts.tsx';
 import { Badge, Button, Card, Empty, Money, ScreenHeader, StatCard, cx, moneyTone } from '../components/ui.tsx';
 import { parseZloty } from '../format.ts';
 import { LegalBadge } from './BusinessScreens.tsx';
+import { JobEconomicsRows, QuoteEconomicsPanel } from './EconomicsPanel.tsx';
 
 const stars = (rating10: number) => `${(rating10 / 10).toFixed(1).replace('.', ',')}★`;
 const STAGE_LABEL = { preparation: 'przygotowanie', materials: 'brak materiałów / sprzętu', execution: 'realizacja', handover: 'odbiór', settlement: 'rozliczenie', done: 'zakończony', cancelled: 'rozwiązany' } as const;
@@ -132,7 +133,7 @@ export function RenoDashboardScreen() {
           <dl className="divide-y divide-ink-700/60">
             <Row k="Zakończone kontrakty" v={d.doneJobs} />
             <Row k="Przychód netto" v={<Money value={d.revenueDone} />} />
-            <Row k="Wynik ekonomiczny (bez własnej robocizny)" v={<Money value={d.economicResultDone} signed />} tone={moneyTone(d.economicResultDone)} />
+            <Row k="Nadwyżka przed obciążeniami właściciela (ukończone)" v={<Money value={d.economicResultDone} signed />} tone={moneyTone(d.economicResultDone)} />
             <Row k="Zapasy materiałów (aktywo)" v={<Money value={d.stockValue} />} />
             <Row k="Sprzęt — wartość księgowa (aktywo)" v={<Money value={d.equipmentValue} />} />
           </dl>
@@ -142,7 +143,7 @@ export function RenoDashboardScreen() {
         {game.reno.jobs.length === 0 ? <Empty>Brak kontraktów. Zacznij od zapytań klientów.</Empty> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm" data-testid="reno-margins">
-              <thead className="text-left text-xs tracking-wide text-slate-500 uppercase"><tr><th className="pb-2 font-medium">Kontrakt</th><th className="pb-2 text-right font-medium">Cena netto</th><th className="pb-2 text-right font-medium">Marża plan.</th><th className="pb-2 text-right font-medium">Marża rzecz.</th><th className="pb-2 text-right font-medium">Wynik ekon.</th><th className="pb-2 text-right font-medium">Zarobek / godz.</th></tr></thead>
+              <thead className="text-left text-xs tracking-wide text-slate-500 uppercase"><tr><th className="pb-2 font-medium">Kontrakt</th><th className="pb-2 text-right font-medium">Cena netto</th><th className="pb-2 text-right font-medium">Marża plan. (po pracy własnej)</th><th className="pb-2 text-right font-medium">Marża rzecz.</th><th className="pb-2 text-right font-medium">Nadwyżka przed obciążeniami</th><th className="pb-2 text-right font-medium">Zysk ekonomiczny</th><th className="pb-2 text-right font-medium">Za godz. własnej pracy</th></tr></thead>
               <tbody className="divide-y divide-ink-700/60">
                 {[...game.reno.jobs].reverse().slice(0, 10).map((j) => {
                   const f = jobFinancials(j);
@@ -152,7 +153,8 @@ export function RenoDashboardScreen() {
                       <td className="py-2 text-right"><Money value={j.priceNet} /></td>
                       <td className="py-2 text-right text-slate-400">{fmtPct(f.plannedMarginBps)}</td>
                       <td className="py-2 text-right">{f.actualMarginBps === null ? '—' : fmtPct(f.actualMarginBps)}</td>
-                      <td className={cx('py-2 text-right', moneyTone(f.economicResult))}><Money value={f.economicResult} signed /></td>
+                      <td className={cx('py-2 text-right', moneyTone(f.surplusBeforeOwner))}><Money value={f.surplusBeforeOwner} signed /></td>
+                      <td className={cx('py-2 text-right', moneyTone(f.economicProfit))}><Money value={f.economicProfit} signed /></td>
                       <td className="py-2 text-right">{f.hourlyPay === null ? '—' : <Money value={f.hourlyPay} />}</td>
                     </tr>
                   );
@@ -485,17 +487,11 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
         </div>
         <div className="space-y-3 text-sm" data-testid="quote-preview">
           <QuoteCalendar game={game} enq={enq} q={q} planWarnings={p.warnings} onPick={(date) => set({ startDate: date })} />
+          <QuoteEconomicsPanel e={p.economics} laborRate={input.laborRate} priceGross={p.priceGross} vatRateBps={p.vatRateBps} />
           <dl className="divide-y divide-ink-700/60 rounded-xl border border-ink-700 px-3">
-            <Row k="Materiały (cena z dziś)" v={<Money value={p.planned.materials} />} />
-            <Row k={`Robocizna (${(p.plannedCenti / 100).toFixed(1).replace('.', ',')} godz.)`} v={<Money value={p.planned.labor} />} />
-            <Row k="Transport" v={<Money value={p.planned.transport} />} />
-            <Row k="Pozostałe (odpady, drobiazgi 4%)" v={<Money value={p.planned.other} />} />
-            <Row k="Koszt planowany" v={<strong><Money value={p.planned.total} /></strong>} />
-            <Row k="Cena netto" v={<Money value={input.priceNet} />} />
-            <Row k={p.vatRateBps ? `Cena brutto (VAT ${p.vatRateBps / 100}%)` : 'Cena dla klienta (bez VAT — zwolnienie)'} v={<Money value={p.priceGross} />} />
-            <Row k="Narzut (od kosztu)" v={fmtPct(p.markupBps)} tone={moneyTone(p.markupBps)} />
-            <Row k="Marża (od ceny)" v={fmtPct(p.marginBps)} tone={moneyTone(p.marginBps)} />
-            <Row k="Zarobek / godz. (bez robocizny w kosztach)" v={<Money value={p.effectiveHourly} />} />
+            <Row k="Narzut od kosztów rzeczywistych i pracy własnej" v={fmtPct(p.markupBps)} tone={moneyTone(p.markupBps)} />
+            <Row k="Marża nadwyżki (przed obciążeniami właściciela)" v={fmtPct(p.economics.surplusMarginBps)} tone={moneyTone(p.economics.surplusMarginBps)} />
+            <Row k="Marża ekonomiczna (po pracy własnej)" v={fmtPct(p.economics.economicMarginBps)} tone={moneyTone(p.economics.economicMarginBps)} />
             <Row k="Minimalny czas pracy" v={`${p.minDays} dni po ${input.hoursPerDay} godz.`} />
             <Row k={`Poziom umiejętności / wymagany`} v={`${p.level} / ${p.difficulty}`} />
           </dl>
@@ -630,11 +626,9 @@ export function RenoContractsScreen() {
                       <Row k="Wykonawcy" v={j.crew.teamId ? `${game.ops.teams.find((tm) => tm.id === j.crew.teamId)?.name ?? 'ekipa'} (${j.crew.supervision === 'hands-off' ? 'bez nadzoru' : j.crew.supervision === 'supervise' ? 'nadzór właściciela' : 'z właścicielem'})` : 'właściciel samodzielnie'} />
                     </dl>
                     <dl className="divide-y divide-ink-700/60">
-                      <Row k="Koszt planowany" v={<Money value={j.planned.total} />} />
-                      <Row k="Koszt rzeczywisty (z robocizną)" v={<Money value={f.actualCost} />} />
-                      <Row k="Marża planowana" v={fmtPct(f.plannedMarginBps)} />
-                      <Row k="Marża rzeczywista" v={f.actualMarginBps === null ? 'po rozliczeniu' : fmtPct(f.actualMarginBps)} />
-                      <Row k="Wynik ekonomiczny" v={<Money value={f.economicResult} signed />} tone={moneyTone(f.economicResult)} />
+                      <JobEconomicsRows f={f} laborRate={j.laborRate} />
+                      <Row k="Koszt planowany (z wartością pracy własnej)" v={<Money value={j.planned.total} />} />
+                      <Row k="Marża planowana / rzeczywista (po pracy własnej)" v={`${fmtPct(f.plannedMarginBps)} / ${f.actualMarginBps === null ? 'po rozliczeniu' : fmtPct(f.actualMarginBps)}`} />
                       <Row k="Jakość / opinia" v={j.quality === null ? '—' : `${j.quality}/100${game.reno.reviews.find((r) => r.jobId === j.id) ? ` · ${stars(game.reno.reviews.find((r) => r.jobId === j.id)!.rating10)}` : ''}`} />
                     </dl>
                     <div>

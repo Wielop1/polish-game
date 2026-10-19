@@ -24,6 +24,12 @@ import expectV6 from './fixtures/save-v6.expect.json';
 import rawV6 from './fixtures/save-v6.json?raw';
 import { contract, hireEmployee, jobOf as jobOfKit, runUntil as runUntilKit, buyAll as buyAllKit } from '../engine/testkit.ts';
 import { SAVE_VERSION, parseSave, serializeSave } from './save.ts';
+import { migrateV8ToV9 } from './migrations.ts';
+import expectV8 from './fixtures/save-v8.expect.json';
+import rawV8 from './fixtures/save-v8.json?raw';
+
+/** Stary stan remontowy z domyślnymi polami v9 (to jedyna różnica po migracji: nic poza nowymi polami się nie zmienia). */
+const withV9 = (reno: unknown) => (migrateV8ToV9({ reno: structuredClone(reno), corp: {} }) as { reno: unknown }).reno;
 
 const NOW = '2026-10-18T12:00:00.000Z';
 const ok = (r: CommandResult): GameState => {
@@ -36,9 +42,9 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
   if (!result.ok) throw new Error(`fixture v1 nie wczytał się: ${result.error}`);
   const migrated = result.state;
 
-  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 8', () => {
+  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 9', () => {
     expect(JSON.parse(rawV1).version).toBe(1);
-    expect(SAVE_VERSION).toBe(8);
+    expect(SAVE_VERSION).toBe(9);
   });
 
   it('historia finansowa zostaje nietknięta: salda, majątek netto, rejestr, zobowiązania, zdarzenia', () => {
@@ -557,8 +563,8 @@ describe('migracja zapisu v6 → v7 (prawdziwy zapis wygenerowany przez v0.6: fi
     expect(migrated.documents).toEqual(old.documents);
     expect(migrated.events).toEqual(old.events);
     expect(migrated.taxPeriods).toEqual(old.taxPeriods);
-    expect(migrated.reno.jobs).toEqual(old.reno.jobs);
-    expect(migrated.reno.quotes).toEqual(old.reno.quotes);
+    expect(migrated.reno.jobs).toEqual((withV9(old.reno) as { jobs: unknown }).jobs);
+    expect(migrated.reno.quotes).toEqual((withV9(old.reno) as { quotes: unknown }).quotes);
     expect(migrated.reno.reviews).toEqual(old.reno.reviews);
     expect(migrated.ops).toEqual(old.ops);
     expect(migrated.reno.jobs).toHaveLength(expectV6.jobs);
@@ -638,7 +644,7 @@ describe('migracja zapisu v7 → v8 (prawdziwy zapis wygenerowany przez v0.7: JD
     expect(migrated.obligations).toEqual(old.obligations);
     expect(migrated.documents).toEqual(old.documents);
     expect(migrated.events).toEqual(old.events);
-    expect(migrated.reno).toEqual(old.reno);
+    expect(migrated.reno).toEqual(withV9(old.reno));
     expect(migrated.ops).toEqual(old.ops);
     expect(migrated.market).toEqual(old.market);
     expect(migrated.documents).toHaveLength(expectV7.documents);
@@ -681,7 +687,7 @@ describe('migracja zapisu v7 → v8 (prawdziwy zapis wygenerowany przez v0.7: JD
     s = ok(commands.signAgreement(s, { companyId: 'co:1', board: [{ personId: s.person.id, role: 'president' }], file: true }));
     s = advanceDays(s, 40);
     const json = serializeSave(s, NOW);
-    expect(JSON.parse(json).version).toBe(8);
+    expect(JSON.parse(json).version).toBe(9);
     const again = parseSave(json);
     expect(again.ok && again.state).toEqual(s);
     if (!again.ok) return;
@@ -698,3 +704,61 @@ describe('migracja zapisu v7 → v8 (prawdziwy zapis wygenerowany przez v0.7: JD
 const activeBusinessOf = (s: GameState) => s.businesses.find((b) => b.status === 'active')!;
 
 const addDaysStr = (date: string, n: number): string => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+describe('migracja zapisu v8 → v9 (prawdziwy zapis wygenerowany przez v0.8: JDG z pracownikiem i ekipą oraz spółka z o.o. z kontraktem w toku)', () => {
+  const result = parseSave(rawV8);
+  if (!result.ok) throw new Error(`fixture v8 nie wczytał się: ${result.error}`);
+  const migrated = result.state;
+  const old = JSON.parse(rawV8).state;
+
+  it('historia księgowa, dokumenty, zobowiązania, rynek i majątek netto zostają nietknięte; nowe pola mają wartości neutralne', () => {
+    expect(JSON.parse(rawV8).version).toBe(8);
+    expect(migrated.clock.today).toBe(expectV8.today);
+    expect(cash(migrated)).toBe(expectV8.cash);
+    expect(netWorth(migrated)).toBe(expectV8.netWorth);
+    expect(migrated.ledger).toEqual(old.ledger);
+    expect(migrated.ledger).toHaveLength(expectV8.ledgerCount);
+    expect(migrated.obligations).toEqual(old.obligations);
+    expect(migrated.documents).toEqual(old.documents);
+    expect(migrated.events).toEqual(old.events);
+    expect(migrated.market).toEqual(old.market);
+    expect(migrated.ops).toEqual(old.ops);
+    expect(migrated.ledger.at(-1)!.id).toBe(expectV8.lastTxId);
+    // jedyna różnica w stanie remontowym: pola v0.8.1 (puste projekty i klienci, pakiety bez powiązań, plany z zerową pracą właściciela)
+    expect(migrated.reno).toEqual(withV9(old.reno));
+    expect(migrated.reno.projects).toEqual([]);
+    expect(migrated.reno.b2bClients).toEqual([]);
+    expect(migrated.reno.jobs).toHaveLength(expectV8.jobs);
+    expect(migrated.reno.jobs.every((j) => j.projectId === null && j.packageId === null && j.dependsOn.length === 0 && j.paymentDelayDays === 0 && j.planned.ownerLabor === 0)).toBe(true);
+    expect(checkInvariants(migrated)).toEqual([]);
+  });
+
+  it('spółka z kontraktem w toku: jej stan remontowy też dostaje nowe pola, a kwoty i historia kontraktu są bez zmian', () => {
+    expect(migrated.corp.companies).toHaveLength(expectV8.companies);
+    const co = migrated.corp.companies[0]!;
+    const oldCo = old.corp.companies[0];
+    expect(co.slices.reno).toEqual(withV9(oldCo.slices.reno));
+    expect(co.slices.reno.jobs).toHaveLength(expectV8.companyJobs);
+    expect(co.slices.reno.jobs[0]!.priceNet).toBe(oldCo.slices.reno.jobs[0].priceNet);
+    expect(co.slices.reno.projects).toEqual([]);
+  });
+
+  it('po migracji gra toczy się dalej: niezmienniki OK, pula klientów B2B deterministyczna i bez duplikatów, ponowne wczytanie daje identyczny przebieg', () => {
+    const a = advanceDays(migrated, 60);
+    expect(checkInvariants(a)).toEqual([]);
+    expect(a.reno.b2bClients.length === 0 || a.reno.b2bClients.length === 10).toBe(true);
+    expect(new Set(a.reno.projects.map((p) => p.id)).size).toBe(a.reno.projects.length);
+    const b = advanceDays(parseSave(rawV8).ok ? (parseSave(rawV8) as { state: GameState }).state : migrated, 60);
+    expect(b.reno.projects).toEqual(a.reno.projects);
+    expect(b.reno.jobs).toEqual(a.reno.jobs);
+    expect(b.ledger).toEqual(a.ledger);
+  }, 120_000);
+
+  it('zapis v9: round-trip identyczny, wersja formatu 9', () => {
+    const json = serializeSave(migrated, NOW);
+    expect(JSON.parse(json).version).toBe(9);
+    const again = parseSave(json);
+    expect(again.ok).toBe(true);
+    if (again.ok) expect(again.state).toEqual(migrated);
+  });
+});

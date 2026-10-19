@@ -8,6 +8,8 @@ import { resolveLifeEvent } from './lifeEvents.ts';
 import { signLease } from './housing.ts';
 import { addSpecialization, assignCrew, assignVehicle, buyEquipment, buyMaterial, buyMissingForJob, declineEnquiry, maintainEquipment, resolveComplaint, respondToCounter, sendQuote, signContract, terminateJob } from './renovation.ts';
 import type { CrewMember, QuoteInput } from './renovation.ts';
+import { declineProject, respondProjectCounter, sendProjectQuote, signProject } from './projects.ts';
+import type { ProjectPlanInput } from './projects.ts';
 import { hireAccountingOffice, terminateAccountingOffice } from './accounting.ts';
 import { closeListing, giveNotice, makeOffer, publishListing, rejectCandidate, setWage } from './workforce.ts';
 import type { Offer } from './workforce.ts';
@@ -135,6 +137,11 @@ export const commands = {
   respondToCounter: (state: GameState, quoteId: string, action: 'accept' | 'decline' | 'hold') => runCommand(state, (d) => op(d, () => respondToCounter(d, quoteId, action))),
   signContract: (state: GameState, quoteId: string, crew?: CrewMember[]) => runCommand(state, (d) => bind(d, 'Podpisanie kontraktu', () => d.reno.quotes.find((q) => q.id === quoteId)?.planned.total ?? 0, () => signContract(d, quoteId, crew))),
   terminateJob: (state: GameState, jobId: string) => runCommand(state, (d) => op(d, () => terminateJob(d, jobId))),
+  // v0.8.1 — większe projekty i klienci B2B (spółka: czynności wiążące wymagają reprezentacji)
+  sendProjectQuote: (state: GameState, projectId: string, input: ProjectPlanInput) => runCommand(state, (d) => bind(d, 'Oferta projektu B2B', () => input.totalPriceNet ?? 0, () => sendProjectQuote(d, projectId, input))),
+  declineProject: (state: GameState, projectId: string) => runCommand(state, (d) => op(d, () => declineProject(d, projectId))),
+  respondProjectCounter: (state: GameState, projectId: string, action: 'accept' | 'decline' | 'hold') => runCommand(state, (d) => op(d, () => respondProjectCounter(d, projectId, action))),
+  signProject: (state: GameState, projectId: string) => runCommand(state, (d) => bind(d, 'Podpisanie umowy projektu', () => d.reno.projects.find((p) => p.id === projectId)?.quote?.priceNet ?? 0, () => signProject(d, projectId))),
   resolveComplaint: (state: GameState, complaintId: string, action: 'repair' | 'discount' | 'reject') => runCommand(state, (d) => op(d, () => resolveComplaint(d, complaintId, action))),
   // v0.5 — księgowość
   hireAccountingOffice: (state: GameState, planId: string) => runCommand(state, (d) => hireAccountingOffice(d, planId)),

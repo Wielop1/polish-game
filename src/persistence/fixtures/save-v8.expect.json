@@ -1,0 +1,20 @@
+{
+  "today": "2026-10-24",
+  "cash": 18012719,
+  "netWorth": 32925651,
+  "ledgerCount": 373,
+  "obligationCount": 366,
+  "eventCount": 1695,
+  "documents": 278,
+  "enquiries": 167,
+  "quotes": 80,
+  "jobs": 39,
+  "doneJobs": 36,
+  "reviews": 36,
+  "employments": 1,
+  "teams": 1,
+  "subcontracts": 0,
+  "companies": 1,
+  "companyJobs": 1,
+  "lastTxId": "tx:settle:obl:doc:biz:1:sales:2026-09:4:net"
+}

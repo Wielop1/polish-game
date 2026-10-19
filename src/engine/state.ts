@@ -252,6 +252,7 @@ export const EventTypeSchema = z.enum([
   'market.positioning',
   'reno.quote',
   'reno.contract',
+  'reno.project',
   'reno.work',
   'reno.issue',
   'reno.review',
@@ -687,6 +688,8 @@ export const RenoEnquirySchema = z.object({
   rivalUtility: z.number().int(),
   /** Czy zlecenie zostało już przyznane konkurentowi (zapobiega podwójnemu księgowaniu obciążenia konkurenta). */
   rivalAwarded: z.boolean(),
+  /** v0.8.1: zapytanie/oferta pakietu robót większego projektu (wewnętrzne — ukryte w listach zwykłych zapytań). */
+  projectId: IdSchema.nullish(),
 });
 
 export const RenoCostPlanSchema = z.object({
@@ -695,6 +698,10 @@ export const RenoCostPlanSchema = z.object({
   transport: NonNegGroszeSchema,
   other: NonNegGroszeSchema,
   total: NonNegGroszeSchema,
+  /** v0.8.1: część `labor` będąca KALKULACYJNĄ wartością własnej pracy właściciela (nie wypłata i nie koszt podatkowy); 0 w kontraktach sprzed v0.8.1. */
+  ownerLabor: NonNegGroszeSchema.default(0),
+  /** v0.8.1: szacunek zużycia sprzętu w tym kontrakcie (koszt ekonomiczny, nie przepływ gotówki; nie wchodzi do `total`). */
+  equipment: NonNegGroszeSchema.default(0),
 });
 
 export const RenoQuoteSchema = z.object({
@@ -710,7 +717,7 @@ export const RenoQuoteSchema = z.object({
   /** Stawka VAT obowiązująca w chwili wysłania oferty (0 = zwolnienie podmiotowe). */
   vatRateBps: z.number().int().min(0).max(10_000),
   advanceBps: z.number().int().min(0).max(5_000),
-  paymentTermDays: z.number().int().min(0).max(30),
+  paymentTermDays: z.number().int().min(0).max(90),
   startDate: IsoDateSchema,
   durationDays: z.number().int().min(1),
   hoursPerDay: z.number().int().min(1).max(8),
@@ -731,6 +738,7 @@ export const RenoQuoteSchema = z.object({
   teamId: IdSchema.nullable(),
   supervision: z.enum(['worker', 'supervise', 'hands-off']),
   vehicleId: IdSchema.nullable(),
+  projectId: IdSchema.nullish(),
 });
 
 export const RenoJobSchema = z.object({
@@ -800,6 +808,12 @@ export const RenoJobSchema = z.object({
   penaltyNet: NonNegGroszeSchema,
   /** Początek okresu bezczynności z powodu braków/awarii — do opisu w harmonogramie. */
   blockedReason: z.string().max(400).nullable(),
+  /** v0.8.1: pakiet robót większego projektu — projekt, pakiet i zależności (pakiet nie rusza przed zakończeniem poprzedników). */
+  projectId: IdSchema.nullable().default(null),
+  packageId: IdSchema.nullable().default(null),
+  dependsOn: z.array(IdSchema).default([]),
+  /** Zwłoka płatnika B2B (dni ponad umowny termin), ustalana przy rozliczeniu pakietu. */
+  paymentDelayDays: z.number().int().min(0).default(0),
 });
 
 export const EquipmentItemSchema = z.object({
@@ -852,6 +866,94 @@ export const RenoComplaintSchema = z.object({
   ratingDelta10: z.number().int(),
 });
 
+/* ---------- Większe projekty, klienci B2B i referencje (v0.8.1) ---------- */
+
+export const B2BKindSchema = z.enum(['property_manager', 'private_investor', 'builder', 'general_contractor', 'developer']);
+export const ProjectTemplateIdSchema = z.enum(['flat_finish', 'local_remont', 'finish_package', 'serial_flats', 'subcontract']);
+export const PackageStageSchema = z.enum(['przygotowanie', 'roboty', 'wykonczenie', 'prace_koncowe']);
+
+export const B2BClientSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(80),
+  kind: B2BKindSchema,
+  size: z.enum(['small', 'medium', 'large']),
+  /** Typowy termin płatności (dni) i rzetelność płatnika (0–100: im niżej, tym dłuższe i częstsze zwłoki). */
+  termDays: z.number().int().min(0).max(90),
+  reliability: z.number().int().min(0).max(100),
+  /** Zaufanie do firmy gracza (0–100): rośnie wyłącznie po zrealizowanych projektach, spada po opóźnieniach i reklamacjach. */
+  relationship: z.number().int().min(0).max(100),
+  projectsDone: z.number().int().min(0),
+  lastEnquiryOn: IsoDateSchema.nullable(),
+});
+
+export const RenoPackageSchema = z.object({
+  id: IdSchema,
+  label: z.string().min(1).max(80),
+  stage: PackageStageSchema,
+  serviceId: z.string().min(1),
+  units: z.number().int().min(1),
+  complexity: ComplexitySchema,
+  qualityReq: z.number().int().min(1).max(3),
+  dependsOn: z.array(IdSchema),
+  /** Cena referencyjna pakietu (netto) — podstawa budżetu klienta i domyślnej ceny. */
+  refPriceNet: PositiveGroszeSchema,
+  /** Po wysłaniu oferty: cena pakietu, wykonawcy (klucz ekipy lub null = właściciel), start i czas trwania; po podpisaniu — kontrakt. */
+  priceNet: NonNegGroszeSchema,
+  crewKey: z.string().nullable(),
+  startDate: IsoDateSchema.nullable(),
+  durationDays: z.number().int().min(0),
+  /** Godziny dziennie, które właściciel poświęca na pakiet (dobrane do wolnego czasu doby; ekipy bez właściciela — nominalnie). */
+  hoursPerDay: z.number().int().min(1).max(8),
+  jobId: IdSchema.nullable(),
+});
+
+export const RenoProjectSchema = z.object({
+  id: IdSchema,
+  businessId: IdSchema,
+  b2bId: IdSchema,
+  clientId: IdSchema,
+  clientName: z.string().min(1).max(80),
+  templateId: ProjectTemplateIdSchema,
+  title: z.string().min(1).max(120),
+  location: z.string().min(1).max(60),
+  tier: z.number().int().min(1).max(3),
+  /** Powierzchnia (m²) jednego lokalu/obiektu i liczba lokali (serie). */
+  areaM2: z.number().int().min(1),
+  flats: z.number().int().min(1),
+  status: z.enum(['enquiry', 'quoted', 'counter', 'accepted', 'signed', 'done', 'rejected', 'declined', 'expired', 'cancelled']),
+  receivedOn: IsoDateSchema,
+  respondBy: IsoDateSchema,
+  desiredStart: IsoDateSchema,
+  /** Maksymalny czas od startu do odbioru końcowego (dni kalendarzowe). */
+  maxDays: z.number().int().min(1),
+  budgetNet: PositiveGroszeSchema,
+  /** Powyżej tej ceny klient odrzuci ofertę (ukryte w UI). */
+  walkAwayNet: PositiveGroszeSchema,
+  paymentTermDays: z.number().int().min(0).max(90),
+  maxTermDays: z.number().int().min(0).max(90),
+  advanceMaxBps: z.number().int().min(0).max(5_000),
+  penaltyBpsPerWeek: z.number().int().min(0).max(5_000),
+  /** Wymagania klienta wobec wykonawcy (migawka z chwili zapytania). */
+  requirements: z.object({ minCompleted: z.number().int().min(0), minValueNet: NonNegGroszeSchema, minRating10: z.number().int().min(0).max(50), minProjectTier: z.number().int().min(0).max(3), minWorkers: z.number().int().min(0) }),
+  packages: z.array(RenoPackageSchema).min(1),
+  quote: z.object({
+    sentOn: IsoDateSchema,
+    decideOn: IsoDateSchema,
+    startDate: IsoDateSchema,
+    priceNet: PositiveGroszeSchema,
+    paymentTermDays: z.number().int().min(0).max(90),
+    advanceBps: z.number().int().min(0).max(5_000),
+    counter: z.object({ discountBps: z.number().int().min(0), termDays: z.number().int().min(0).max(90) }).nullable(),
+    held: z.boolean(),
+  }).nullable(),
+  signBy: IsoDateSchema.nullable(),
+  signedOn: IsoDateSchema.nullable(),
+  finishedOn: IsoDateSchema.nullable(),
+  /** Wynik po odbiorze końcowym (do historii referencji). */
+  outcome: z.object({ revenueNet: NonNegGroszeSchema, surplusNet: z.number().int(), penaltiesNet: NonNegGroszeSchema, avgRating10: z.number().int().min(0).max(50), lateDays: z.number().int().min(0), paymentDelayDays: z.number().int().min(0), workedHours: z.number().int().min(0) }).nullable(),
+  note: z.string().max(300),
+});
+
 export const RenovationStateSchema = z.object({
   specializations: z.array(z.string()),
   /** Doświadczenie (setne godziny efektywnej pracy) per usługa — rośnie wyłącznie od wykonanej pracy. */
@@ -864,6 +966,9 @@ export const RenovationStateSchema = z.object({
   stockMoves: z.array(StockMoveSchema),
   reviews: z.array(RenoReviewSchema),
   complaints: z.array(RenoComplaintSchema),
+  /** v0.8.1: pula klientów B2B (deterministyczna z seeda, tworzona przy pierwszym użyciu) i większe projekty. */
+  b2bClients: z.array(B2BClientSchema).default([]),
+  projects: z.array(RenoProjectSchema).default([]),
 });
 
 
@@ -1540,6 +1645,9 @@ export type StockMove = z.infer<typeof StockMoveSchema>;
 export type RenoReview = z.infer<typeof RenoReviewSchema>;
 export type RenoComplaint = z.infer<typeof RenoComplaintSchema>;
 export type RenovationState = z.infer<typeof RenovationStateSchema>;
+export type B2BClient = z.infer<typeof B2BClientSchema>;
+export type RenoPackage = z.infer<typeof RenoPackageSchema>;
+export type RenoProject = z.infer<typeof RenoProjectSchema>;
 export type Accounting = z.infer<typeof AccountingSchema>;
 export type WorkerPerson = z.infer<typeof WorkerPersonSchema>;
 export type Employment = z.infer<typeof EmploymentSchema>;

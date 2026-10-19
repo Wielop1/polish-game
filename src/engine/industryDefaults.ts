@@ -5,7 +5,7 @@ import type { Accounting, Ops, RenovationState, Subcontractor } from './state.ts
 export function emptyReno(): RenovationState {
   return {
     specializations: [], skillXp: {}, enquiries: [], quotes: [], jobs: [],
-    equipment: [], stock: {}, stockMoves: [], reviews: [], complaints: [],
+    equipment: [], stock: {}, stockMoves: [], reviews: [], complaints: [], b2bClients: [], projects: [],
   };
 }
 

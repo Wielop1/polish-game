@@ -240,3 +240,37 @@ export function migrateV7ToV8(raw: unknown, buildPool: (seed: string) => unknown
   };
   return s;
 }
+
+/**
+ * v8 → v9 (v0.8.1): większe projekty, klienci B2B, referencje i rozdzielenie pracy właściciela od kosztów rzeczywistych.
+ * Dodaje puste `b2bClients`/`projects` do stanu remontowego JDG i każdej spółki, pola powiązania pakietów w kontraktach (`projectId`, `packageId`,
+ * `dependsOn`, `paymentDelayDays`) oraz `ownerLabor`/`equipment` w planach kosztów (0 = kontrakt sprzed v0.8.1; kalkulacyjna wartość pracy
+ * właściciela dla starych kontraktów jest liczona z godzin i stawki), a w uchwałach — kategorie głosów nieważnych/nieoddanych. Historii księgowej
+ * i kwot kontraktów NIE zmieniamy; pula klientów B2B powstaje deterministycznie z ziarna przy pierwszym użyciu.
+ */
+export function migrateV8ToV9(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) throw new Error('Zapis v8 ma nieprawidłową strukturę stanu.');
+  const s = structuredClone(raw) as Json;
+  const plan = (p: Json | undefined) => { if (p) { p.ownerLabor = p.ownerLabor ?? 0; p.equipment = p.equipment ?? 0; } };
+  const fixReno = (r: Json | undefined) => {
+    if (!r) return;
+    r.b2bClients = r.b2bClients ?? [];
+    r.projects = r.projects ?? [];
+    for (const j of (r.jobs ?? []) as Json[]) {
+      j.projectId = j.projectId ?? null; j.packageId = j.packageId ?? null; j.dependsOn = j.dependsOn ?? []; j.paymentDelayDays = j.paymentDelayDays ?? 0;
+      plan(j.planned as Json | undefined);
+    }
+    for (const q of (r.quotes ?? []) as Json[]) plan(q.planned as Json | undefined);
+  };
+  fixReno(s.reno as Json | undefined);
+  const corp = s.corp as Json | undefined;
+  for (const c of ((corp?.companies ?? []) as Json[])) fixReno((c.slices as Json | undefined)?.reno as Json | undefined);
+  for (const r of ((corp?.resolutions ?? []) as Json[])) {
+    const t = r.tally as Json | null | undefined;
+    if (t) {
+      t.invalid = t.invalid ?? 0; t.notCast = t.notCast ?? 0;
+      t.eligible = t.eligible ?? ((r.voters ?? []) as { votes: number; excluded: string | null }[]).filter((v) => !v.excluded).reduce((a, v) => a + v.votes, 0);
+    }
+  }
+  return s;
+}

@@ -428,6 +428,38 @@ export function checkInvariants(s: GameState): string[] {
       if (e.rivalAwarded && !e.rivalId) fail(`zapytanie ${e.id}: zlecenie przyznane konkurentowi bez konkurenta`);
       if (e.rivalAwarded && (e.status === 'open' || e.status === 'quoted')) fail(`zapytanie ${e.id}: przyznane konkurentowi, a nadal otwarte`);
     }
+    // v0.8.1: większe projekty — pakiety są prawdziwymi kontraktami, zależności zachowane, cena projektu = suma cen pakietów, historia ma wynik
+    const clientIds = new Set(s.reno.b2bClients.map((c) => c.id));
+    if (clientIds.size !== s.reno.b2bClients.length) fail('klienci B2B: zduplikowane identyfikatory');
+    const projIds = new Set<string>();
+    for (const p of s.reno.projects) {
+      if (projIds.has(p.id)) fail(`zduplikowany projekt ${p.id}`);
+      projIds.add(p.id);
+      if (!clientIds.has(p.b2bId)) fail(`projekt ${p.id}: nieznany klient B2B`);
+      const pkgIds = new Set(p.packages.map((x) => x.id));
+      if (pkgIds.size !== p.packages.length) fail(`projekt ${p.id}: zduplikowane pakiety`);
+      p.packages.forEach((pkg, i) => {
+        for (const d of pkg.dependsOn) if (!p.packages.slice(0, i).some((x) => x.id === d)) fail(`projekt ${p.id}, pakiet ${pkg.id}: zależność od nieistniejącego lub późniejszego pakietu ${d}`);
+        if (pkg.jobId) {
+          const job = s.reno.jobs.find((j) => j.id === pkg.jobId);
+          if (!job) fail(`projekt ${p.id}, pakiet ${pkg.id}: nieznany kontrakt ${pkg.jobId}`);
+          else {
+            if (job.projectId !== p.id || job.packageId !== pkg.id) fail(`projekt ${p.id}, pakiet ${pkg.id}: kontrakt ${job.id} nie wskazuje projektu/pakietu`);
+            if (job.priceNet !== pkg.priceNet && p.status !== 'cancelled') fail(`projekt ${p.id}, pakiet ${pkg.id}: cena kontraktu ≠ cena pakietu`);
+            const preds = job.dependsOn.map((id) => s.reno.jobs.find((j) => j.id === id));
+            if (preds.some((x) => !x)) fail(`kontrakt ${job.id}: zależność od nieistniejącego kontraktu`);
+            // pakiet powstaje dopiero po odbiorze poprzedników (aktywacja „na czas”)
+            if (preds.some((x) => x && x.stage !== 'done')) fail(`kontrakt ${job.id}: pakiet uruchomiony przed odbiorem pakietu poprzedzającego`);
+            if (pkg.dependsOn.length !== job.dependsOn.length) fail(`projekt ${p.id}, pakiet ${pkg.id}: zależności kontraktu ≠ zależności pakietu`);
+          }
+        }
+      });
+      if (p.status === 'signed' && !p.packages.some((x) => x.jobId)) fail(`projekt ${p.id}: podpisany, a żaden pakiet nie jest kontraktem`);
+      if (p.status === 'done' && p.packages.some((x) => !x.jobId)) fail(`projekt ${p.id}: zakończony, a pakiet bez kontraktu`);
+      if (p.status === 'done' && !p.outcome) fail(`projekt ${p.id}: zakończony bez wyniku`);
+      if (p.quote && ['quoted', 'counter', 'accepted', 'signed', 'done'].includes(p.status) && p.quote.priceNet !== p.packages.reduce((a, x) => a + x.priceNet, 0)) fail(`projekt ${p.id}: cena oferty ≠ suma cen pakietów`);
+    }
+    for (const j of s.reno.jobs) if (j.projectId && !s.reno.projects.some((p) => p.id === j.projectId)) fail(`kontrakt ${j.id}: nieznany projekt ${j.projectId}`);
     for (const id of jobIds) allJobIds.add(id);
   };
   checkSlice('');

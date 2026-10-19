@@ -16,6 +16,7 @@ import { macroAt } from './macro.ts';
 import { SEGMENTS } from './marketConfig.ts';
 import type { SegmentId } from './marketConfig.ts';
 import { RENOVATION_MARKET } from './renovationMarket.ts';
+import { B2B_RULES } from './projectsCatalog.ts';
 import {
   CANCEL_AFTER_DEADLINE_DAYS, COMPLAINT_WINDOW_DAYS, DELAY_PENALTY_BPS_PER_WEEK,
   DELAY_PENALTY_CAP_BPS, EQUIPMENT, EQUIPMENT_BY_ID, MATERIAL_BY_ID, OTHER_COSTS_BPS, OWN_LABOR_RATE_DEFAULT, QUALITY_REQ_LABEL,
@@ -261,6 +262,30 @@ export interface QuotePreview {
   timeConflict: { date: IsoDate; missing: number } | null;
   /** Godziny pracy całej ekipy (setne godziny) i średnia wydajność dobowa (ekipa) — do porównania wariantów. */
   crewHoursCenti: number;
+  /** v0.8.1: rozdzielenie przychodu, kosztów rzeczywistych, kalkulacyjnej pracy właściciela, zysku ekonomicznego i płynności. */
+  economics: QuoteEconomics;
+}
+
+/**
+ * Rzeczywisty zarobek przedsiębiorcy (v0.8.1) — wielkości, których nie wolno mieszać:
+ *  • koszty zewnętrzne = pieniądze, które firma faktycznie wydaje (materiały, płace pracowników, podwykonawcy, transport, drobne) + zużycie sprzętu (koszt ekonomiczny, nie gotówka);
+ *  • kalkulacyjna wartość pracy właściciela (godziny × własna stawka) NIE jest wypłatą, nie trafia na rachunek i nie jest kosztem podatkowym JDG;
+ *  • nadwyżka przed obciążeniami właściciela = cena − koszty zewnętrzne: z niej firma pokrywa składki, podatek i księgowość, a reszta zostaje właścicielowi;
+ *  • zysk ekonomiczny = nadwyżka − kalkulacyjna wartość pracy właściciela (czy praca opłaciła się wobec przyjętej stawki).
+ */
+export interface QuoteEconomics {
+  revenueNet: Grosze;
+  external: { materials: Grosze; hiredLabor: Grosze; transport: Grosze; other: Grosze; equipmentWear: Grosze; total: Grosze };
+  ownerLabor: Grosze;
+  /** Godziny pracy/nadzoru właściciela (setne godziny). */
+  ownerCenti: number;
+  surplusBeforeOwner: Grosze;
+  economicProfit: Grosze;
+  /** Nadwyżka przypadająca na godzinę pracy właściciela; null, gdy właściciel nie poświęca czasu (pełne delegowanie). */
+  ownerHourly: Grosze | null;
+  surplusMarginBps: number;
+  economicMarginBps: number;
+  liquidity: { advance: Grosze; finalPayment: Grosze; finalPaymentDate: IsoDate; cashOutBeforePayment: Grosze; peakNeed: Grosze; daysExposed: number };
 }
 
 
@@ -284,7 +309,7 @@ export function parseCrewKey(teamId: string | null | undefined): CrewMember[] | 
   });
 }
 
-export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: boolean } = {}): QuotePreview {
+export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: boolean; project?: boolean } = {}): QuotePreview {
   const members = parseCrewKey(i.teamId);
   if (!members) return previewQuoteInner(s, i, opts);
   const valid = members.length > 0 && members.every((m) => (m.kind === 'owner' ? m.id === 'owner' && ownerAvailable(s) : m.kind === 'employee' ? employmentById(s, m.id)?.status === 'active' : s.ops.subcontractors.some((x) => x.id === m.id)));
@@ -294,7 +319,7 @@ export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: b
   try { return previewQuoteInner(s, i, opts); } finally { s.ops.teams.pop(); }
 }
 
-function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boolean } = {}): QuotePreview {
+function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boolean; project?: boolean } = {}): QuotePreview {
   const def = SERVICE_BY_ID.get(i.serviceId);
   if (!def) throw new CommandError('Nieznana usługa.');
   const b = currentOperator(s);
@@ -312,6 +337,8 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
   let plannedCenti = Math.max(1, roundDiv(norm * 10_000, Math.max(1, speed)));
   let minDays = Math.ceil(plannedCenti / (hpd * 100));
   let teamLabor: Grosze | null = null;
+  let ownerLaborPart: Grosze | null = null;
+  let ownerCenti = plannedCenti;
   let transportOverride: Grosze | null = null;
   let crewHours = plannedCenti;
   if (team) {
@@ -328,19 +355,22 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
     plannedCenti = Math.max(1, crewHours);
     speed = roundDiv(norm * 10_000, plannedCenti);
     let labor = 0;
+    let ownerPart = 0;
+    ownerCenti = 0;
     const sumC = Math.max(1, day.workers.reduce((a, w) => a + w.c, 0));
     for (const w of day.workers) {
       if (w.c <= 0) continue;
       if (w.kind === 'employee') labor += roundDiv(employmentById(s, w.employmentId!)!.hourlyCost * w.hoursCenti * norm, 100 * pWork);
-      else if (w.kind === 'owner') labor += roundDiv(i.laborRate * w.hoursCenti * norm, 100 * pWork);
+      else if (w.kind === 'owner') { const part = roundDiv(i.laborRate * w.hoursCenti * norm, 100 * pWork); labor += part; ownerPart += part; ownerCenti += roundDiv(w.hoursCenti * norm, pWork); }
       else {
         const sub = subById(s, w.key.slice(4))!;
         const share = clamp(Math.round((w.c * 10_000) / sumC / 500) * 500, 1_000, 10_000);
         labor += subPrice(sub, i.serviceId, i.units, i.complexity, share);
       }
     }
-    if (supervision === 'supervise') labor += roundDiv(i.laborRate * 100 * minDays, 100);
+    if (supervision === 'supervise') { labor += roundDiv(i.laborRate * 100 * minDays, 100); ownerPart += roundDiv(i.laborRate * 100 * minDays, 100); ownerCenti += minDays * 100; }
     teamLabor = labor;
+    ownerLaborPart = ownerPart;
     if (i.vehicleId) {
       const v = s.ops.vehicles.find((x) => x.id === i.vehicleId);
       if (!v) errors.push('Nie ma takiego pojazdu.');
@@ -378,6 +408,8 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
   const other = mulBps(materials, OTHER_COSTS_BPS);
   const labor = teamLabor ?? roundDiv(plannedCenti * i.laborRate, 100);
   const total = materials + labor + transport + other;
+  const ownerLabor = Math.min(labor, ownerLaborPart ?? labor);
+  const equipmentWear = relevantEquipment(s, i.serviceId).reduce((a, it) => a + roundDiv(it.cost * plannedCenti, EQUIPMENT_BY_ID.get(it.catalogId)!.durabilityHours * 100), 0);
   const markupBps = total > 0 ? roundDiv((i.priceNet - total) * 10_000, total) : 0;
   const marginBps = i.priceNet > 0 ? roundDiv((i.priceNet - total) * 10_000, i.priceNet) : 0;
   const vatRateBps = b ? vatRateNow(b) : 0;
@@ -400,10 +432,10 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
   if (eq.broken.length) errors.push(`Sprzęt wymaga konserwacji (stan 0%): ${eq.broken.join(', ')}.`);
   if (!Number.isInteger(i.priceNet) || i.priceNet <= 0) errors.push('Podaj dodatnią cenę netto.');
   if (!Number.isInteger(i.advanceBps) || i.advanceBps < 0 || i.advanceBps > 5_000) errors.push('Zaliczka: od 0 do 50% ceny.');
-  if (!Number.isInteger(i.paymentTermDays) || i.paymentTermDays < 0 || i.paymentTermDays > 30) errors.push('Termin płatności: od 0 do 30 dni.');
+  if (!Number.isInteger(i.paymentTermDays) || i.paymentTermDays < 0 || i.paymentTermDays > (opts.project ? 90 : 30)) errors.push(`Termin płatności: od 0 do ${opts.project ? 90 : 30} dni.`);
   if (!Number.isInteger(i.hoursPerDay) || i.hoursPerDay < 1 || i.hoursPerDay > 8) errors.push('Godziny dziennie: od 1 do 8.');
   if (i.startDate <= today) errors.push('Rozpoczęcie prac najwcześniej jutro.');
-  if (i.startDate > addDays(today, 120)) errors.push('Rozpoczęcie prac najpóźniej za 120 dni.');
+  if (i.startDate > addDays(today, opts.project ? 400 : 120)) errors.push(`Rozpoczęcie prac najpóźniej za ${opts.project ? 400 : 120} dni.`);
   if (!Number.isInteger(i.durationDays) || i.durationDays < minDays) errors.push(team ? `Ekipa potrzebuje co najmniej ${minDays} dni kalendarzowych — wydłuż termin lub wzmocnij ekipę.` : `Przy ${hpd} godz. dziennie praca zajmie co najmniej ${minDays} dni — wydłuż termin lub zwiększ godziny dziennie.`);
   if (i.laborRate < 0) errors.push('Stawka robocizny nie może być ujemna.');
 
@@ -413,14 +445,33 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
     timeConflict = firstOverload(s, i.startDate, addDays(i.startDate, i.durationDays - 1), { extraHoursPerDay: ownerHours });
     if (timeConflict) warnings.push(`Kolizja czasu: ${formatDatePL(timeConflict.date)} brakuje ${timeConflict.missing} godz. (etat, sen, obowiązki i inne kontrakty zajmują dobę).`);
   }
-  if (i.priceNet > 0 && marginBps < 0) warnings.push(team ? 'Cena nie pokrywa planowanych kosztów (w tym wynagrodzeń ekipy po stawce godzinowej kosztu pracodawcy).' : 'Cena nie pokrywa planowanych kosztów (łącznie z Twoją robocizną po podanej stawce).');
+  const priceNet = Math.max(0, i.priceNet);
+  const hiredLabor = labor - ownerLabor;
+  const extTotal = materials + hiredLabor + transport + other + equipmentWear;
+  const surplus = priceNet - extTotal;
+  const economicProfit = surplus - ownerLabor;
+  const gross = grossOfNet(priceNet, vatRateBps);
+  const advance = mulBps(gross, Math.max(0, Math.min(5_000, Math.round(i.advanceBps) || 0)));
+  const shortageValue = Object.entries(shortage).reduce((a, [k, n]) => a + n * materialPrice(s, k, today), 0);
+  const cashOut = shortageValue + hiredLabor + transport + other;
+  const termDays = Math.max(1, Math.round(i.durationDays) || 1) + Math.max(0, Math.round(i.paymentTermDays) || 0);
+  const economics: QuoteEconomics = {
+    revenueNet: priceNet,
+    external: { materials, hiredLabor, transport, other, equipmentWear, total: extTotal },
+    ownerLabor, ownerCenti, surplusBeforeOwner: surplus, economicProfit,
+    ownerHourly: ownerCenti > 0 ? roundDiv(surplus * 100, ownerCenti) : null,
+    surplusMarginBps: priceNet > 0 ? roundDiv(surplus * 10_000, priceNet) : 0,
+    economicMarginBps: priceNet > 0 ? roundDiv(economicProfit * 10_000, priceNet) : 0,
+    liquidity: { advance, finalPayment: gross - advance, finalPaymentDate: addDays(i.startDate, termDays), cashOutBeforePayment: cashOut, peakNeed: Math.max(0, cashOut - advance), daysExposed: termDays },
+  };
+  if (priceNet > 0 && surplus < 0) warnings.push('Strata gotówkowa: cena nie pokrywa kosztów, które firma faktycznie wydaje (materiały, płace pracowników, podwykonawcy, transport, drobne) — dopłacisz do tego zlecenia z własnej kieszeni.');
+  else if (priceNet > 0 && ownerLabor > 0 && economicProfit < 0) warnings.push(`Firma nie dopłaca do zlecenia (nadwyżka ${formatPLN(surplus, { round: true })} przed składkami i podatkiem), ale wychodzi z tego ok. ${ownerCenti > 0 ? formatPLN(roundDiv(surplus * 100, ownerCenti), { round: true }) : '0 zł'} za godzinę Twojej pracy — mniej niż przyjęta stawka ${formatPLN(i.laborRate, { round: true })}/godz. Zysk ekonomiczny jest ujemny, gotówkowy nie.`);;
   if (b && b.vat.status === 'exempt') warnings.push('Zwolnienie podmiotowe z VAT: cena dla klienta = cena netto (bez VAT).');
   if (b && b.vat.status === 'active') warnings.push(`Czynny podatnik VAT: do ceny netto dolicza się ${vatRateBps / 100}% VAT (obsługiwana tylko stawka podstawowa; obniżona 8% dla remontów mieszkań — niezaimplementowana, RENO-VAT-REDUCED).`);
   if (i.advanceBps > 0) warnings.push(`Zaliczka to gotówka i zobowiązanie do wykonania usługi — NIE przychód podatkowy: przychód powstaje po wykonaniu usługi (rozliczenie końcowe).${b && b.vat.status === 'active' ? ' VAT od zaliczki powstaje w dacie jej otrzymania.' : ''} (ADV-PIT, ADV-VAT)`);
-  void opts;
   return {
-    normCenti: norm, speedBps: speed, plannedCenti, minDays, planned: { materials, labor, transport, other, total }, vatRateBps, priceGross: grossOfNet(Math.max(0, i.priceNet), vatRateBps),
-    markupBps, marginBps, effectiveHourly, need, stockShortage: shortage, difficulty, level, errors, warnings, timeConflict, crewHoursCenti: crewHours,
+    normCenti: norm, speedBps: speed, plannedCenti, minDays, planned: { materials, labor, transport, other, total, ownerLabor, equipment: equipmentWear }, vatRateBps, priceGross: grossOfNet(Math.max(0, i.priceNet), vatRateBps),
+    markupBps, marginBps, effectiveHourly, need, stockShortage: shortage, difficulty, level, errors, warnings, timeConflict, crewHoursCenti: crewHours, economics,
   };
 }
 
@@ -874,7 +925,9 @@ function setupCrew(s: GameState, job: RenoJob, order: ServiceOrder): void {
  * Podpisanie umowy z zaakceptowanej oferty. `crew` (opcjonalnie) zmienia wykonawców przy podpisaniu — np. gdy właściciel nie ma wolnego
  * sprzętu lub godzin i zleca pracę podwykonawcy/pracownikowi; cena umowy zostaje taka, jak w ofercie (klient nie widzi, kto wykonuje pracę).
  */
-export function signContract(s: GameState, quoteId: string, crew?: CrewMember[]): string {
+export interface ProjectLink { projectId: string; packageId: string; dependsOn: string[]; penaltyBpsPerWeek: number }
+
+export function signContract(s: GameState, quoteId: string, crew?: CrewMember[], link?: ProjectLink): string {
   const b = requireBusiness(s);
   const today = s.clock.today;
   const q = reno(s).quotes.find((x) => x.id === quoteId);
@@ -914,7 +967,7 @@ export function signContract(s: GameState, quoteId: string, crew?: CrewMember[])
   const order: ServiceOrder = {
     id: orderId, offerId: q.id, clientId: enq.clientId, title: `${def.label}: ${q.units} ${def.unit}, ${enq.location}`, netValue: q.priceNet, hoursTotal: Math.max(1, Math.ceil(q.plannedCenti / 100)),
     progressCentiHours: 0, hoursPerDay, costNet: q.planned.materials + q.planned.transport + q.planned.other, paymentTermDays: q.paymentTermDays,
-    latePenaltyBps: DELAY_PENALTY_BPS_PER_WEEK, acceptedOn: today, startDate: start, deadline, status: 'in_progress', completedOn: null, salesDocumentId: null, commitmentId, late: false, kind: 'renovation',
+    latePenaltyBps: link ? link.penaltyBpsPerWeek : DELAY_PENALTY_BPS_PER_WEEK, acceptedOn: today, startDate: start, deadline, status: 'in_progress', completedOn: null, salesDocumentId: null, commitmentId, late: false, kind: 'renovation',
   };
   s.serviceOrders.push(order);
   const advanceNet = roundDiv(q.priceNet * q.advanceBps, 10_000);
@@ -933,7 +986,7 @@ export function signContract(s: GameState, quoteId: string, crew?: CrewMember[])
     finalDocId: null, paymentTermDays: q.paymentTermDays, planned: q.planned, plannedCenti: q.plannedCenti, laborRate: q.laborRate, lastDay: null, pauseUntil: null, normCenti: norm, extraCenti: 0, progressCenti: 0,
     hoursPerDay, startDate: start, deadline, signedOn: today, stage: 'preparation', need: materialNeeds(q.serviceId, q.units, q.complexity, q.standard), consumed: {},
     actual: { materials: 0, transport: 0, other: 0, rework: 0, labor: 0, subcontract: 0, vehicle: 0 }, workedDays: 0, blockedDays: 0, perfSumBps: 0, perfDays: 0, issues: [], reworkDone: false, quality: null, finishedOn: null,
-    handoverOn: null, settledOn: null, lateDays: 0, penaltyNet: 0, blockedReason: null,
+    handoverOn: null, settledOn: null, lateDays: 0, penaltyNet: 0, blockedReason: null, projectId: link?.projectId ?? null, packageId: link?.packageId ?? null, dependsOn: link?.dependsOn ?? [], paymentDelayDays: 0,
     crew: { teamId: q.teamId, supervision: q.supervision }, advanceMode: 'deferred', qualityHoursCenti: 0, qualityWeightedSum: 0, vehicleId: q.vehicleId,
   };
   setupCrew(s, job, order);
@@ -1259,6 +1312,8 @@ function maybeIssue(s: GameState, job: RenoJob, date: IsoDate, crewLevel: number
     addedCenti = rng.int(o.centi[0], o.centi[1]);
     delayDays = rng.int(o.pause[0], o.pause[1]);
   }
+  // problem nie może dołożyć więcej niż 40% normy kontraktu (v0.8.1: w małych pakietach stała pula 6–16 godz. podwajała robociznę)
+  addedCenti = Math.min(addedCenti, Math.max(100, roundDiv(job.normCenti * 4_000, 10_000)));
   job.extraCenti += addedCenti;
   if (delayDays > 0) job.pauseUntil = addDays(date, delayDays);
   const id = `issue:${job.id}:${date}`;
@@ -1299,6 +1354,16 @@ function workJob(s: GameState, b: Operator, job: RenoJob, date: IsoDate, used: S
   if (date > addDays(job.deadline, CANCEL_AFTER_DEADLINE_DAYS)) { cancelJob(s, b, job, date, 'Klient odstąpił od umowy po przekroczeniu terminu o 45 dni'); return; }
   const total = job.normCenti + job.extraCenti;
   const ownerTime = job.crew.supervision !== 'hands-off';
+
+  // pakiet projektu rusza dopiero po odbiorze pakietów poprzedzających (zależności etapów); anulowany poprzednik przerywa projekt (obsługa w `processProjects`)
+  if (job.dependsOn.length > 0) {
+    const waiting = reno(s).jobs.filter((x) => job.dependsOn.includes(x.id) && x.stage !== 'done');
+    if (waiting.length > 0) {
+      if (!waiting.some((x) => x.stage === 'cancelled')) { job.stage = 'preparation'; job.blockedReason = `Czeka na zakończenie pakietu: ${waiting.map((x) => SERVICE_BY_ID.get(x.serviceId)?.label ?? x.serviceId).join(', ')}`.slice(0, 380); }
+      return;
+    }
+    if (job.blockedReason?.startsWith('Czeka na zakończenie pakietu')) job.blockedReason = null;
+  }
 
   // praca po terminie umowy zajmuje godziny właściciela tylko wtedy, gdy doba na to pozwala (inne kontrakty mają pierwszeństwo)
   if (commitment && ownerTime && date > commitment.endDate) {
@@ -1438,11 +1503,14 @@ function handover(s: GameState, b: Operator, job: RenoJob, date: IsoDate): void 
   if (transport > 0) { issueDocument(s, b, { kind: 'cost', issueDate: date, counterpartyId: SUPPLIER_PARTY, orderId: order.id, description: `Dojazdy i transport: ${order.title}`, net: transport, termDays: 7 }); job.actual.transport = transport; }
   if (other > 0) { issueDocument(s, b, { kind: 'cost', issueDate: date, counterpartyId: SUPPLIER_PARTY, orderId: order.id, description: `Pozostałe koszty (odpady, drobiazgi): ${order.title}`, net: other, termDays: 7 }); job.actual.other = other; }
   const weeksLate = Math.ceil(job.lateDays / 7);
-  const penaltyBps = Math.min(DELAY_PENALTY_CAP_BPS, DELAY_PENALTY_BPS_PER_WEEK * weeksLate);
+  // kary klientów B2B (v0.8.1) wynikają z umowy projektu (`order.latePenaltyBps`); zwykłe zlecenia: 2% za tydzień, max 15%
+  const weeklyBps = Math.max(DELAY_PENALTY_BPS_PER_WEEK, order.latePenaltyBps);
+  const penaltyBps = Math.min(weeklyBps > DELAY_PENALTY_BPS_PER_WEEK ? 2_000 : DELAY_PENALTY_CAP_BPS, weeklyBps * weeksLate);
   job.penaltyNet = mulBps(job.priceNet, penaltyBps);
+  job.paymentDelayDays = b2bPaymentDelay(s, job.projectId, job.id);
   const finalNet = Math.max(1, job.priceNet - job.advanceNet - job.penaltyNet);
   // przychód podatkowy powstaje po wykonaniu usługi: dla zaliczek ujętych od v0.6 — pełna cena (zaliczka + reszta) w tym dokumencie
-  const doc = issueDocument(s, b, { kind: 'sales', issueDate: date, counterpartyId: job.clientId, orderId: order.id, description: `${order.title}${job.advanceNet > 0 ? ' — rozliczenie końcowe po zaliczce' : ''}`, net: finalNet, termDays: job.paymentTermDays, part: job.advanceNet > 0 ? 'final' : 'full', taxAmountOverride: job.advanceMode === 'deferred' && job.advanceNet > 0 ? finalNet + job.advanceNet : undefined });
+  const doc = issueDocument(s, b, { kind: 'sales', issueDate: date, counterpartyId: job.clientId, orderId: order.id, description: `${order.title}${job.advanceNet > 0 ? ' — rozliczenie końcowe po zaliczce' : ''}`, net: finalNet, termDays: job.paymentTermDays + job.paymentDelayDays, part: job.advanceNet > 0 ? 'final' : 'full', taxAmountOverride: job.advanceMode === 'deferred' && job.advanceNet > 0 ? finalNet + job.advanceNet : undefined });
   job.finalDocId = doc.id;
   job.handoverOn = date;
   job.settledOn = date;
@@ -1461,6 +1529,21 @@ function handover(s: GameState, b: Operator, job: RenoJob, date: IsoDate): void 
   reno(s).reviews.push({ id: `review:${n}`, jobId: job.id, date, rating10: r.rating10, parts: r.parts, comment: pool[createRng(s.seed, `reno:comment:${job.id}`).int(0, pool.length - 1)]! });
   logEvent(s, { id: `reno.review:${job.id}`, date, type: 'reno.review', tone: r.rating10 >= 40 ? 'positive' : r.rating10 >= 30 ? 'neutral' : 'negative', title: `Odbiór i rozliczenie: ${order.title}`, detail: `Ocena ${(r.rating10 / 10).toFixed(1).replace('.', ',')}★ · jakość ${quality}/100 · wystawiono ${doc.number}${job.penaltyNet > 0 ? ` · kara za zwłokę ${formatPLN(job.penaltyNet)}` : ''}`, amount: null, category: null });
   scheduleComplaint(s, job, date, quality);
+}
+
+/** Zwłoka płatnika B2B (dni ponad umowny termin) dla pakietu — deterministyczna, zależna od rzetelności klienta (0 dla zwykłych zleceń). */
+export function b2bPaymentDelay(s: GameState, projectId: string | null | undefined, jobId: string): number {
+  if (!projectId) return 0;
+  const p = reno(s).projects.find((x) => x.id === projectId);
+  const client = p ? reno(s).b2bClients.find((c) => c.id === p.b2bId) : undefined;
+  if (!client) return 0;
+  const max = Math.round((100 - client.reliability) * B2B_RULES.delayPerReliabilityPt);
+  return max <= 0 ? 0 : createRng(s.seed, `b2b:delay:${jobId}`).int(0, max);
+}
+
+/** Anulowanie pakietu przerwanego projektu (klient odstąpił od umowy). */
+export function cancelProjectJob(s: GameState, b: Operator, job: RenoJob, date: IsoDate, reason: string): void {
+  cancelJob(s, b, job, date, reason);
 }
 
 /** Prawdopodobieństwo reklamacji (pkt bazowe): rośnie wraz z niską jakością, problemami, poprawkami, opóźnieniem i niedopasowaniem standardu materiałów. */
@@ -1626,6 +1709,11 @@ export interface JobFinancials {
   workedHours: number;
   hourlyPay: Grosze | null;
   settled: boolean;
+  /** v0.8.1: koszty zewnętrzne (pieniądze wydane przez firmę + zużycie sprzętu), nadwyżka przed obciążeniami właściciela i zysk ekonomiczny po wartości jego pracy. */
+  externalCost: Grosze;
+  equipmentWear: Grosze;
+  surplusBeforeOwner: Grosze;
+  economicProfit: Grosze;
 }
 
 export function jobFinancials(job: RenoJob, subs: { status: string; priceNet: number; performedCenti: number; requiredCenti: number }[] = []): JobFinancials {
@@ -1638,11 +1726,14 @@ export function jobFinancials(job: RenoJob, subs: { status: string; priceNet: nu
   const workedCenti = job.workedDays * ownerPerDay * 100;
   const laborValue = roundDiv(workedCenti * job.laborRate, 100);
   const actualCost = nonLabor + laborValue;
+  // zużycie sprzętu: szacunek z planu proporcjonalnie do postępu (kontrakty sprzed v0.8.1 mają 0)
+  const wear = settled ? job.planned.equipment : roundDiv(job.planned.equipment * Math.min(job.progressCenti, Math.max(1, job.normCenti)), Math.max(1, job.normCenti));
   return {
     revenueNet: revenue, plannedCost: job.planned.total, plannedMarginBps: roundDiv((job.priceNet - job.planned.total) * 10_000, job.priceNet),
     actualMaterials: job.actual.materials, actualOther: job.actual.transport + job.actual.other + job.actual.rework, actualLaborValue: laborValue, actualEmployees: job.actual.labor, actualSubcontract: subAccrued, actualVehicle: job.actual.vehicle, actualCost,
     economicResult: revenue - nonLabor, actualMarginBps: settled ? roundDiv((revenue - actualCost) * 10_000, revenue) : null,
     workedHours: workedCenti / 100, hourlyPay: workedCenti > 0 ? roundDiv((revenue - nonLabor) * 100, workedCenti) : null, settled,
+    externalCost: nonLabor + wear, equipmentWear: wear, surplusBeforeOwner: revenue - nonLabor - wear, economicProfit: revenue - actualCost - wear,
   };
 }
 
