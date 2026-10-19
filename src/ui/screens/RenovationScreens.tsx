@@ -761,11 +761,12 @@ export function RenoStockScreen() {
           <tbody className="divide-y divide-ink-700/60">
             {EQUIPMENT.map((e) => {
               const item = ownedEquipment(game, e.id);
+              const working = game.reno.equipment.filter((x) => x.catalogId === e.id && x.conditionBps > 0).length; // silnik dopuszcza do 4 sprawnych egzemplarzy (po jednym na równoległą pracę)
               const effects = [...Object.entries(e.speedBps).map(([k, v]) => `+${v / 100}% szybkości${k === '*' ? '' : ` (${SERVICE_BY_ID.get(k)?.label ?? k})`}`), ...Object.entries(e.quality).map(([k, v]) => `+${v} jakości${k === '*' ? '' : ` (${SERVICE_BY_ID.get(k)?.label ?? k})`}`), ...(e.transportSaveBps ? [`−${e.transportSaveBps / 100}% kosztu transportu`] : [])];
               const used = SERVICES.filter((d) => d.requiredEquipment.includes(e.id)).map((d) => d.label);
               return (
                 <tr key={e.id} data-testid={`eq-${e.id}`}>
-                  <td className="py-2 text-slate-200">{e.label}{used.length > 0 && <div className="text-xs text-gold">wymagany: {used.join(', ')}</div>}</td>
+                  <td className="py-2 text-slate-200">{e.label}{working > 1 && <span className="ml-2 text-xs text-slate-400" data-testid={`eq-count-${e.id}`}>× {working}</span>}{used.length > 0 && <div className="text-xs text-gold">wymagany: {used.join(', ')}</div>}</td>
                   <td className="py-2 text-slate-400">{e.category}</td>
                   <td className="py-2 text-right"><Money value={e.priceNet} round /></td>
                   <td className="py-2 w-40">{item ? <><ProgressBar value={item.conditionBps} max={10_000} tone={item.conditionBps < 3_000 ? 'loss' : item.conditionBps < 6_000 ? 'gold' : 'gain'} /><div className="mt-0.5 text-xs text-slate-500">{Math.round(item.conditionBps / 100)}%</div></> : <span className="text-xs text-slate-500">nie posiadasz</span>}</td>
@@ -773,7 +774,7 @@ export function RenoStockScreen() {
                   <td className="py-2 text-xs text-slate-400">{effects.join(', ') || '—'}</td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {item && item.conditionBps < 9_500 && <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => maintain(item.id)}>Konserwacja ({formatPLN(e.maintenanceNet, { round: true })})</Button>}{' '}
-                    {(!item || item.conditionBps <= 0) && <Button variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => buyEq(e.id)} data-testid={`buy-eq-${e.id}`}>Kup</Button>}
+                    {working < 4 && <Button variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => buyEq(e.id)} data-testid={`buy-eq-${e.id}`} title={working > 0 ? 'Dokup kolejny egzemplarz — każda równoległa praca potrzebuje własnego kompletu (maks. 4)' : undefined}>{working > 0 ? 'Dokup' : 'Kup'}</Button>}
                   </td>
                 </tr>
               );
