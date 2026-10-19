@@ -18,6 +18,8 @@ import expectV4 from './fixtures/save-v4.expect.json';
 import rawV4 from './fixtures/save-v4.json?raw';
 import expectV5 from './fixtures/save-v5.expect.json';
 import rawV5 from './fixtures/save-v5.json?raw';
+import expectV7 from './fixtures/save-v7.expect.json';
+import rawV7 from './fixtures/save-v7.json?raw';
 import expectV6 from './fixtures/save-v6.expect.json';
 import rawV6 from './fixtures/save-v6.json?raw';
 import { contract, hireEmployee, jobOf as jobOfKit, runUntil as runUntilKit, buyAll as buyAllKit } from '../engine/testkit.ts';
@@ -613,6 +615,83 @@ describe('migracja zapisu v6 → v7 (prawdziwy zapis wygenerowany przez v0.6: fi
       expect(p5.state.market.initializedOn).toBeNull();
       expect(checkInvariants(advanceDays(p5.state, 60))).toEqual([]);
     }
+  });
+});
+
+describe('migracja zapisu v7 → v8 (prawdziwy zapis wygenerowany przez v0.7: JDG z pracownikiem, ekipą, podwykonawcami, rynek lokalny i marketing)', () => {
+  const result = parseSave(rawV7);
+  if (!result.ok) throw new Error(`fixture v7 nie wczytał się: ${result.error}`);
+  const migrated = result.state;
+  const old = JSON.parse(rawV7).state;
+
+  it('stare JDG zostaje JDG (nie spółką); historia, dokumenty, kontrakty i rynek nietknięte; majątek netto bez zmian', () => {
+    expect(JSON.parse(rawV7).version).toBe(7);
+    expect(migrated.clock.today).toBe(expectV7.today);
+    expect(cash(migrated)).toBe(expectV7.cash);
+    expect(migrated.accounts[activeBusinessOf(migrated).accountId]!.balance).toBe(expectV7.business);
+    expect(netWorth(migrated)).toBe(expectV7.netWorth);
+    expect(migrated.businesses).toEqual(old.businesses);
+    expect(activeBusinessOf(migrated).ownerId).toBe(migrated.person.id);
+    expect(migrated.accounts[activeBusinessOf(migrated).accountId]!.type).toBe('business');
+    expect(migrated.ledger).toEqual(old.ledger);
+    expect(migrated.ledger).toHaveLength(expectV7.ledgerCount);
+    expect(migrated.obligations).toEqual(old.obligations);
+    expect(migrated.documents).toEqual(old.documents);
+    expect(migrated.events).toEqual(old.events);
+    expect(migrated.reno).toEqual(old.reno);
+    expect(migrated.ops).toEqual(old.ops);
+    expect(migrated.market).toEqual(old.market);
+    expect(migrated.documents).toHaveLength(expectV7.documents);
+    expect(migrated.reno.jobs).toHaveLength(expectV7.jobs);
+    expect(migrated.market.competitors).toHaveLength(expectV7.competitors);
+    expect(migrated.ledger.at(-1)!.id).toBe(expectV7.lastTxId);
+    expect(checkInvariants(migrated)).toEqual([]);
+  });
+
+  it('nowy stan spółek jest pusty: brak spółek, udziałów, uchwał i dywidend; pula wspólników deterministyczna z ziarna; kontekst operatora pusty', () => {
+    expect(migrated.corp.companies).toEqual([]);
+    expect(migrated.corp.holdings).toEqual([]);
+    expect(migrated.corp.shareEvents).toEqual([]);
+    expect(migrated.corp.resolutions).toEqual([]);
+    expect(migrated.corp.dividends).toEqual([]);
+    expect(migrated.corp.negotiations).toEqual([]);
+    expect(migrated.corp.citReturns).toEqual([]);
+    expect(migrated.corp.selected).toBe('jdg');
+    expect(migrated.corp.context).toBeNull();
+    expect(migrated.corp.partners).toHaveLength(10);
+    expect(migrated.corp.partners).toEqual(createNewGame({ firstName: 'A', lastName: 'B', seed: migrated.seed }).corp.partners);
+    expect(migrated.corp.partners.filter((p) => p.kind === 'investor').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('po migracji gra toczy się dalej bez duplikatów (JDG nietknięta), a gracz może założyć spółkę i poprawnie ją zarejestrować', () => {
+    const s0 = advanceDays(migrated, 30);
+    expect(s0.ledger.slice(0, migrated.ledger.length)).toEqual(migrated.ledger);
+    expect(checkInvariants(s0)).toEqual([]);
+    let s = ok(commands.createCompanyDraft(s0, { name: 'Po Migracji', cityId: 'olsztyn', profileId: 'remonty', specialization: 'malowanie', vatPlan: 'exempt', capital: zl(10_000), nominal: zl(50), representation: 'each_alone' }));
+    s = ok(commands.signAgreement(s, { companyId: 'co:1', board: [{ personId: s.person.id, role: 'president' }], file: true }));
+    s = advanceDays(s, 3);
+    expect(s.corp.companies[0]!.status).toBe('registered');
+    expect(activeBusinessOf(s).ownerId).toBe(s.person.id); // JDG nadal JDG
+    expect(s.corp.holdings).toHaveLength(1);
+    expect(checkInvariants(s)).toEqual([]);
+  });
+
+  it('zapis v8: round-trip identyczny; ponowne przetworzenie dnia nie dubluje wpisów; uszkodzony rejestr udziałów jest odrzucany przy wczytaniu', () => {
+    let s = ok(commands.createCompanyDraft(advanceDays(migrated, 5), { name: 'Zapis', cityId: 'olsztyn', profileId: 'remonty', specialization: 'malowanie', vatPlan: 'exempt', capital: zl(10_000), nominal: zl(50), representation: 'each_alone' }));
+    s = ok(commands.signAgreement(s, { companyId: 'co:1', board: [{ personId: s.person.id, role: 'president' }], file: true }));
+    s = advanceDays(s, 40);
+    const json = serializeSave(s, NOW);
+    expect(JSON.parse(json).version).toBe(8);
+    const again = parseSave(json);
+    expect(again.ok && again.state).toEqual(s);
+    if (!again.ok) return;
+    const r = structuredClone(again.state);
+    const counts = [r.ledger.length, r.obligations.length, r.corp.shareEvents.length, r.corp.holdings.length, r.events.length];
+    processDay(r, r.clock.today);
+    expect([r.ledger.length, r.obligations.length, r.corp.shareEvents.length, r.corp.holdings.length, r.events.length]).toEqual(counts);
+    const tampered = JSON.parse(json);
+    tampered.state.corp.holdings[0].count += 5;
+    expect(parseSave(JSON.stringify(tampered)).ok).toBe(false);
   });
 });
 

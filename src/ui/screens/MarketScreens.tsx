@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { businessState, activeBusiness } from '../../engine/business.ts';
+import { businessState } from '../../engine/business.ts';
 import { formatDatePL } from '../../engine/date.ts';
 import { MACRO_PHASE_LABEL } from '../../engine/macro.ts';
 import type { MacroPhase } from '../../engine/macro.ts';
@@ -14,6 +14,8 @@ import { RENOVATION_MARKET } from '../../engine/renovationMarket.ts';
 import { SERVICE_BY_ID } from '../../engine/renovationCatalog.ts';
 import { seasonalityFor } from '../../engine/market.ts';
 import { useGameStore } from '../../store/gameStore.ts';
+import { useOpGame } from '../useOperator.ts';
+import { currentOperator } from '../../engine/operator.ts';
 import { ProgressBar } from '../components/charts.tsx';
 import { Badge, Button, Card, Empty, ScreenHeader, StatCard, cx } from '../components/ui.tsx';
 import { parseZloty } from '../format.ts';
@@ -26,8 +28,8 @@ const PHASE_TONE: Record<MacroPhase, 'gain' | 'sky' | 'gold' | 'loss'> = { wzros
 const PHASE_BAR: Record<MacroPhase, string> = { wzrost: 'bg-gain/70', stabilizacja: 'bg-sky/60', spowolnienie: 'bg-gold/70', recesja: 'bg-loss/70' };
 
 function useMarket() {
-  const game = useGameStore((s) => s.game)!;
-  const biz = activeBusiness(game);
+  const game = useOpGame();
+  const biz = currentOperator(game);
   return { game, biz, active: !!biz && businessState(biz, game.clock.today) !== 'closed' };
 }
 

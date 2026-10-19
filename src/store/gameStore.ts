@@ -24,6 +24,7 @@ export type Screen =
   | 'renoDashboard' | 'renoEnquiries' | 'renoQuotes' | 'renoContracts' | 'renoSchedule' | 'renoStock' | 'renoReputation'
   | 'hrEmployees' | 'hrRecruitment' | 'opsSubcontractors' | 'opsTeams' | 'opsSchedule' | 'opsVehicles' | 'opsProfit'
   | 'marketLocal' | 'marketCompetition' | 'marketMarketing' | 'marketStrategy' | 'marketDemand'
+  | 'corpCompanies' | 'corpFound' | 'corpPartners' | 'corpShares' | 'corpBoard' | 'corpResolutions' | 'corpFinance' | 'corpDividends' | 'corpInvestors'
   | 'game';
 
 export interface Notice {
@@ -120,6 +121,11 @@ interface GameStore {
   hireAccountingOffice: (planId: string) => boolean;
   terminateAccountingOffice: () => boolean;
   acceptServiceOffer: (offerId: string, hoursPerDay: number) => boolean;
+  /** v0.8: dowolna komenda spółek/udziałów/uchwał (wynik: komunikat, autozapis) oraz wybór spółki w ekranach „Spółki i inwestycje prywatne”. */
+  run: (fn: (g: GameState) => CommandResult) => boolean;
+  selectedCompanyId: string | null;
+  selectCompany: (id: string | null) => void;
+  selectOperator: (id: string) => boolean;
   declineServiceOffer: (offerId: string) => boolean;
   saveToSlot: (slot: string) => Promise<void>;
   loadFromSlot: (slot: string) => Promise<void>;
@@ -266,6 +272,10 @@ export const useGameStore = create<GameStore>((set, get) => {
     terminateAccountingOffice: () => exec((g) => commands.terminateAccountingOffice(g)),
     acceptServiceOffer: (offerId, hoursPerDay) => exec((g) => commands.acceptServiceOffer(g, offerId, hoursPerDay)),
     declineServiceOffer: (offerId) => exec((g) => commands.declineServiceOffer(g, offerId)),
+    run: (fn) => exec(fn),
+    selectedCompanyId: null,
+    selectCompany: (id) => set({ selectedCompanyId: id }),
+    selectOperator: (id) => exec((g) => commands.selectOperator(g, id)),
 
     saveToSlot: async (slot) => {
       const game = get().game;

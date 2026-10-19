@@ -29,6 +29,12 @@ export function computeNavAlerts(game: GameState, visited: Record<string, string
     add('opsProfit', f.firstShortfall ? 1 : 0, 'prognoza płynności: zagrożenie brakiem środków');
   }
   add('bizFinance', overdueObligations(game).filter((o) => o.scope === 'business').length, 'zaległe zobowiązania firmy');
+  // v0.8: spółki z o.o. — uchwały do głosowania, oferty wspólników, spółki bez uruchomionej działalności, zaległości spółek
+  const myId = game.person.id;
+  add('corpResolutions', game.corp.resolutions.filter((r) => r.status === 'scheduled' && r.voters.some((v) => v.holderId === myId) && !r.votes.some((v) => v.holderId === myId)).length, 'zgromadzenie czeka na Twój głos');
+  add('corpInvestors', game.corp.negotiations.filter((n) => n.kind !== 'found' && (n.status === 'countered' || n.status === 'agreed')).length, 'oferta lub uzgodnienie czeka na decyzję');
+  add('corpCompanies', game.corp.companies.filter((c) => c.status === 'registered' && !c.operation).length, 'zarejestrowana spółka bez uruchomionej działalności');
+  add('corpFinance', game.obligations.filter((o) => o.scope === 'company' && o.status === 'open' && o.overdueSince !== null).length, 'zaległe zobowiązania spółki');
   const seen = visited.bizAccounting ?? game.clock.startDate;
   add('bizAccounting', game.events.filter((e) => e.type === 'accounting.notice' && e.date > seen).length, 'nowe powiadomienia biura rachunkowego');
   return out;

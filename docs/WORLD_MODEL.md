@@ -17,8 +17,8 @@
 |---|---|---|
 | **Person** (osoba) | Osoba fizyczna: imię, nazwisko, data urodzenia, miasto. Gracz i (później) NPC: pracownicy, wspólnicy, członkowie rodziny. | ✅ `person` (tylko gracz) |
 | **Household** (gospodarstwo domowe) | Zbiór osób dzielących budżet i mieszkanie; wspólne koszty. | ❌ (gracz = jednoosobowe) |
-| **LegalEntity** (podmiot prawny) | Wspólna abstrakcja: osoba fizyczna, JDG (jako tryb działania osoby), spółka. Źródło prawdy o *statusie prawnym*. | ❌ |
-| **Enterprise** (przedsiębiorstwo) | Działalność gospodarcza (JDG albo spółki): branża, pracownicy, kontrakty, ewidencja. | 🟡 `businesses` — tylko JDG (v0.3): profil/PKD, forma opodatkowania, VAT, reżim ZUS, rachunek firmowy |
+| **LegalEntity** (podmiot prawny) | Wspólna abstrakcja: osoba fizyczna, JDG (jako tryb działania osoby), spółka. Źródło prawdy o *statusie prawnym*. | 🟡 v0.8: rozróżnienie wynika z **właściciela rachunku** (`Account.ownerId`: osoba gracza albo `Company.id`) — `scope` zobowiązań: `personal` / `business` (JDG) / `company` |
+| **Enterprise** (przedsiębiorstwo) | Działalność gospodarcza (JDG albo spółki): branża, pracownicy, kontrakty, ewidencja. | ✅ `Operator` (v0.8): wspólna część — JDG (`businesses`, plus forma opodatkowania i ZUS właściciela) i spółka (`Company.operation`); moduły branżowe pracują na bieżącym operatorze (`withOperator`) |
 | **ServiceOffer / ServiceOrder** | Oferta i zlecenie usługowe: klient, wartość, godziny, koszty, termin wykonania i płatności, kara za zwłokę. | ✅ `serviceOffers`, `serviceOrders` (v0.3) |
 | **Document** (dokument) | Rekord sprzedaży/kosztu JDG: numer, daty, netto/VAT/brutto, powiązane zobowiązania. Nie jest fakturą KSeF. | ✅ `documents` (v0.3) |
 | **WorkerPerson / Employment / EmployerPayslip** | Pracownik jako osoba (umiejętności, morale, zmęczenie, oczekiwania), jego umowa o pracę u pracodawcy i miesięczne listy płac z kosztami pracodawcy; osoba przeżywa zakończenie umowy. | ✅ `ops.people/employments/payslips` |
@@ -39,7 +39,11 @@
 | **Life** (stan życia) | Umiejętności, zmęczenie, plan dnia, styl życia. | ✅ `life` (v0.2) |
 | **Asset** (aktywo) | Nieruchomość, pojazd, wyposażenie, papiery wartościowe, udziały, **kaucja zwrotna**. | ⚠️ tylko kaucja (`assets`, v0.2) |
 | **Liability** (pasywo) | Kredyt, leasing, zaległości podatkowe. W v0.1 tylko zwykłe zobowiązania. | ⚠️ częściowo (`Obligation`) |
-| **Ownership** (własność) | Relacja *podmiot → aktywo/udział* z ułamkiem i datami. | ❌ |
+| **Ownership** (własność) | Relacja *podmiot → aktywo/udział* z ułamkiem i datami. | ✅ `corp.holdings` + `shareEvents` (v0.8): rejestr udziałów (partie, koszt, głosy, ograniczenia, historia) |
+| **Company** (spółka z o.o.) | Osoba prawna: nazwa, kapitał zakładowy (liczba × nominał), kapitał zapasowy, rachunek i strona, zarząd i reprezentacja, status (`draft` → `organizing` → `registered`), działalność (`operation`), własne `reno`/`ops`/marketing (`slices`), wynik roczny, migawki miesięczne, wycena | ✅ `corp.companies` (v0.8) |
+| **BoardMember / Mandate** | Członek zarządu (gracz lub postać AI): funkcja (prezes = funkcja organizacyjna), daty, uchwała powołująca. Niezależny od udziałów i od umowy o pracę | ✅ `Company.board` (v0.8) |
+| **Partner** (wspólnik/inwestor AI) | Postać z kapitałem, doświadczeniem, kompetencjami, tolerancją ryzyka, celem, preferencją dywidend, horyzontem, zaufaniem i historią współpracy | ✅ `corp.partners` (v0.8) |
+| **Resolution / Negotiation / Dividend / CitReturn** | Uchwała wspólników (próg, uprawnieni, głosy, wynik, skutki, historia); negocjacja inwestycyjna (rundy, kontroferty); dywidenda (linie, podatek, terminy); zeznanie CIT-8 i straty | ✅ `corp.*` (v0.8) |
 | **Market / Region** (rynek) | Regionalne ceny, popyt, konkurenci. | 🟡 `market` (v0.7): jedno miasto (Olsztyn) i jedna branża (remonty): popyt, koniunktura, konkurenci (`Competitor`), marketing, pozycjonowanie firmy; wiele miast i danych GUS — później |
 
 ## 3. Relacje (docelowo)
@@ -72,11 +76,23 @@ Contract(lease)  ──Rule:rent──► Obligation(payable, issue: 1., due: 10
                               overdueSince + zdarzenie „Brak środków…” (ponawiane codziennie bez dublowania)
 ```
 
+## 3a. Spółka z o.o. i separacja majątku (v0.8)
+
+```
+Person ──(wspólnik)──► Company   via ShareHolding (kapitał % ≠ głosy % ≠ dywidenda ≠ zarząd)
+Person ──(członek zarządu)──► Company   via BoardMember  (reprezentacja ≠ udziały)
+Company ──(posiada)──► Account(type: company), Obligation(scope: company), Document(businessId: op:co:N), reno/ops/marketing
+Person ⇄ Company : wyłącznie wkład na kapitał (para wpisów) · dywidenda (zobowiązanie spółki + należność gracza) · transakcje na udziałach
+JDG ──(nadal)──► Person   (Business.ownerId = person; rachunek type: business) — nie jest spółką
+```
+
+Spółka ma własne rachunki, aktywa, zobowiązania, dokumenty, pracowników, kontrakty, wynik i obowiązki podatkowe (CIT, płatnik PIT od dywidend i wynagrodzeń, ZUS do 15.). Majątek netto gracza obejmuje **wyłącznie wartość jego udziałów** (szacunek) — nie gotówkę ani aktywa spółki.
+
 ## 4. Majątek netto
 
 `majątek netto = rachunki (bieżący + oszczędności + firmowy) + kaucje + otwarte należności − otwarte zobowiązania` (v0.3; JDG nie jest osobną osobą prawną, więc jej środki to majątek właściciela). Docelowo: + wartość aktywów wg wyceny − pasywa. **Tożsamość kontrolna** (sprawdzana w `checkInvariants`):
 
-`majątek netto = kapitał początkowy + Σ naliczone przychody − Σ naliczone koszty`
+`majątek netto − wartość udziałów (szac.) + koszt nabycia udziałów = kapitał początkowy + Σ naliczone przychody − Σ naliczone koszty + aktywa firmowe − zaliczki + zrealizowany zysk ze sprzedaży udziałów`
 
 ## 5. Ograniczenia modelu v0.1
 

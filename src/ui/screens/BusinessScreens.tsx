@@ -554,7 +554,7 @@ export function BizDocsScreen() {
   const { game } = useBusiness();
   const [filter, setFilter] = useState<'all' | 'sales' | 'cost'>('all');
   if (game.businesses.length === 0) return <div className="space-y-5"><ScreenHeader title="Dokumenty" /><NoBusiness /></div>;
-  const docs = [...game.documents].filter((d) => filter === 'all' || d.kind === filter).reverse();
+  const docs = [...game.documents].filter((d) => game.businesses.some((b) => b.id === d.businessId) && (filter === 'all' || d.kind === filter)).reverse();
   const oblById = new Map(game.obligations.map((o) => [o.id, o]));
   const statusOf = (id: string) => {
     const obs = (game.documents.find((d) => d.id === id)?.obligationIds ?? []).map((x) => oblById.get(x)!).filter(Boolean);

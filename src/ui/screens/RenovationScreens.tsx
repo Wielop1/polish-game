@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { activeBusiness, businessState, profileOf } from '../../engine/business.ts';
+import { businessState, profileOf } from '../../engine/business.ts';
 import { addDays, formatDatePL, weekdayIndex } from '../../engine/date.ts';
 import { formatPLN, mulBps, zl } from '../../engine/money.ts';
 import {
@@ -26,6 +26,8 @@ import { resourceBusy } from '../../engine/teams.ts';
 import { crewKey, parseCrewKey, quoteSchedule } from '../../engine/renovation.ts';
 import type { CrewMember } from '../../engine/renovation.ts';
 import { useGameStore } from '../../store/gameStore.ts';
+import { useOpGame } from '../useOperator.ts';
+import { currentOperator } from '../../engine/operator.ts';
 import { ProgressBar } from '../components/charts.tsx';
 import { Badge, Button, Card, Empty, Money, ScreenHeader, StatCard, cx, moneyTone } from '../components/ui.tsx';
 import { parseZloty } from '../format.ts';
@@ -38,8 +40,8 @@ const RISK_TONE = { niskie: 'gain', średnie: 'gold', wysokie: 'loss' } as const
 const fmtPct = (bps: number) => `${(bps / 100).toFixed(1).replace('.', ',')}%`;
 
 function useReno() {
-  const game = useGameStore((s) => s.game)!;
-  const biz = activeBusiness(game);
+  const game = useOpGame();
+  const biz = currentOperator(game);
   return { game, biz, isReno: !!biz && profileOf(biz).industry === 'renovation' };
 }
 
@@ -374,7 +376,7 @@ function QuoteCalendar({ game, enq, q, planWarnings, onPick }: { game: GameState
 }
 
 function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
-  const game = useGameStore((s) => s.game)!;
+  const game = useOpGame();
   const send = useGameStore((s) => s.sendQuote);
   const select = useGameStore((s) => s.selectEnquiry);
   const enq = game.reno.enquiries.find((e) => e.id === enquiryId);

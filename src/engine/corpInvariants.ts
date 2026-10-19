@@ -17,6 +17,10 @@ export function corpInvariantErrors(s: GameState): string[] {
   const fail = (m: string) => errors.push(m);
   if (s.corp.context !== null) fail(`kontekst operatora ${s.corp.context} nie został przywrócony`);
   errors.push(...shareRegistryErrors(s));
+  if (s.corp.companies.length === 0 && s.corp.holdings.length === 0) {
+    for (const p of s.corp.partners) if (p.capital < 0) fail(`postać ${p.id}: ujemny kapitał`);
+    return errors;
+  }
   const ids = new Set<string>();
   const personIds = new Set<string>([s.person.id, ...s.corp.partners.map((p) => p.id)]);
   for (const p of s.corp.partners) {
@@ -47,7 +51,8 @@ export function corpInvariantErrors(s: GameState): string[] {
       if (!personIds.has(m.personId)) fail(`spółka ${c.id}: nieznany członek zarządu ${m.personId}`);
     }
     // kapitał: wpłaty wspólników (rejestr) + oczekujące podwyższenie = wpływy kapitałowe na rachunek spółki
-    const inflow = s.ledger.filter((t) => t.accountId === c.accountId && (t.category === 'wklad_kapitalowy' || t.category === 'wplaty_podwyzszenie')).reduce((a, t) => a + t.amount, 0);
+    let inflow = 0;
+    for (const t of s.ledger) if (t.accountId === c.accountId && (t.category === 'wklad_kapitalowy' || t.category === 'wplaty_podwyzszenie')) inflow += t.amount;
     const paidIn = s.corp.shareEvents.filter((e) => e.companyId === c.id && e.kind !== 'transfer').reduce((a, e) => a + e.price, 0);
     if (c.status !== 'draft' && inflow !== paidIn + (c.pendingIncrease?.contribution ?? 0)) fail(`spółka ${c.id}: wpływy kapitałowe ${inflow} ≠ wkłady w rejestrze ${paidIn} + oczekujące ${c.pendingIncrease?.contribution ?? 0}`);
     // kapitał zapasowy = nadwyżki ponad nominał + przeniesienia z zysku
@@ -64,10 +69,22 @@ export function corpInvariantErrors(s: GameState): string[] {
     }
   }
   // przepływy między osobą a spółką: wyłącznie z podstawą (wkład na kapitał); brak ukrytych przelewów
-  const byTransfer = new Map<string, { owner: string | undefined; category: string }[]>();
-  for (const t of s.ledger) if (t.transferId) byTransfer.set(t.transferId, [...(byTransfer.get(t.transferId) ?? []), { owner: accOwner(t.accountId), category: t.category }]);
-  for (const [tid, legs] of byTransfer) if (new Set(legs.map((l) => l.owner)).size > 1 && legs.some((l) => l.category !== 'wklad_kapitalowy')) fail(`przelew ${tid} między osobą a spółką bez podstawy (dozwolony tylko wkład na kapitał)`);
-  for (const t of s.ledger) if (accOwner(t.accountId)?.startsWith('co:') && t.category === 'przelew_wlasny') fail(`transakcja ${t.id}: przelew własny na rachunku spółki`);
+  const coAccounts = new Set(s.corp.companies.map((c) => c.accountId));
+  const coTransfers = new Set<string>();
+  for (const t of s.ledger) {
+    if (!coAccounts.has(t.accountId)) continue;
+    if (t.transferId) coTransfers.add(t.transferId);
+    if (t.category === 'przelew_wlasny') fail(`transakcja ${t.id}: przelew własny na rachunku spółki`);
+  }
+  if (coTransfers.size > 0) {
+    const byTransfer = new Map<string, { owner: string | undefined; category: string }[]>();
+    for (const t of s.ledger) if (t.transferId && coTransfers.has(t.transferId)) {
+      const legs = byTransfer.get(t.transferId) ?? [];
+      legs.push({ owner: accOwner(t.accountId), category: t.category });
+      byTransfer.set(t.transferId, legs);
+    }
+    for (const [tid, legs] of byTransfer) if (new Set(legs.map((l) => l.owner)).size > 1 && legs.some((l) => l.category !== 'wklad_kapitalowy')) fail(`przelew ${tid} między osobą a spółką bez podstawy (dozwolony tylko wkład na kapitał)`);
+  }
   // uchwały
   const resIds = new Set<string>();
   const execByKey = new Set<string>();

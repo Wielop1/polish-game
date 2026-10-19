@@ -2,7 +2,7 @@ import { CORP_LEGAL_RULES } from './legalCorp.ts';
 import { zl } from './money.ts';
 
 /**
- * Rejestr reguł prawnych używanych przez silnik JDG (v0.3). Każda reguła ma identyfikator, zakres,
+ * Rejestr reguł prawnych używanych przez silnik JDG (v0.3) i spółki z o.o. (v0.8 — reguły `CO-*` w `legalCorp.ts`). Każda reguła ma identyfikator, zakres,
  * okres obowiązywania, źródło urzędowe, datę weryfikacji i status:
  *  - VERIFIED   — wartość/zasada potwierdzona na stronie urzędowej (patrz `source`),
  *  - SIMPLIFIED — zasada uproszczona w symulacji (opis ograniczeń w `note`),

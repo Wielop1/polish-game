@@ -150,7 +150,7 @@ function runScenario(base: GameState, a: PlanAssumptions, sc: PlanScenario): Pla
 
   const inHorizon = (d: IsoDate) => d > startDate && d <= end.clock.today;
   for (const o of end.obligations) {
-    if (!inHorizon(o.issueDate)) continue;
+    if (!inHorizon(o.issueDate) || o.scope === 'company') continue;
     const biz = o.scope === 'business';
     if (o.category === 'wynagrodzenie') result.salaryNet += o.amount;
     else if (o.category === 'przychod_dzialalnosci') result.businessRevenue += o.amount;
@@ -162,7 +162,7 @@ function runScenario(base: GameState, a: PlanAssumptions, sc: PlanScenario): Pla
   result.netWorthChange = netWorth(end) - startNetWorth;
   result.minLiquidity = minLiq;
   result.endLiquidity = liquid(end);
-  result.overdueCount = end.obligations.filter((o) => o.status === 'open' && o.overdueSince !== null).length;
+  result.overdueCount = end.obligations.filter((o) => o.status === 'open' && o.overdueSince !== null && o.scope !== 'company').length;
   if (result.minLiquidity < 0) warnings.push('Prognozowana płynność spada poniżej zera.');
   if (result.overdueCount > 0) warnings.push(`Na koniec horyzontu ${result.overdueCount} zobowiązań byłoby po terminie.`);
   return result;

@@ -68,7 +68,7 @@ export function DashboardScreen() {
           icon="trend"
           accent="sky"
           value={<Money value={nw.netWorth} />}
-          hint={<span className={moneyTone(sinceStart)}>{sinceStart >= 0 ? '▲' : '▼'} <Money value={Math.abs(sinceStart)} /> od startu{nw.deposits > 0 && <span className="text-slate-500"> · w tym kaucje <Money value={nw.deposits} round /></span>}</span>}
+          hint={<span className={moneyTone(sinceStart)}>{sinceStart >= 0 ? '▲' : '▼'} <Money value={Math.abs(sinceStart)} /> od startu{nw.deposits > 0 && <span className="text-slate-500"> · w tym kaucje <Money value={nw.deposits} round /></span>}{nw.shares > 0 && <span className="text-slate-500"> · w tym udziały w spółkach (szacunek) <Money value={nw.shares} round /></span>}</span>}
         />
         <StatCard testId="stat-receivables" label="Należności" icon="briefcase" accent="gold" value={<Money value={nw.receivables} />} hint="naliczone, jeszcze niewypłacone" />
         <StatCard testId="stat-payables" label="Zobowiązania" icon="home" accent="loss" value={<Money value={nw.payables} />} hint="naliczone, jeszcze nieopłacone" />

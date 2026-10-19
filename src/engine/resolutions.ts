@@ -1,5 +1,5 @@
 import { appointMember, chargeCourtChange, endMember, activeBoard, isBoardMember } from './company.ts';
-import { CORP, RESOLUTION_LABELS } from './corpConfig.ts';
+import { CORP } from './corpConfig.ts';
 import { distributable, refreshValuation } from './companyFinance.ts';
 import { CommandError, createObligation, ensureParty, logEvent, nextCounter, postTransaction } from './core.ts';
 import { declareDividend, validateAllocation } from './dividends.ts';
@@ -392,4 +392,3 @@ export function finalizeIncrease(s: GameState, c: Company, date: IsoDate): void 
   });
 }
 
-export { RESOLUTION_LABELS };

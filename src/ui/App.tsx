@@ -19,6 +19,9 @@ import { HrEmployeesScreen, HrRecruitmentScreen, MultiScheduleScreen, Profitabil
 import { BizAccountingScreen } from './screens/AccountingScreen.tsx';
 import { MarketCompetitionScreen, MarketDemandScreen, MarketLocalScreen, MarketMarketingScreen, MarketStrategyScreen } from './screens/MarketScreens.tsx';
 import { RenoContractsScreen, RenoDashboardScreen, RenoEnquiriesScreen, RenoQuotesScreen, RenoReputationScreen, RenoScheduleScreen, RenoStockScreen } from './screens/RenovationScreens.tsx';
+import { CorpBoardScreen, CorpCompaniesScreen, CorpFoundScreen, CorpPartnersScreen, CorpSharesScreen } from './screens/CorpScreens.tsx';
+import { CorpDividendsScreen, CorpFinanceScreen, CorpInvestorsScreen, CorpResolutionsScreen } from './screens/CorpScreens2.tsx';
+import { OperatorBar } from './OperatorBar.tsx';
 import { CharacterScreen } from './screens/CharacterScreen.tsx';
 import { DashboardScreen } from './screens/DashboardScreen.tsx';
 import { EventsScreen } from './screens/EventsScreen.tsx';
@@ -141,6 +144,34 @@ const NAV_SECTIONS: NavSection[] = [
       ],
     }],
   },
+  {
+    title: 'Spółki i inwestycje prywatne',
+    blocks: [
+      {
+        items: [
+          { id: 'corpCompanies', label: 'Moje spółki', icon: 'building' },
+          { id: 'corpFound', label: 'Załóż spółkę', icon: 'file' },
+        ],
+      },
+      {
+        label: 'Własność i zarządzanie',
+        items: [
+          { id: 'corpPartners', label: 'Wspólnicy', icon: 'user' },
+          { id: 'corpShares', label: 'Udziały i kapitał', icon: 'coins' },
+          { id: 'corpBoard', label: 'Zarząd', icon: 'shield' },
+          { id: 'corpResolutions', label: 'Uchwały', icon: 'list' },
+        ],
+      },
+      {
+        label: 'Finanse',
+        items: [
+          { id: 'corpFinance', label: 'Finanse i CIT', icon: 'receipt' },
+          { id: 'corpDividends', label: 'Dywidendy', icon: 'wallet' },
+          { id: 'corpInvestors', label: 'Inwestorzy i negocjacje', icon: 'trend' },
+        ],
+      },
+    ],
+  },
   { title: 'System', blocks: [{ items: [{ id: 'game', label: 'Nowa gra / Wczytaj', icon: 'save' }] }] },
 ];
 const sectionItems = (sec: NavSection) => sec.blocks.flatMap((b) => b.items);
@@ -204,6 +235,15 @@ function renderScreen(screen: Screen) {
     case 'marketMarketing': return <MarketMarketingScreen />;
     case 'marketStrategy': return <MarketStrategyScreen />;
     case 'marketDemand': return <MarketDemandScreen />;
+    case 'corpCompanies': return <CorpCompaniesScreen />;
+    case 'corpFound': return <CorpFoundScreen />;
+    case 'corpPartners': return <CorpPartnersScreen />;
+    case 'corpShares': return <CorpSharesScreen />;
+    case 'corpBoard': return <CorpBoardScreen />;
+    case 'corpResolutions': return <CorpResolutionsScreen />;
+    case 'corpFinance': return <CorpFinanceScreen />;
+    case 'corpDividends': return <CorpDividendsScreen />;
+    case 'corpInvestors': return <CorpInvestorsScreen />;
     case 'game': return <GameScreen />;
   }
 }
@@ -289,7 +329,7 @@ export function App() {
             );
           })}
         </nav>
-        <p className="text-[11px] leading-relaxed text-slate-500">v0.7 · rynek lokalny, konkurencja i marketing. Symulacja — nie porada prawna ani podatkowa.</p>
+        <p className="text-[11px] leading-relaxed text-slate-500">v0.8 · spółki z o.o., wspólnicy, udziały, CIT i dywidendy. Symulacja — nie porada prawna ani podatkowa.</p>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -298,6 +338,7 @@ export function App() {
           <div className="mx-auto max-w-6xl">
             <NoticeBar />
             <div key={screen} className="animate-pop">
+              <OperatorBar screen={screen} />
               {renderScreen(screen)}
             </div>
           </div>

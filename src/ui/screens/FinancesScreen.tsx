@@ -31,7 +31,7 @@ export function FinancesScreen() {
 
   const ledger = useMemo(() => {
     const running: Record<string, number> = {};
-    const rows = game.ledger.map((tx) => {
+    const rows = game.ledger.filter((tx) => game.accounts[tx.accountId]?.ownerId === game.person.id).map((tx) => {
       running[tx.accountId] = (running[tx.accountId] ?? 0) + tx.amount;
       return { tx, balance: running[tx.accountId]! };
     });
@@ -40,7 +40,7 @@ export function FinancesScreen() {
   const filteredTx = ledger.filter(({ tx }) => (txFilter === 'all' ? true : txFilter === 'in' ? tx.amount > 0 : tx.amount < 0));
 
   const obligations = useMemo(() => {
-    const list = game.obligations.filter((o) => o.status === oblFilter);
+    const list = game.obligations.filter((o) => o.status === oblFilter && o.scope !== 'company');
     return oblFilter === 'open'
       ? [...list].sort((a, b) => a.dueDate.localeCompare(b.dueDate))
       : [...list].sort((a, b) => (b.settledDate ?? '').localeCompare(a.settledDate ?? '')).slice(0, 30);
@@ -56,7 +56,7 @@ export function FinancesScreen() {
         <StatCard label="Rachunki" icon="wallet" accent="gain" value={<Money value={nw.cash + nw.savings} />} hint={<span>bieżący <Money value={nw.cash} round /> · oszczędności <Money value={nw.savings} round /></span>} />
         <StatCard label="Należności" icon="briefcase" accent="gold" value={<Money value={nw.receivables} />} hint="+ do otrzymania" />
         <StatCard label="Zobowiązania" icon="home" accent="loss" value={<Money value={nw.payables} />} hint="− do zapłaty" />
-        <StatCard label="Majątek netto" icon="trend" accent="sky" value={<Money value={nw.netWorth} />} hint={nw.deposits > 0 ? 'rachunki + kaucje + należności − zobowiązania' : 'rachunki + należności − zobowiązania'} />
+        <StatCard label="Majątek netto" icon="trend" accent="sky" value={<Money value={nw.netWorth} />} hint={nw.shares > 0 ? <span>w tym udziały w spółkach (szacunek) <Money value={nw.shares} round /></span> : nw.deposits > 0 ? 'rachunki + kaucje + należności − zobowiązania' : 'rachunki + należności − zobowiązania'} />
       </div>
 
       <Card

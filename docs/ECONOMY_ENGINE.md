@@ -150,6 +150,20 @@ Moduły: `market.ts` (wspólna warstwa: popyt, alokacja klientów, konkurenci, m
 
 **Symulator balansu:** `npm run balance` (`tools/balance/`): bot gra przez `commands.*` na tym samym silniku; strategie, seedy, wątki robocze, raport JSON i podsumowanie; wyniki i wnioski: `BALANCE_REPORT.md`.
 
+## 8f. Mechaniki v0.8 — spółki z o.o., wspólnicy, udziały, CIT, dywidendy (skrót; ADR-062–071)
+
+Moduły: `operator.ts`, `company.ts`, `shares.ts`, `partners.ts`, `negotiation.ts`, `resolutions.ts`, `dividends.ts`, `cit.ts`, `companyFinance.ts`, `partnerAi.ts`, `corp.ts`. Dzienna kolejność w `processDay`: … → `processBusiness` (JDG) → `processCorp` (wpis do KRS, wpis podwyższenia kapitału, **dzień pracy operacji spółek w kontekście operatora** — remonty, kadry, pojazdy; zgromadzenia; negocjacje; na koniec miesiąca: składki jedynego wspólnika, zaliczka CIT, migawka i wycena, inicjatywy postaci; 31.12: zamknięcie roku i CIT-8) → `processMarket` (rynek dla wszystkich firm gracza) → `processAnnual` → `settleDueObligations` → `syncDividends`.
+
+**Odrębność majątku.** Rachunek `type: company`, zobowiązania `scope: company`, dokumenty z `businessId = op:<spółka>`, własne struktury `reno`/`ops`/marketing. Zobowiązanie ma stronę „własną” = właściciel rachunku. Majątek netto gracza: tylko jego rachunki/należności/zobowiązania + szacunek wartości udziałów.
+
+**Przepływy osoba ↔ spółka** (jedyne dozwolone, pilnowane niezmiennikiem): wkład na kapitał (para wpisów; kapitał, nie przychód i nie koszt), dywidenda (zobowiązanie spółki + należność gracza rozliczana po zapłacie przez spółkę), transakcje na udziałach (zapłata do sprzedającego). Pożyczki, sprzedaż i praca wspólnika dla spółki — odłożone (art. 210 KSH).
+
+**Udziały i głosy.** Procent kapitału (liczba udziałów), prawa głosu (`votesPerShare`), wartość (udział w wycenie), prawo do dywidendy (proporcjonalnie do udziałów) i zarząd to osobne wielkości. Emisja skuteczna z wpisem do KRS; agio → kapitał zapasowy.
+
+**Uchwały.** Progi: bezwzględna większość / 2/3 (zmiana umowy, podwyższenie kapitału) / 3/4 / jednomyślność; zgromadzenie po 14 dniach (jedyny wspólnik — od razu); głosy AI z reguł interesu (ADR-065). **Dywidenda:** kwota do podziału = Σ zysków zamkniętych lat − wykonane podziały, ograniczona aktywami netto − kapitał zakładowy i wolną gotówką; 19% zryczałtowanego podatku (ADR-066). **CIT:** podstawa z dokumentów, 9%/19% po sprawdzeniu warunków, zaliczki miesięczne, CIT-8 31.12, strata 5 lat/50% (ADR-067). **Wycena:** aktywa netto + część nadwyżki wartości dochodowej (ADR-070).
+
+**Niezmienniki dodane w v0.8:** suma udziałów = struktura kapitału; kapitał = liczba × nominał; zdarzenia udziałowe = stan rejestru; wkłady kapitałowe = wpływy kapitałowe na rachunek spółki; kapitał zapasowy = agio + przeniesienia z zysku; przelewy osoba↔spółka tylko jako wkład; uchwała wykonana tylko przy wymaganej większości i tylko raz; dywidenda ≤ kwota do podziału, netto + podatek = brutto, gracz nie dostaje dywidendy niewypłaconej; zeznania CIT (saldo, stawka 9% tylko przy spełnieniu warunków), straty (5 lat, 50%); kontekst operatora pusty w stanie spoczynkowym; zarząd niepusty, dokładnie jeden prezes.
+
 ## 8a. Mechaniki v0.4 — płace, rozliczenia roczne, planowanie (skrót; ADR-033–039)
 
 Moduły: `payroll.ts` (kalkulator brutto → netto, odcinki płacowe), `annual.ts` (31.12: zeznania PIT-37/36/36L/28, straty, roczna zdrowotna, wnioski o zwrot), `business.ts` (zawieszenie, zmiana formy od 1.01, Mały ZUS Plus), `planning.ts` (prognoza na klonie stanu), `report.ts` (podsumowanie roku). Zaokrąglenia: składki do grosza, podstawa i podatek do zł. Dzienne przetwarzanie: `processDay` → płace → JDG (`closeMonth`) → `processAnnual` (31.12). Wszystkie operacje idempotentne (klucze `processed`).

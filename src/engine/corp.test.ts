@@ -579,3 +579,150 @@ describe('P3 · zakup i sprzedaż istniejących udziałów (zapłata do sprzedaj
     expect(c.valuation!.high).toBeGreaterThan(c.valuation!.estimate);
   }, 60_000);
 });
+
+import { parseSave, serializeSave } from '../persistence/save.ts';
+import { partnerVote } from './resolutions.ts';
+
+describe('wspólnicy AI: decyzje z interesów, determinizm', () => {
+  const grown = () => {
+    let s = companyWithOps({ seed: 'ai-1', capital: zl(120_000), vat: 'active', equip: [], partnerId: 'partner:1', partnerShares: 960, board: 'both' });
+    s = runMonths(s, '2027-01-02', { sales: zl(60_000), cost: zl(10_000) });
+    return s;
+  };
+
+  it('głosowanie nad dywidendą zależy od celu i preferencji wspólnika (dochód vs rozwój), a nie od losowego konfliktu', () => {
+    const s0 = grown();
+    const c = company(s0);
+    const payload = { type: 'allocate_profit' as const, year: 2026, dividendGross: Math.round((distributable(s0, c).retained * 0.8) / 100) * 100, toReserve: 0, dividendDay: addDays(s0.clock.today, 14), payDay: addDays(s0.clock.today, 20) };
+    const res = { id: 'res:test', companyId: c.id, title: 't', payload, proposedOn: s0.clock.today, proposedBy: s0.person.id, assemblyOn: addDays(s0.clock.today, 14), threshold: { kind: 'absolute' as const, ruleId: 'x' }, voters: [], votes: [], status: 'scheduled' as const, tally: null, decidedOn: null, executedOn: null, outcome: '', history: [] };
+    const income = shapePartner(s0, 'partner:1', { goal: 'income', dividendPreference: 95, trust: 60 });
+    const growth = shapePartner(s0, 'partner:1', { goal: 'growth', dividendPreference: 5, trust: 60 });
+    const vi = partnerVote(income, income.corp.partners.find((p) => p.id === 'partner:1')!, company(income), res);
+    const vg = partnerVote(growth, growth.corp.partners.find((p) => p.id === 'partner:1')!, company(growth), res);
+    expect(vi.vote).toBe('for');
+    expect(vg.vote).not.toBe('for');
+    expect(vi.reason.length).toBeGreaterThan(10);
+    // ta sama sytuacja → ta sama decyzja
+    expect(partnerVote(income, income.corp.partners.find((p) => p.id === 'partner:1')!, company(income), res)).toEqual(vi);
+  }, 60_000);
+
+  it('negocjacje: odmowa przy zbyt niskim zaufaniu i przy wkładzie ponad możliwości; kontroferta o rolę w zarządzie', () => {
+    const s0 = richGame('ai-2');
+    let s = ok(commands.createCompanyDraft(s0, { ...DRAFT, capital: zl(120_000) }));
+    const lowTrust = shapePartner(s, 'partner:1', { trust: 10 });
+    const r1 = ok(commands.proposeDeal(lowTrust, { kind: 'found', companyId: 'co:1', partnerId: 'partner:1', terms: { shares: 100, amount: 0, percentBps: 0, role: 'none', dividendPolicy: 'none' } }));
+    expect(r1.corp.negotiations.at(-1)!.status).toBe('declined');
+    expect(r1.corp.negotiations.at(-1)!.reason).toMatch(/zaufanie/i);
+    const poor = shapePartner(s, 'partner:1', { trust: 70, capital: zl(20_000), riskTolerance: 20 });
+    const r2 = ok(commands.proposeDeal(poor, { kind: 'found', companyId: 'co:1', partnerId: 'partner:1', terms: { shares: 1_000, amount: 0, percentBps: 0, role: 'none', dividendPolicy: 'none' } }));
+    expect(r2.corp.negotiations.at(-1)!.status).toBe('declined');
+    const strong = shapePartner(s, 'partner:1', { trust: 70, capital: zl(500_000), riskTolerance: 60, competence: 80, goal: 'growth', dividendPreference: 50 });
+    const r3 = ok(commands.proposeDeal(strong, { kind: 'found', companyId: 'co:1', partnerId: 'partner:1', terms: { shares: 1_000, amount: 0, percentBps: 0, role: 'none', dividendPolicy: 'none' } }));
+    const n3 = r3.corp.negotiations.at(-1)!;
+    expect(n3.status).toBe('countered');
+    expect(n3.terms.role).toBe('board_member');
+    s = ok(commands.acceptCounter(r3, n3.id));
+    expect(s.corp.negotiations.at(-1)!.status).toBe('agreed');
+    void s;
+  });
+
+  it('determinizm: ten sam seed i te same decyzje dają identyczny stan; zapis w środku i wczytanie nie zmieniają dalszego przebiegu', () => {
+    const build = () => {
+      let s = companyWithOps({ seed: 'det-1', capital: zl(120_000), equip: [], partnerId: 'partner:1', partnerShares: 960, board: 'both' });
+      s = runMonths(s, '2026-12-20', { sales: zl(30_000), cost: zl(8_000) });
+      return s;
+    };
+    const a = build();
+    const b = build();
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    const saved = parseSave(serializeSave(a, '2026-12-20T10:00:00.000Z'));
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    const x = advanceDays(a, 60);
+    const y = advanceDays(saved.state, 60);
+    expect(y.corp.citReturns).toEqual(x.corp.citReturns);
+    expect(y.ledger).toEqual(x.ledger);
+    expect(y.obligations).toEqual(x.obligations);
+    expect(y.corp).toEqual(x.corp);
+  }, 60_000);
+});
+
+import { processDay } from './simulate.ts';
+
+describe('zapis i wczytanie w trakcie procesów korporacyjnych (v0.8 §15)', () => {
+  const roundTrip = (s: ReturnType<typeof richGame>) => {
+    const r = parseSave(serializeSave(s, '2027-02-01T10:00:00.000Z'));
+    if (!r.ok) throw new Error(r.error);
+    return r.state;
+  };
+  const profitable = () => {
+    let s = companyWithOps({ seed: 'sv-1', capital: zl(120_000), vat: 'active', equip: [], partnerId: 'partner:1', partnerShares: 960, board: 'both' });
+    s = shapePartner(s, 'partner:1', { trust: 70, dividendPreference: 80, goal: 'income', capital: zl(900_000) });
+    return runMonths(s, '2027-01-02', { sales: zl(60_000), cost: zl(10_000) });
+  };
+
+  it('nierozstrzygnięta uchwała i otwarta negocjacja: po wczytaniu przebieg jest identyczny jak bez zapisu', () => {
+    let s = profitable();
+    s = ok(commands.proposeResolution(s, 'co:1', { type: 'approve_statements', year: 2026 }));
+    s = shapePartner(s, 'partner:7', { trust: 60, capital: zl(900_000), riskTolerance: 80, goal: 'growth' });
+    s = fund(s, zl(1_000));
+    const t = subscriptionTerms(company(s), zl(150_000), 2_000);
+    s = ok(commands.proposeDeal(s, { kind: 'subscribe', companyId: 'co:1', partnerId: 'partner:7', terms: t }));
+    const open = s.corp.resolutions.filter((r) => r.status === 'scheduled').length;
+    expect(open).toBe(1);
+    const loaded = roundTrip(s);
+    expect(loaded.corp.resolutions).toEqual(s.corp.resolutions);
+    expect(loaded.corp.negotiations).toEqual(s.corp.negotiations);
+    const a = advanceDays(s, 20);
+    const b = advanceDays(loaded, 20);
+    expect(b.corp).toEqual(a.corp);
+    expect(b.ledger).toEqual(a.ledger);
+    expect(a.corp.resolutions.find((r) => r.payload.type === 'approve_statements')!.status).toBe('executed');
+    expect(company(a).statementsApproved).toEqual([2026]);
+  }, 120_000);
+
+  it('po uchwale o dywidendzie: wczytanie zapisu i ponowne przetworzenie dnia nie dublują wypłaty ani podatku', () => {
+    let s = profitable();
+    s = ok(commands.proposeResolution(s, 'co:1', { type: 'approve_statements', year: 2026 }));
+    s = advanceDays(s, 14);
+    const gross = zl(30_000);
+    s = ok(commands.proposeResolution(s, 'co:1', { type: 'allocate_profit', year: 2026, dividendGross: gross, toReserve: 0, dividendDay: addDays(s.clock.today, 14), payDay: addDays(s.clock.today, 21) }));
+    s = advanceDays(s, 14);
+    expect(s.corp.dividends).toHaveLength(1); // gracz ma 60% głosów — bezwzględna większość
+    const loaded = roundTrip(s);
+    expect(loaded.corp.dividends).toHaveLength(1);
+    const again = structuredClone(loaded);
+    processDay(again, again.clock.today); // ten sam dzień drugi raz
+    expect(again.corp.dividends).toHaveLength(1);
+    expect(again.obligations.length).toBe(loaded.obligations.length);
+    const a = advanceDays(s, 60);
+    const b = advanceDays(loaded, 60);
+    expect(b.corp.dividends).toEqual(a.corp.dividends);
+    expect(b.obligations.filter((o) => o.category === 'dywidenda_wyplata')).toHaveLength(2);
+    expect(b.obligations.filter((o) => o.category === 'dywidenda_podatek')).toHaveLength(1);
+    expect(checkInvariants(b)).toEqual([]);
+  }, 120_000);
+
+  it('emisja oczekująca na wpis: wczytanie zapisu nie emituje udziałów dwa razy', () => {
+    let s = companyWithOps({ seed: 'sv-2', capital: zl(120_000), vat: 'active', equip: [] }); // jedyny wspólnik: uchwała od razu
+    s = runMonths(s, '2027-01-02', { sales: zl(60_000), cost: zl(10_000) });
+    s = runMonths(s, '2027-04-02', { sales: zl(60_000), cost: zl(10_000) });
+    s = shapePartner(s, 'partner:7', { trust: 60, capital: zl(900_000), riskTolerance: 80, goal: 'growth', dividendPreference: 20, competence: 40 });
+    const t = subscriptionTerms(company(s), zl(100_000), 1_500);
+    s = ok(commands.proposeDeal(s, { kind: 'subscribe', companyId: 'co:1', partnerId: 'partner:7', terms: t }));
+    let neg = s.corp.negotiations.at(-1)!;
+    if (neg.status === 'countered') { s = ok(commands.acceptCounter(s, neg.id)); neg = s.corp.negotiations.at(-1)!; }
+    expect(neg.status).toBe('agreed');
+    s = ok(commands.proposeResolution(s, 'co:1', { type: 'capital_increase', negotiationId: neg.id, subscriberId: 'partner:7', shares: neg.terms.shares, issuePriceEach: issuePriceEach(neg.terms) }));
+    expect(s.corp.resolutions.at(-1)!.status).toBe('executed');
+    expect(company(s).pendingIncrease).not.toBeNull();
+    const loaded = roundTrip(s);
+    expect(loaded.corp.companies[0]!.pendingIncrease).toEqual(company(s).pendingIncrease);
+    const a = advanceDays(s, 10);
+    const b = advanceDays(loaded, 10);
+    expect(b.corp.shareEvents).toEqual(a.corp.shareEvents);
+    expect(b.corp.shareEvents.filter((e) => e.kind === 'issue')).toHaveLength(1);
+    expect(sharesOf(b, 'co:1', 'partner:7')).toBe(neg.terms.shares);
+    expect(checkInvariants(b)).toEqual([]);
+  }, 120_000);
+});

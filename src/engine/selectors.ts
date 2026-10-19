@@ -134,7 +134,7 @@ export function netWorth(s: GameState): Grosze {
 }
 
 export function overdueObligations(s: GameState): Obligation[] {
-  return s.obligations.filter((o) => o.status === 'open' && o.overdueSince !== null);
+  return s.obligations.filter((o) => o.status === 'open' && o.overdueSince !== null && o.scope !== 'company');
 }
 
 export function playerAge(s: GameState, on: IsoDate = s.clock.today): number {
@@ -299,7 +299,9 @@ export function businessSummaries(s: GameState): BusinessMonth[] {
   };
   // przychody i koszty (podatkowe) z dokumentów: zaliczki nie są przychodem do wykonania usługi, wynagrodzenia i składki pracodawcy są kosztem,
   // zakup pojazdu nie jest kosztem; zobowiązania (ZUS właściciela, PIT) — jak dotąd z kategorii zobowiązań
+  const jdgIds = new Set(s.businesses.map((b) => b.id));
   for (const d of s.documents) {
+    if (!jdgIds.has(d.businessId)) continue; // dokumenty spółek liczone są w ich własnych zestawieniach
     const m = get(monthKey(d.issueDate));
     if (d.kind === 'sales') m.revenue += d.taxAmount;
     else m.costs += d.taxAmount;

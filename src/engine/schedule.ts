@@ -71,7 +71,7 @@ export function scheduledItems(s: GameState, from: IsoDate, to: IsoDate): Schedu
 
   // 1) Już naliczone, jeszcze nieopłacone, z terminem w przyszłości.
   for (const o of s.obligations) {
-    if (o.status === 'open' && o.dueDate >= start && o.dueDate <= to) {
+    if (o.status === 'open' && o.scope !== 'company' && o.dueDate >= start && o.dueDate <= to) {
       items.push({
         date: o.dueDate,
         kind: 'due',

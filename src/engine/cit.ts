@@ -1,5 +1,4 @@
-import { CORP } from './corpConfig.ts';
-import { citAdvancesAccrued, citRateFor, companyBalance, companyTaxFigures, lossAvailable, roundToZl } from './companyFinance.ts';
+import { citAdvancesAccrued, citRateFor, companyTaxFigures, lossAvailable, roundToZl } from './companyFinance.ts';
 import { createObligation, ensureParty, logEvent, nextCounter } from './core.ts';
 import { addDays, dateInMonth, monthKey, parseIso } from './date.ts';
 import type { IsoDate } from './date.ts';
@@ -85,6 +84,5 @@ export function closeCitYear(s: GameState, c: Company, date: IsoDate): CitReturn
     detail: `${rate.reason} · zaliczki ${formatPLN(advances, { round: true })} · ${balance > 0 ? `do zapłaty ${formatPLN(balance, { round: true })} do 31 marca` : balance < 0 ? `nadpłata ${formatPLN(-balance, { round: true })}` : 'bez dopłaty'}`.slice(0, 290),
     amount: null, category: null,
   });
-  void companyBalance; void CORP;
   return ret;
 }

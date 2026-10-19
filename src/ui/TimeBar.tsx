@@ -39,6 +39,12 @@ export function TimeBar() {
               <dd data-testid="hud-business" className="text-base font-semibold text-gold"><Money value={nw.business} /></dd>
             </div>
           )}
+          {nw.shares > 0 && (
+            <div>
+              <dt className="text-[11px] tracking-wider text-slate-400 uppercase">Udziały (szac.)</dt>
+              <dd data-testid="hud-shares" className="text-base font-semibold text-violet"><Money value={nw.shares} /></dd>
+            </div>
+          )}
           <div>
             <dt className="text-[11px] tracking-wider text-slate-400 uppercase">Majątek netto</dt>
             <dd data-testid="hud-networth" className="text-base font-semibold text-sky"><Money value={nw.netWorth} /></dd>

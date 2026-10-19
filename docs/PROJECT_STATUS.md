@@ -1,13 +1,31 @@
 # PROJECT_STATUS — stan projektu
 
-> Aktualizuj po każdym zadaniu. Opisuje **stan faktyczny**, nie plany. Ostatnia aktualizacja: 2026-10-19.
+> Aktualizuj po każdym zadaniu. Opisuje **stan faktyczny**, nie plany. Ostatnia aktualizacja: 2026-10-19 (v0.8).
 
 ## Wersja
 
-**v0.7.0 — Rynek, konkurencja i balans gospodarki** (zakończona; v0.8 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 7` (migracje v1 → … → v7). Wcześniej: v0.6 (pracownicy, ekipy, podwykonawcy; commit bazowy 979bae3 + poprawki UI do e4e04e4), v0.5 (branża remontowa), v0.4 (rozliczenia roczne), v0.3 (JDG), v0.2.1, v0.2, v0.1.
+**v0.8.0 — Spółki, wspólnicy i własność przedsiębiorstw** (zakończona; v0.9 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 8` (migracje v1 → … → v8). Wcześniej: v0.7 (rynek lokalny, konkurencja, marketing, symulator balansu; commit bazowy 1e58217), v0.6, v0.5, v0.4, v0.3, v0.2.1, v0.2, v0.1.
 Rejestr rozwoju mechanik: [`FEATURE_EVOLUTION.md`](FEATURE_EVOLUTION.md) · rejestr reguł prawnych: [`LEGAL_SOURCES.md`](LEGAL_SOURCES.md) · analiza balansu: [`BALANCE_REPORT.md`](BALANCE_REPORT.md).
 
-## Co działa (v0.7, zweryfikowane testami)
+## Co działa (v0.8, zweryfikowane testami)
+
+Wszystko z v0.1–v0.7 plus:
+
+- **Spółka z o.o. jako odrębny podmiot prawny** (`company.ts`, ADR-062/063): szkic → umowa spółki przez wzorzec S24 (wkłady wyłącznie pieniężne; kapitał ≥ 5 000 zł, nominał ≥ 50 zł) → spółka w organizacji → wniosek do KRS (opłata 250 zł, **bez** opłaty za ogłoszenie w MSiG od 29.11.2025) → wpis następnego dnia (numer KRS symulowany). Przed wpisem spółka nie działa. Własny rachunek (`type: company`), zobowiązania (`scope: company`), dokumenty, pracownicy, kontrakty, marketing; przelewy osoba↔spółka tylko jako wkład na kapitał (niezmiennik). PCC 0,5% płaci spółka.
+- **Rejestr udziałów** (`shares.ts`, ADR-064): wspólnik × spółka, partie nabycia z kosztem, prawa głosu, ograniczenia, historia zmian; zawiązanie, emisja (skuteczna dopiero z wpisem do KRS), przeniesienie (zapłata do sprzedającego); niezmienniki sumy udziałów, braku udziałów „z powietrza” i podwójnych transakcji. Procent kapitału, głosy, wartość, dywidenda i zarząd — osobno.
+- **Wspólnicy i inwestorzy AI** (`partners.ts`, `negotiation.ts`, `partnerAi.ts`): pula 10 postaci (kapitał, doświadczenie, kompetencje, tolerancja ryzyka, cel, preferencja dywidend, horyzont, zaufanie, historia); zgoda / kontroferta / odmowa wynikają z ich interesów; głosowania; własne wnioski (dywidenda, sprzedaż udziałów). Bez losowych konfliktów i bez LLM; zaufanie zmienia się tylko z powodów ekonomicznych/relacyjnych.
+- **Negocjacje inwestycyjne**: objęcie nowych udziałów (pieniądze do spółki; pre-/post-money, rozwodnienie, cena emisyjna w pełnych groszach, agio → kapitał zapasowy) vs zakup/sprzedaż istniejących udziałów (zapłata do sprzedającego; PCC 1% kupujący, PIT 19% zbywca). Przykład: 100 000 zł za 20% = post-money 500 000 zł.
+- **Zarząd i reprezentacja**: członkostwo w zarządzie ≠ udziały; prezes jako funkcja organizacyjna; reprezentacja samodzielna / dwóch łącznie / wszyscy łącznie; czynności wiążące spółkę wymagają członkostwa i (przy łącznej) podpisu współzarządcy; powołanie/odwołanie/rezygnacja; bez wynagrodzenia.
+- **Uchwały** (`resolutions.ts`, ADR-065): progi z KSH (bezwzględna większość; 2/3 dla zmiany umowy i podwyższenia kapitału), zgromadzenie po 14 dniach (jedyny wspólnik od razu), przegrana uchwała nic nie wykonuje; typy: zarząd, sprawozdanie, podział zysku, emisja, reprezentacja, zgoda na nabycie (art. 229).
+- **CIT** (`cit.ts`, ADR-067): zaliczki miesięczne narastająco, CIT-8 31.12, **stawka 9% tylko po sprawdzeniu limitu 2 mln € (8 431 000 zł) i statusu podatnika**, inaczej 19%; strata 5 lat/50%; zysk księgowy ≠ podstawa ≠ gotówka ≠ kapitały własne.
+- **Dywidendy** (ADR-066): zatwierdzone sprawozdanie, kwota do podziału (art. 192), aktywa netto ≥ kapitał, wolna gotówka; 19% zryczałtowanego podatku (płatnik: spółka); gracz otrzymuje pieniądze dopiero po zapłacie przez spółkę; wypłata nie jest kosztem.
+- **Działalność remontowa przez spółkę** (ADR-062/068/069): te same moduły co JDG w kontekście operatora (zapytania z rynku — spółka jest osobną firmą rynku, wyceny, kontrakty, pracownicy z ZUS do 15., ekipy, pojazdy, podwykonawcy); właściciel nie jest wykonawcą w spółce; JDG i spółka działają równolegle; **przełącznik aktywnego podmiotu** w UI.
+- **Wycena i majątek netto** (ADR-070): szacunek wartości spółki odświeżany co miesiąc; w majątku gracza tylko wartość jego udziałów. Jedyny wspólnik płaci ZUS (społeczne standardowe + zdrowotna 830,58 zł) od wpisu do KRS.
+- **UI** — sekcja „Spółki i inwestycje prywatne”: Moje spółki, Załóż spółkę, Wspólnicy, Udziały i kapitał, Zarząd, Uchwały, Finanse i CIT, Dywidendy, Inwestorzy i negocjacje; ostrzeżenia (art. 233 i 299 KSH), odznaki reguł prawnych, kropki powiadomień (głosowania, oferty).
+- **Prawo**: 43 nowe reguły (22 VERIFIED, 13 SIMPLIFIED, 8 DEFERRED) zweryfikowane na tekstach urzędowych (ELI/ISAP, NBP, MP) — `LEGAL_SOURCES.md` §„Rejestr reguł v0.8”. Rejestr razem: **120 reguł — 60 VERIFIED, 42 SIMPLIFIED, 18 DEFERRED**.
+- **Zapisy**: `migrateV7ToV8` dodaje tylko `corp` (stare JDG zostaje JDG; historia nietknięta); test na prawdziwym zapisie wygenerowanym przez v0.7 przed zmianami (`save-v7.json`).
+
+## Co działa (v0.7 — bez zmian, poza opisanymi wyżej)
 
 Wszystko z v0.1–v0.6 plus:
 
@@ -52,23 +70,24 @@ Zweryfikowane w v0.3 (VERIFIED): skala i kwota zmniejszająca, liniowy 19%, limi
 
 ## Czego NIE ma (świadomie poza zakresem)
 
-Spółki i wspólnicy, giełda, nieruchomości inwestycyjne, kredyty i leasing, kolejne branże i miasta (rynek ma architekturę pod nie, ale jest tylko Olsztyn i remonty), dane GUS (parametry rynku są kalibracyjne), integracje z urzędami i KSeF, multiplayer, backend. **Vercel**: repo przygotowane do importu (`vercel.json`, `npm ci`, build statyczny); push na `main` wdraża.
+Inne formy spółek (jawna, komandytowa, akcyjna), przekształcenie JDG, aporty, holdingi, giełda, nieruchomości inwestycyjne, kredyty i leasing, kolejne branże i miasta (rynek ma architekturę pod nie, ale jest tylko Olsztyn i remonty), dane GUS (parametry rynku są kalibracyjne), integracje z urzędami i KSeF, multiplayer, backend. **Vercel**: repo przygotowane do importu (`vercel.json`, `npm ci`, build statyczny); push na `main` wdraża.
 
-## Wykonane testy (2026-10-19)
+## Wykonane testy (2026-10-19, v0.8)
 
 | Polecenie | Wynik |
 |---|---|
 | `npm run typecheck` (`tsc -b`, w tym `tools/`) | ✅ bez błędów |
-| `npm test` (Vitest) | ✅ **395/395** (16 plików): w tym 27 testów rynku (`market.test.ts`: koniunktura, popyt i sezonowość, alokacja i konkurencja, segmenty, marketing, strategia, limity mocy, powtarzalność, niezmienniki), 4 testy migracji v6 → v7 na prawdziwym zapisie z v0.6, 5 testów symulatora balansu (`tools/balance/balance.test.ts`), test renderu ekranów zajętości/podpisu |
+| `npm test` (Vitest) | ✅ **443/443** (19 plików): w tym 39 testów spółek (`corp.test.ts`: założenie i minimalny kapitał, rejestracja S24, odrębne rachunki, ZUS jedynego wspólnika, udziały i głosy, zarząd i reprezentacja łączna, uchwały i progi, CIT: stawki/limity/strata/zaliczki, dywidendy, emisja i rozwodnienie, zakup/sprzedaż udziałów, wycena, determinizm, zapis w trakcie procesów), scenariusz 36 miesięcy (`corp.scenario.test.ts`), 4 testy migracji v7 → v8 na prawdziwym zapisie z v0.7 (`save-v7.json`), 4 testy renderu ekranów spółek |
 | `npm run build` | ✅ |
-| `npm run test:e2e` (Chromium, `LD_LIBRARY_PATH`) | ✅ **31/31** (28 wcześniejszych + 3 nowe: ekrany rynku, marketing i strategia, zapis/menu mobilne) |
-| `npm run balance` | ⚠️ działa; serie kalibracyjne 3-letnie wykonane, **końcowa seria 5-letnia z ostatnią wersją bota NIE została dokończona** (przerwana) — raport ma więc dane z różnych wersji bota (patrz [`BALANCE_REPORT.md`](BALANCE_REPORT.md) §2) |
+| `npm run test:e2e` (Chromium, `LD_LIBRARY_PATH`) | ✅ **33/33** (31 wcześniejszych + 2 nowe: założenie spółki → KRS → ekrany własności; JDG obok spółki z przełącznikiem aktywnego podmiotu) |
+| `npm run balance` | ⚠️ bez zmian względem v0.7: wielogodzinny benchmark **nie został uruchomiony ponownie** (zgodnie z poleceniem); jego niedokończona walidacja 5-letnia pozostaje jawna (`BALANCE_REPORT.md` §2); `tools/balance/balance.test.ts` przechodzi |
 
-Usterki ujawnione przez testy i symulator podczas v0.7 (naprawione): limit `blockedReason` (120 znaków) mógł uniemożliwić wczytanie zapisu; ujemne zero (`-0`) w stanie psuło porównania po zapisie JSON; test scenariusza 24 miesięcy kopiował stan setki razy (rynek daje ~400 zapytań rocznie) — ograniczony do wyceny 2 zapytań dziennie.
+Pełna regresja wykonana na końcu (po zmianach wspólnego silnika: operator, rynek, selektory, niezmienniki). Usterki ujawnione przez testy podczas v0.8 (naprawione): koszt niezmienników spółek spowalniał testy pętlą po całym rejestrze (teraz wczesne wyjście bez spółek); analityka JDG (płynność, koszty stałe, zestawienia, plan, raport roczny) mieszała dokumenty i zobowiązania spółek; minimalny kapitał (5 000 zł) wymaga w grze odłożenia środków — gracz startuje z 5 000 zł i odkłada ok. 1,4 tys. zł miesięcznie.
 
 ## Znane problemy i uproszczenia
 
-Pełna lista w `FEATURE_EVOLUTION.md` §14. Najważniejsze:
+Pełna lista w `FEATURE_EVOLUTION.md` §14. Najważniejsze (v0.8: pkt 0):
+0. **Spółki (v0.8)**: wyłącznie sp. z o.o. przez S24 (wkłady pieniężne); rejestracja KRS i numer są symulowane; brak umów gracz↔spółka (art. 210 KSH), więc właściciel nie pracuje w spółce — spółka zatrudnia pracowników i podwykonawców; wstrzymanie się od głosu liczone jako głos oddany; CIT z kwot podatkowych wspólnego silnika (bez amortyzacji i NKUP); wycena to model kalibracyjny; jedyny wspólnik płaci wysokie składki ZUS (ok. 2,8 tys. zł miesięcznie przy 5 000 zł kapitału — to skutek przepisów, nie błąd); statystyki rynku (`market.months`) są sumą dla wszystkich firm gracza; ścieżka notarialna, aporty, odpowiedzialność zarządu i upadłość odłożone.
 1. **Firma wymaga finansowania właściciela**: składki, podatki i VAT są płacone z rachunku firmowego; przy braku środków powstaje zaległość bez odsetek (odsetki za zwłokę — FE-BANK-02).
 2. **Podatek jest symulacją**: zaokrąglenia do zł SIMPLIFIED; brak ulg (IP Box, B+R, internetowa, prorodzinna) i kilku pracodawców u pracownika; zeznania roczne to rekordy z saldem; zaliczki: przychód dopiero po wykonaniu usługi (ADV-PIT SIMPLIFIED); pojazdy bez reguł podatkowych.
 3. **Lata po 2026**: reguły z 2026 r. są przenoszone i oznaczone `carriedForward` (UI ostrzega).
@@ -78,6 +97,6 @@ Pełna lista w `FEATURE_EVOLUTION.md` §14. Najważniejsze:
 
 ## Następne zadanie (propozycja — wymaga zatwierdzenia)
 
-**v0.8 — kandydaci** (kolejność do decyzji właściciela): (1) generaliści i pomocnicy oraz kierownicy ekip (wypełnianie bezczynności pracowników — główny czynnik nierentowności zespołów w BALANCE_REPORT), z urlopami, L4 i odejściami; (2) klienci powracający, umowy ramowe i zlecenia B2B/przetargi jako stabilny popyt dla większych firm; (3) drugi rynek (miasto lub branża) i dane GUS zamiast parametrów kalibracyjnych; (4) kredyty i leasing (kapitał na rozwój — drugi czynnik: niewypłacalność przy małym kapitale).
+**v0.9 — kandydaci** (kolejność do decyzji właściciela): (1) praca wspólnika w spółce (umowa o pracę/zlecenie/B2B z zarządem, wynagrodzenie zarządu i składki — odblokowuje model „właściciel pracuje w spółce” i zamyka lukę art. 210 KSH); (2) generaliści, pomocnicy i kierownicy ekip oraz klienci powracający i zlecenia B2B (wypełnianie bezczynności i stabilny popyt — główne problemy nierentowności zespołów z `BALANCE_REPORT.md`); (3) kredyty i leasing (finansowanie dłużne spółek i JDG); (4) przekształcenie JDG w spółkę i aporty (po weryfikacji skutków CIT/VAT/KP).
 
-Nie rozpoczynać v0.8 bez zatwierdzenia.
+Nie rozpoczynać v0.9 bez zatwierdzenia.

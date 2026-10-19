@@ -54,7 +54,11 @@ Wspólny system pracowników (rekrutacja, umowy o pracę, płace i koszty pracod
 
 Wspólna warstwa rynku lokalnego (popyt miasta, koniunktura miesięczna zakotwiczona w klimacie rocznym, segmenty klientów, konkurenci, marketing w 6 kanałach, pozycjonowanie firmy, wybór oferty przez klienta), pierwszy rynek: remonty w Olsztynie (parametry kalibracyjne); ekrany Rynek lokalny / Konkurencja / Marketing / Strategia firmy / Analiza popytu; symulator balansu (`npm run balance`) i analiza ekonomii modeli zatrudnienia; zapis v7. Bez spółek, giełdy, kredytów, kolejnych branż i miast.
 
-## v0.8+ — Kredyty, leasing, odsetki (dawniej v0.4/v0.5/v0.6)
+## v0.8 — Spółki, wspólnicy i własność przedsiębiorstw ✅ (zakończona, patrz `PROJECT_STATUS.md`)
+
+Spółka z o.o. jako odrębny podmiot prawny (założenie przez S24, rejestracja symulowana, odrębny majątek), rejestr udziałów, wspólnicy i inwestorzy AI, negocjacje (objęcie nowych vs zakup istniejących udziałów), zarząd i reprezentacja, uchwały z progami KSH, CIT, dywidendy, wycena, prowadzenie działalności remontowej przez spółkę (ten sam silnik, abstrakcja operatora), przełącznik aktywnego podmiotu. `SAVE_VERSION = 8`. Poza zakresem (zapisane w `FEATURE_EVOLUTION.md`): inne formy spółek, przekształcenie JDG, aporty, holdingi, giełda, kredyty, pełna księgowość, upadłość.
+
+## v0.9+ — Kredyty, leasing, odsetki (dawniej v0.4/v0.5/v0.6)
 
 Harmonogramy rat (kapitał + odsetki, w groszach, bez dryfu zaokrągleń), zdolność kredytowa (uproszczona), odsetki za zwłokę, windykacja (poziom 1). Banki jako strony z własną logiką.
 
@@ -64,9 +68,9 @@ Harmonogramy rat (kapitał + odsetki, w groszach, bez dryfu zaokrągleń), zdoln
 **Zakres:** założenie JDG (osoba fizyczna prowadząca działalność — bez odrębnej osobowości prawnej), ewidencja firmowa, rejestr kontraktów/zleceń, **moduł remontów** (wycena, kontrakt, materiały, robocizna, terminy, odbiory, płatności z opóźnieniem), pierwszy pracownik, regionalny rynek zleceń (Olsztyn), konkurenci (uproszczeni).
 **Kryteria „grywalnego prototypu”:** gracz może przez kilka lat pracować na etacie, odłożyć kapitał, założyć JDG, zdobywać i realizować zlecenia remontowe, zatrudnić pracownika, płacić podatki i składki, **zbankrutować lub rosnąć**; wszystko deterministyczne i zgodne z niezmiennikami; zapisy migrowane.
 
-## v0.7+ — Spółki i inwestycje (kierunek)
+## v0.9+ — Inwestycje i dalszy rozwój (kierunek)
 
-Spółka z o.o. (udziały, wspólnicy, zarząd ≠ udziały ≠ dywidendy), wypłaty, kapitał zakładowy; gospodarstwo domowe wieloosobowe; giełda i obligacje; nieruchomości (zakup, wynajem, kredyt hipoteczny); kolejne branże; (opcjonalnie) mapa miasta w Phaser.
+(Spółka z o.o. — zrealizowana w v0.8.) Gospodarstwo domowe wieloosobowe; giełda i obligacje; nieruchomości (zakup, wynajem, kredyt hipoteczny); kolejne branże; (opcjonalnie) mapa miasta w Phaser.
 
 ## Zależności
 

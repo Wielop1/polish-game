@@ -9,11 +9,11 @@ import { industryOf } from './industry.ts';
 import { initialMarketState } from './market.ts';
 import { formatPLN, mulBps } from './money.ts';
 import type { Grosze } from './money.ts';
-import { companyById, companyFullName, currentOperator, inCompanyContext, listOperators, withOperator, JDG } from './operator.ts';
+import { companyById, companyFullName, inCompanyContext, listOperators, withOperator, JDG } from './operator.ts';
 import { holderName, partnerById } from './partners.ts';
 import { createRng } from './rng.ts';
 import { SERVICE_BY_ID } from './renovationCatalog.ts';
-import { activeHoldings, companyOf, grantFoundingShares, sharesOf, syncSole } from './shares.ts';
+import { companyOf, grantFoundingShares, syncSole } from './shares.ts';
 import type { BoardMember, Company, GameState, Operator } from './state.ts';
 
 /**
@@ -181,7 +181,6 @@ export function signAgreement(s: GameState, input: AgreementInput): string {
   }
   c.status = 'organizing';
   c.agreementOn = today;
-  c.representation = c.representation;
   const day = today;
   // wkład gracza: przelew z rachunku osobistego na rachunek spółki (para wpisów o sumie zero — kapitał, nie przychód i nie koszt)
   const transferId = `capital:${c.id}:${nextCounter(s, 'capital')}`;
@@ -245,7 +244,6 @@ export function completeRegistration(s: GameState, c: Company, date: IsoDate): v
   c.krsNumber = `KRS 0000${String(createRng(s.seed, `krs:${c.id}`).int(100_000, 999_999))}`;
   syncSole(s, c, date);
   refreshValuation(s, c, date);
-  for (const m of activeBoard(c)) void m;
   logEvent(s, {
     id: `corp.company:${c.id}:registered`, date, type: 'corp.company', tone: 'positive',
     title: `Spółka wpisana do KRS: ${companyFullName(c)}`, detail: `${c.krsNumber} (numer symulowany) · od dziś spółka istnieje jako osoba prawna i może uruchomić działalność`, amount: null, category: null,
@@ -343,4 +341,3 @@ export function currentCompany(s: GameState): Company | undefined {
   return companyById(s, s.corp.context);
 }
 
-export { activeHoldings, sharesOf, currentOperator };

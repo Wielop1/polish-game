@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { activeBusiness } from '../../engine/business.ts';
 import { addDays, formatDatePL, monthKey } from '../../engine/date.ts';
 import { formatPLN, zl } from '../../engine/money.ts';
 import { crewProfitability, fixedCosts, liquidityForecast, teamLoad } from '../../engine/profitability.ts';
@@ -13,6 +12,8 @@ import {
   activeEmployments, candidateView, employerContributions, minGrossFor, monthlyEmployerCost, noticePeriod, personById, personLevel, personName, wageOn,
 } from '../../engine/workforce.ts';
 import { useGameStore } from '../../store/gameStore.ts';
+import { useOpGame } from '../useOperator.ts';
+import { currentOperator } from '../../engine/operator.ts';
 import { ProgressBar } from '../components/charts.tsx';
 import { Badge, Button, Card, Empty, Money, ScreenHeader, StatCard, cx, moneyTone } from '../components/ui.tsx';
 import { parseZloty, splitMemberKey } from '../format.ts';
@@ -31,8 +32,8 @@ function Row({ k, v, tone }: { k: ReactNode; v: ReactNode; tone?: string }) {
 }
 
 function useBiz() {
-  const game = useGameStore((s) => s.game)!;
-  return { game, biz: activeBusiness(game) };
+  const game = useOpGame();
+  return { game, biz: currentOperator(game) };
 }
 
 function NoBiz({ title }: { title: string }) {

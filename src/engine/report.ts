@@ -64,7 +64,9 @@ export function yearReport(s: GameState, year: number): YearReport {
     customerPayments: 0, cashOut: 0, ownerContributions: 0, ownerWithdrawals: 0, vatPaidNet: 0, receivables: 0, payables: 0, businessCash: 0,
     salaryNet: 0, privateExpenses: 0, netWorthStart: 0, netWorthEnd: 0, netWorthChange: 0, taxLossCreated: 0, inventoryChange: 0, economicResult: 0, ruleIds: [],
   };
+  const jdgIds = new Set(s.businesses.map((b) => b.id));
   for (const o of s.obligations) {
+    if (o.scope === 'company') continue; // zobowiązania spółek nie należą do rozliczeń osoby fizycznej
     if (o.scope === 'business') {
       if (inYear(o.issueDate)) {
         if (COST_ZUS.has(o.category)) r.zus += o.amount;
@@ -83,7 +85,7 @@ export function yearReport(s: GameState, year: number): YearReport {
     }
   }
   for (const d of s.documents) {
-    if (!inYear(d.issueDate)) continue;
+    if (!inYear(d.issueDate) || !jdgIds.has(d.businessId)) continue;
     if (d.kind === 'sales') r.revenue += d.taxAmount;
     else r.costs += d.taxAmount;
   }
