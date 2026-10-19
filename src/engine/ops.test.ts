@@ -680,3 +680,24 @@ describe('podwykonawca zajęty innym kontraktem', () => {
     expect(reason).not.toMatch(/nieprzydzielona/);
   });
 });
+
+describe('podpisanie umowy ze zmianą wykonawcy', () => {
+  it('brak wolnego kompletu sprzętu blokuje podpis właściciela, ale zlecenie można podpisać, wskazując podwykonawcę', () => {
+    const g = opsGame({ reg: {}, equip: ['paint-basic'] });
+    const sub = g.ops.subcontractors.find((x) => x.services.includes('malowanie'))!;
+    const c1 = contract(g, { quote: { hoursPerDay: 2, durationDays: 12 } });
+    // drugi kontrakt w tym samym terminie: godzin starcza, ale jedyny komplet sprzętu jest już przydzielony
+    const c2 = contract(c1.s, { sign: false, quote: { hoursPerDay: 2, durationDays: 12, startDate: c1.job.startDate } });
+    const quote = c2.s.reno.quotes.at(-1)!;
+    expect(fail(commands.signContract(c2.s, quote.id))).toMatch(/Brak wolnego kompletu sprzętu/);
+    expect(fail(commands.signContract(c2.s, quote.id, [{ kind: 'sub', id: 'sub:nie-ma' }]))).toMatch(/nie wykonuje tej usługi/);
+    const signed = ok(commands.signContract(c2.s, quote.id, [{ kind: 'sub', id: sub.id }]));
+    const job = signed.reno.jobs.at(-1)!;
+    expect(job.priceNet).toBe(quote.priceNet);
+    expect(job.crew.supervision).toBe('supervise');
+    expect(signed.ops.teams.find((t) => t.id === job.crew.teamId)!.members).toEqual([{ kind: 'sub', id: sub.id }]);
+    // podwykonawca od razu przysyła ofertę do zaakceptowania
+    expect(signed.ops.subcontracts.some((c) => c.jobId === job.id && c.status === 'offered')).toBe(true);
+    consistent(signed);
+  });
+});

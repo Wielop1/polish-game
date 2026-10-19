@@ -880,12 +880,27 @@ function setupCrew(s: GameState, job: RenoJob, order: ServiceOrder): void {
   if (job.vehicleId) reserve(s, job.id, 'vehicle', job.vehicleId, job.startDate, job.deadline);
 }
 
-export function signContract(s: GameState, quoteId: string): string {
+/**
+ * Podpisanie umowy z zaakceptowanej oferty. `crew` (opcjonalnie) zmienia wykonawców przy podpisaniu — np. gdy właściciel nie ma wolnego
+ * sprzętu lub godzin i zleca pracę podwykonawcy/pracownikowi; cena umowy zostaje taka, jak w ofercie (klient nie widzi, kto wykonuje pracę).
+ */
+export function signContract(s: GameState, quoteId: string, crew?: CrewMember[]): string {
   const b = requireBusiness(s);
   const today = s.clock.today;
   const q = reno(s).quotes.find((x) => x.id === quoteId);
   if (!q || q.status !== 'accepted') throw new CommandError('Ta oferta nie czeka na podpisanie umowy.');
   if (q.signBy && today > q.signBy) throw new CommandError('Termin podpisania umowy minął.');
+  if (crew) {
+    if (crew.length === 0) throw new CommandError('Wskaż wykonawcę kontraktu.');
+    for (const m of crew) {
+      if (m.kind === 'sub' && !subById(s, m.id)?.services.includes(q.serviceId)) throw new CommandError('Ten podwykonawca nie wykonuje tej usługi.');
+      if (m.kind === 'employee' && employmentById(s, m.id)?.status !== 'active') throw new CommandError('Ten pracownik nie ma aktywnej umowy.');
+    }
+    const ownerIn = crew.some((m) => m.kind === 'owner');
+    q.teamId = crew.length === 1 && ownerIn ? null : ensureCrewTeam(s, crew);
+    q.supervision = ownerIn ? 'worker' : 'supervise';
+    if (crew.every((m) => m.kind === 'sub')) q.vehicleId = null;
+  }
   if (isSuspendedOn(b, today) || b.suspensions.some((x) => x.from > today)) throw new CommandError('Działalność jest zawieszona — nie można podpisywać nowych umów.');
   const enq = reno(s).enquiries.find((e) => e.id === q.enquiryId)!;
   const def = SERVICE_BY_ID.get(q.serviceId)!;

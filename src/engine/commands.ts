@@ -7,7 +7,7 @@ import { applyForJob, resignFromJob, respondToJobOffer } from './jobs.ts';
 import { resolveLifeEvent } from './lifeEvents.ts';
 import { signLease } from './housing.ts';
 import { addSpecialization, assignCrew, assignVehicle, buyEquipment, buyMaterial, buyMissingForJob, declineEnquiry, maintainEquipment, resolveComplaint, respondToCounter, sendQuote, setAdvertising, signContract, terminateJob } from './renovation.ts';
-import type { QuoteInput } from './renovation.ts';
+import type { CrewMember, QuoteInput } from './renovation.ts';
 import { hireAccountingOffice, terminateAccountingOffice } from './accounting.ts';
 import { closeListing, giveNotice, makeOffer, publishListing, rejectCandidate, setWage } from './workforce.ts';
 import type { Offer } from './workforce.ts';
@@ -108,7 +108,7 @@ export const commands = {
   declineEnquiry: (state: GameState, enquiryId: string) => runCommand(state, (d) => declineEnquiry(d, enquiryId)),
   sendQuote: (state: GameState, enquiryId: string, input: QuoteInput) => runCommand(state, (d) => sendQuote(d, enquiryId, input)),
   respondToCounter: (state: GameState, quoteId: string, action: 'accept' | 'decline' | 'hold') => runCommand(state, (d) => respondToCounter(d, quoteId, action)),
-  signContract: (state: GameState, quoteId: string) => runCommand(state, (d) => signContract(d, quoteId)),
+  signContract: (state: GameState, quoteId: string, crew?: CrewMember[]) => runCommand(state, (d) => signContract(d, quoteId, crew)),
   terminateJob: (state: GameState, jobId: string) => runCommand(state, (d) => terminateJob(d, jobId)),
   resolveComplaint: (state: GameState, complaintId: string, action: 'repair' | 'discount' | 'reject') => runCommand(state, (d) => resolveComplaint(d, complaintId, action)),
   // v0.5 — księgowość

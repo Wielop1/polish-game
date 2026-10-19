@@ -4,7 +4,7 @@ import type { RegisterInput } from '../engine/business.ts';
 import { commands } from '../engine/commands.ts';
 import type { CommandResult } from '../engine/commands.ts';
 import type { Grosze } from '../engine/money.ts';
-import type { QuoteInput } from '../engine/renovation.ts';
+import type { CrewMember, QuoteInput } from '../engine/renovation.ts';
 import type { Offer } from '../engine/workforce.ts';
 import type { TeamMember } from '../engine/teams.ts';
 import { createNewGame, NewGameInputSchema } from '../engine/newGame.ts';
@@ -95,7 +95,7 @@ interface GameStore {
   declineEnquiry: (enquiryId: string) => boolean;
   sendQuote: (enquiryId: string, input: QuoteInput) => boolean;
   respondToCounter: (quoteId: string, action: 'accept' | 'decline' | 'hold') => boolean;
-  signContract: (quoteId: string) => boolean;
+  signContract: (quoteId: string, crew?: CrewMember[]) => boolean;
   terminateJob: (jobId: string) => boolean;
   resolveComplaint: (complaintId: string, action: 'repair' | 'discount' | 'reject') => boolean;
   publishListing: (input: { role: string; minLevel: number; tier: 'basic' | 'premium' }) => boolean;
@@ -235,8 +235,8 @@ export const useGameStore = create<GameStore>((set, get) => {
       return done;
     },
     respondToCounter: (id, action) => exec((g) => commands.respondToCounter(g, id, action)),
-    signContract: (id) => {
-      const done = exec((g) => commands.signContract(g, id));
+    signContract: (id, crew) => {
+      const done = exec((g) => commands.signContract(g, id, crew));
       if (done) set({ screen: 'renoContracts' });
       return done;
     },

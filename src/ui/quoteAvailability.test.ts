@@ -42,6 +42,14 @@ describe('zajętość terminów w UI wycen', () => {
     const signed = commands.signContract(s, qq.id);
     if (!signed.ok) throw new Error(signed.error);
     s = signed.state;
+    // drugi, zaakceptowany kontrakt w tym samym terminie: doba właściciela jest już zajęta przez pierwszy kontrakt
+    const e1 = { ...enq, id: 'enq:97', clientId: 'party:client:97' };
+    s.parties['party:client:97'] = { id: 'party:client:97', name: 'Klient (fikcyjny)', role: 'service' };
+    s.reno.enquiries.push(e1);
+    const sent1 = commands.sendQuote(s, e1.id, { ...e0q, startDate: enq.desiredStart });
+    if (!sent1.ok) throw new Error(sent1.error);
+    s = sent1.state;
+    const q1 = s.reno.quotes.at(-1)!; q1.status = 'accepted'; q1.acceptedOn = s.clock.today; q1.signBy = addDays(s.clock.today, 5);
     const noop = () => undefined;
     fake.state = { game: s, selectedEnquiryId: 'enq:99', selectEnquiry: noop, navigate: noop, declineEnquiry: noop, sendQuote: noop };
     const html = renderToString(createElement(RenoEnquiriesScreen));
@@ -50,5 +58,9 @@ describe('zajętość terminów w UI wycen', () => {
     expect(html).toMatch(/Najwcześniej możesz zacząć/);
     const html2 = renderToString(createElement(RenoQuotesScreen));
     expect(html2).toContain('quote-calendar');
+    // zaakceptowana oferta: wybór wykonawcy i wyjaśnienie, czemu podpis jest zablokowany
+    expect(html2).toContain('sign-who-');
+    expect(html2.replace(/<[^>]+>/g, '')).toMatch(/Nie można podpisać: Brak wolnych godzin/);
+    expect(html2).toContain('Zleć podwykonawcy');
   });
 });

@@ -8,7 +8,8 @@ import {
   skillProgress, speedBps, splitKey, stockKey, stockQty, grossOfNet, equipmentBookValue,
 } from '../../engine/renovation.ts';
 import type { QuoteInput } from '../../engine/renovation.ts';
-import type { GameState, RenoEnquiry } from '../../engine/state.ts';
+import type { GameState, RenoEnquiry, RenoQuote } from '../../engine/state.ts';
+import { commands } from '../../engine/commands.ts';
 import {
   ADVERTISING, COMPLEXITY_LABEL, EQUIPMENT, MATERIALS, MATERIAL_BY_ID, QUALITY_REQ_LABEL, SERVICES, SERVICE_BY_ID, SKILL_THRESHOLD_CENTI, SPECIALIZATION_COURSE, STANDARDS,
 } from '../../engine/renovationCatalog.ts';
@@ -502,11 +503,42 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   );
 }
 
+/** Podpisanie umowy z możliwością wskazania wykonawcy (np. podwykonawcy, gdy brakuje własnego sprzętu lub godzin). Podpowiada, czemu podpisanie jest zablokowane. */
+function SignContract({ game, q }: { game: GameState; q: RenoQuote }) {
+  const sign = useGameStore((s) => s.signContract);
+  const [choice, setChoice] = useState('');
+  const subs = game.ops.subcontractors.filter((x) => x.services.includes(q.serviceId)).map((x) => ({ sub: x, price: subPrice(x, q.serviceId, q.units, q.complexity, 10_000) }));
+  const staff = activeEmployments(game).map((e) => ({ e, name: personName(personById(game, e.personId)!), level: personLevel(personById(game, e.personId)!, q.serviceId) }));
+  const crew: CrewMember[] | undefined = choice === '' ? undefined : choice === 'owner' ? [{ kind: 'owner', id: 'owner' }] : [{ kind: choice.startsWith('sub:') ? 'sub' : 'employee', id: choice.slice(choice.indexOf(':') + 1) }];
+  const asQuoted = q.teamId ? game.ops.teams.find((t) => t.id === q.teamId)?.name ?? 'ekipa z oferty' : 'Ty (właściciel)';
+  // próba na kopii stanu: dokładnie te same reguły co przy prawdziwym podpisaniu, bez zmian w grze
+  const probe = useMemo(() => commands.signContract(game, q.id, crew), [game, q.id, choice]); // eslint-disable-line react-hooks/exhaustive-deps
+  const chosenSub = choice.startsWith('sub:') ? subs.find((x) => x.sub.id === choice.slice(4)) : undefined;
+  const profit = chosenSub ? q.priceNet - chosenSub.price - q.planned.materials - q.planned.other : null;
+  const select = 'rounded-xl border border-ink-600 bg-ink-900/80 px-3 py-1.5 text-sm text-slate-100 focus:border-sky focus:outline-none';
+  return (
+    <div className="mt-2 space-y-2" data-testid={`sign-box-${q.id}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor={`who-${q.id}`} className="text-xs text-slate-400">Kto wykona pracę</label>
+        <select id={`who-${q.id}`} className={select} value={choice} onChange={(e) => setChoice(e.target.value)} data-testid={`sign-who-${q.id}`}>
+          <option value="">Jak w ofercie: {asQuoted}</option>
+          {q.teamId && <option value="owner">Wykonam sam (właściciel)</option>}
+          {staff.length > 0 && <optgroup label="Mój pracownik">{staff.map(({ e, name, level }) => <option key={e.id} value={`emp:${e.id}`}>{name} — {e.role.toLowerCase()}, poziom {level}</option>)}</optgroup>}
+          {subs.length > 0 && <optgroup label="Zleć podwykonawcy">{subs.map(({ sub, price }) => <option key={sub.id} value={`sub:${sub.id}`}>{sub.name.replace(' (fikcyjna)', '')} — {formatPLN(price, { round: true })} netto za całość</option>)}</optgroup>}
+        </select>
+        <Button variant="primary" onClick={() => sign(q.id, crew)} disabled={!probe.ok} data-testid={`sign-${q.id}`}>{choice.startsWith('sub:') ? 'Zleć i podpisz umowę' : 'Podpisz umowę'}</Button>
+        <span className="text-xs text-gold">Podpisz do {formatDatePL(q.signBy!)}.</span>
+      </div>
+      {!probe.ok && <p className="text-xs text-loss" role="alert" data-testid={`sign-blocked-${q.id}`}>Nie można podpisać: {probe.error}{choice === '' && subs.length > 0 ? ' — wybierz powyżej wykonawcę (np. podwykonawcę, który ma własny sprzęt), żeby nie stracić zlecenia.' : ''}</p>}
+      {chosenSub && probe.ok && profit !== null && <p className={cx('text-xs', profit < 0 ? 'text-loss' : 'text-slate-400')}>Podwykonawca <Money value={chosenSub.price} round /> netto + materiały i drobne <Money value={q.planned.materials + q.planned.other} round /> przy cenie umowy <Money value={q.priceNet} round /> daje ok. <strong className={profit < 0 ? 'text-loss' : 'text-gain'}><Money value={profit} round signed /></strong> {profit < 0 ? '— to zlecenie przyniesie stratę' : 'zarobku (bez Twojego nadzoru i dojazdów)'}. Po podpisaniu przyjdzie jego oferta do zaakceptowania w „Podwykonawcy”.</p>}
+    </div>
+  );
+}
+
 export function RenoQuotesScreen() {
   const { game, biz, isReno } = useReno();
   const selected = useGameStore((s) => s.selectedEnquiryId);
   const respond = useGameStore((s) => s.respondToCounter);
-  const sign = useGameStore((s) => s.signContract);
   if (!biz || !isReno) return <NoReno title="Wyceny" />;
   const quotes = [...game.reno.quotes].reverse();
   const STATUS = { sent: ['czeka na decyzję klienta', 'sky'], counter: ['klient proponuje zmianę', 'gold'], accepted: ['zaakceptowana — podpisz umowę', 'gain'], rejected: ['odrzucona', 'loss'], declined: ['zrezygnowano', 'neutral'], signed: ['umowa podpisana', 'gain'], expired: ['wygasła', 'neutral'] } as const;
@@ -541,9 +573,7 @@ export function RenoQuotesScreen() {
                       </div>
                     </div>
                   )}
-                  {q.status === 'accepted' && (
-                    <div className="mt-2 flex flex-wrap items-center gap-3"><Button variant="primary" onClick={() => sign(q.id)} data-testid={`sign-${q.id}`}>Podpisz umowę</Button><span className="text-xs text-gold">Podpisz do {formatDatePL(q.signBy!)}.</span></div>
-                  )}
+                  {q.status === 'accepted' && <SignContract game={game} q={q} />}
                 </li>
               );
             })}
