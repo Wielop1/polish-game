@@ -1,4 +1,6 @@
 import { employmentContracts } from './contracts.ts';
+import { withOperator } from './operator.ts';
+import { corpInvariantErrors, realizedShareGains } from './corpInvariants.ts';
 import { CHANNELS } from './marketConfig.ts';
 import { netWorthBreakdown } from './selectors.ts';
 import type { GameState } from './state.ts';
@@ -57,8 +59,10 @@ export function checkInvariants(s: GameState): string[] {
     if (!Number.isSafeInteger(o.amount) || o.amount <= 0) fail(`zobowiązanie ${o.id} ma nieprawidłową kwotę`);
     if (o.dueDate < o.issueDate) fail(`zobowiązanie ${o.id}: termin przed naliczeniem`);
     if (!s.accounts[o.accountId]) fail(`zobowiązanie ${o.id} wskazuje nieistniejący rachunek ${o.accountId}`);
-    if (o.direction === 'receivable') accruedIncome += o.amount;
-    else accruedExpense += o.amount;
+    if (o.scope !== 'company') {
+      if (o.direction === 'receivable') accruedIncome += o.amount;
+      else accruedExpense += o.amount;
+    }
     const linked = txByObligation.get(o.id) ?? 0;
     if (o.status === 'settled') {
       const tx = o.settlementTxId ? txById.get(o.settlementTxId) : undefined;
@@ -99,9 +103,11 @@ export function checkInvariants(s: GameState): string[] {
   //    = kapitał początkowy + naliczone przychody − naliczone koszty + wartość zapasów i sprzętu (aktywa nabyte za koszty).
 //    Przelewy własne i kaucje jej nie zmieniają.
   const nw = netWorthBreakdown(s);
-  const expectedNetWorth = s.openingCash + accruedIncome - accruedExpense + nw.inventory + nw.equipment + nw.vehicles + nw.prepaid - nw.deferred;
-  if (nw.netWorth !== expectedNetWorth) {
-    fail(`majątek netto ${nw.netWorth} ≠ kapitał + przychody − koszty (${expectedNetWorth})`);
+  // Udziały w spółkach: w tożsamości liczą się po koszcie nabycia (wkład i zakup to zamiana gotówki na aktywo), a nie po wycenie —
+  // oszacowanie wartości (nw.shares) nie jest ani przychodem, ani gotówką. Zrealizowany zysk ze sprzedaży udziałów: patrz `corp.shareEvents`.
+  const expectedNetWorth = s.openingCash + accruedIncome - accruedExpense + nw.inventory + nw.equipment + nw.vehicles + nw.prepaid - nw.deferred + realizedShareGains(s);
+  if (nw.netWorth - nw.shares + nw.sharesBook !== expectedNetWorth) {
+    fail(`majątek netto ${nw.netWorth - nw.shares + nw.sharesBook} (udziały po koszcie nabycia) ≠ kapitał + przychody − koszty (${expectedNetWorth})`);
   }
 
   // 5. Zegar i historia.
@@ -170,7 +176,7 @@ export function checkInvariants(s: GameState): string[] {
 
   // 10. JDG (v0.3): jedna aktywna działalność, rachunek firmowy, dokumenty, zlecenia i rozliczenia.
   const bizAccounts = Object.values(s.accounts).filter((a) => a.type === 'business');
-  const businessById = new Map(s.businesses.map((b) => [b.id, b]));
+  const operatorIds = new Set<string>([...s.businesses.map((b) => b.id), ...s.corp.companies.flatMap((c) => (c.operation ? [c.operation.id] : []))]);
   if (s.businesses.filter((b) => b.status === 'active').length > 1) fail('więcej niż jedna aktywna działalność');
   for (const b of s.businesses) {
     const acc = s.accounts[b.accountId];
@@ -179,18 +185,19 @@ export function checkInvariants(s: GameState): string[] {
   }
   for (const acc of bizAccounts) if (!s.businesses.some((b) => b.accountId === acc.id)) fail(`rachunek firmowy ${acc.id} bez działalności`);
   for (const o of s.obligations) {
-    const isBiz = s.accounts[o.accountId]?.type === 'business';
-    if ((o.scope === 'business') !== isBiz) fail(`zobowiązanie ${o.id}: ewidencja ${o.scope} niezgodna z rachunkiem`);
+    const accType = s.accounts[o.accountId]?.type;
+    const expectedScope = accType === 'business' ? 'business' : accType === 'company' ? 'company' : 'personal';
+    if (o.scope !== expectedScope) fail(`zobowiązanie ${o.id}: ewidencja ${o.scope} niezgodna z rachunkiem`);
   }
   const docIds = new Set<string>();
   for (const d of s.documents) {
     if (docIds.has(d.id)) fail(`zduplikowany dokument ${d.id}`);
     docIds.add(d.id);
-    if (!businessById.has(d.businessId)) fail(`dokument ${d.number}: nieznana działalność`);
+    if (!operatorIds.has(d.businessId)) fail(`dokument ${d.number}: nieznana działalność`);
     if (d.net + d.vat !== d.gross) fail(`dokument ${d.number}: netto + VAT ≠ brutto`);
     if (d.vatTreatment === 'exempt' && d.vat !== 0) fail(`dokument ${d.number}: zwolnienie z VAT, ale VAT ≠ 0`);
     // dokument w całości pokryty wcześniejszą zaliczką (rozliczenie podwykonawcy) nie ma własnego zobowiązania
-    const prepaidOnly = s.ops.subcontracts.some((c) => c.settlementDocId === d.id);
+    const prepaidOnly = [s.ops, ...s.corp.companies.map((c) => c.slices.ops)].some((o) => o.subcontracts.some((c) => c.settlementDocId === d.id));
     if ((d.obligationIds.length === 0 && !prepaidOnly) || d.obligationIds.some((id) => !oblIds.has(id))) fail(`dokument ${d.number}: brak powiązanych zobowiązań`);
   }
   const numbers = s.documents.map((d) => d.number);
@@ -198,7 +205,7 @@ export function checkInvariants(s: GameState): string[] {
   for (const o of s.serviceOrders) {
     if (o.status === 'completed' && (!o.salesDocumentId || !docIds.has(o.salesDocumentId))) fail(`zlecenie ${o.id}: zakończone bez dokumentu sprzedaży`);
     // kontrakt delegowany w całości, bez nadzoru właściciela, nie rezerwuje jego godzin
-    const handsOff = o.kind === 'renovation' && s.reno.jobs.some((j) => j.orderId === o.id && j.crew.supervision === 'hands-off');
+    const handsOff = o.kind === 'renovation' && [s.reno, ...s.corp.companies.map((c) => c.slices.reno)].some((r) => r.jobs.some((j) => j.orderId === o.id && j.crew.supervision === 'hands-off'));
     if (o.status === 'in_progress' && !handsOff && !s.commitments.some((c) => c.id === o.commitmentId)) fail(`zlecenie ${o.id}: brak rezerwacji czasu`);
   }
   // 11. v0.4: odcinki płacowe, zeznania roczne, straty, roczna składka zdrowotna, zawieszenia, historia formy.
@@ -263,141 +270,6 @@ export function checkInvariants(s: GameState): string[] {
 
   // 7. Branża remontowa (v0.5): zapasy, sprzęt, kontrakty, zaliczki, reklamacje i opinie.
   const docById = new Map(s.documents.map((d) => [d.id, d]));
-  const moveIds = new Set<string>();
-  const stockSums: Record<string, { qty: number; value: number }> = {};
-  const usedByJob = new Map<string, { qty: number; value: number }>();
-  for (const m of s.reno.stockMoves) {
-    if (moveIds.has(m.id)) fail(`zduplikowany ruch magazynowy ${m.id}`);
-    moveIds.add(m.id);
-    const acc = (stockSums[m.key] ??= { qty: 0, value: 0 });
-    acc.qty += m.qty;
-    acc.value += m.value;
-    if (m.kind === 'purchase') {
-      const d = m.docId ? docById.get(m.docId) : undefined;
-      if (!d || d.kind !== 'cost' || d.taxAmount !== m.value) fail(`zakup magazynowy ${m.id}: brak dokumentu kosztowego o wartości ${m.value}`);
-      if (m.qty <= 0 || m.value <= 0) fail(`zakup magazynowy ${m.id}: nieprawidłowa ilość lub wartość`);
-    } else {
-      if (m.qty >= 0 || m.value > 0) fail(`zużycie ${m.id}: nieprawidłowy znak`);
-      const k = `${m.jobId}:${m.key}`;
-      const u = usedByJob.get(k) ?? { qty: 0, value: 0 };
-      usedByJob.set(k, { qty: u.qty - m.qty, value: u.value - m.value });
-    }
-  }
-  for (const [key, st] of Object.entries(s.reno.stock)) {
-    if (st.qty < 0 || st.value < 0) fail(`zapas ${key}: ujemna ilość lub wartość`);
-    const sum = stockSums[key] ?? { qty: 0, value: 0 };
-    if (sum.qty !== st.qty || sum.value !== st.value) fail(`zapas ${key}: ${st.qty}/${st.value} ≠ suma ruchów ${sum.qty}/${sum.value} (podwójne zużycie lub zakup?)`);
-  }
-  for (const key of Object.keys(stockSums)) if (!s.reno.stock[key]) fail(`ruchy magazynowe bez zapasu ${key}`);
-  for (const e of s.reno.equipment) {
-    if (e.conditionBps < 0 || e.conditionBps > 10_000) fail(`sprzęt ${e.id}: stan poza zakresem`);
-    const d = docById.get(e.docId);
-    if (!d || d.kind !== 'cost' || d.taxAmount !== e.cost) fail(`sprzęt ${e.id}: brak dokumentu zakupu o wartości ${e.cost}`);
-  }
-  const jobIds = new Set<string>();
-  const orderById = new Map(s.serviceOrders.map((o) => [o.id, o]));
-  for (const j of s.reno.jobs) {
-    if (jobIds.has(j.id)) fail(`zduplikowany kontrakt ${j.id}`);
-    jobIds.add(j.id);
-    const order = orderById.get(j.orderId);
-    if (!order || order.kind !== 'renovation') fail(`kontrakt ${j.id}: brak zlecenia typu renovation`);
-    if (j.progressCenti > j.normCenti + j.extraCenti) fail(`kontrakt ${j.id}: postęp ponad zakres`);
-    const advanceDocs = s.documents.filter((d) => d.orderId === j.orderId && d.part === 'advance');
-    const finalDocs = s.documents.filter((d) => d.orderId === j.orderId && d.kind === 'sales' && d.part !== 'advance');
-    if (advanceDocs.length > (j.advanceNet > 0 ? 1 : 0)) fail(`kontrakt ${j.id}: wielokrotnie zaksięgowana zaliczka`);
-    if (j.advanceNet > 0 && advanceDocs[0]?.net !== j.advanceNet) fail(`kontrakt ${j.id}: zaliczka ${advanceDocs[0]?.net} ≠ ${j.advanceNet}`);
-    if (finalDocs.length > (j.stage === 'done' ? 1 : 0)) fail(`kontrakt ${j.id}: ${finalDocs.length} dokumentów rozliczenia końcowego`);
-    if (j.stage === 'done') {
-      const f = finalDocs[0];
-      if (!f || f.id !== j.finalDocId) fail(`kontrakt ${j.id}: brak dokumentu rozliczenia`);
-      else if (advanceDocs.reduce((a, d) => a + d.net, 0) + f.net !== j.priceNet - j.penaltyNet) fail(`kontrakt ${j.id}: zaliczka + rozliczenie ≠ cena − kara`);
-      if (order && order.status !== 'completed') fail(`kontrakt ${j.id}: zlecenie nie jest zakończone`);
-    }
-    for (const [key, c] of Object.entries(j.consumed)) {
-      const u = usedByJob.get(`${j.id}:${key}`) ?? { qty: 0, value: 0 };
-      if (u.qty !== c.qty || u.value !== c.value) fail(`kontrakt ${j.id}: zużycie ${key} ${c.qty}/${c.value} ≠ ruchy ${u.qty}/${u.value}`);
-    }
-    const consumedValue = Object.values(j.consumed).reduce((a, c) => a + c.value, 0);
-    if (consumedValue !== j.actual.materials) fail(`kontrakt ${j.id}: koszt materiałów ${j.actual.materials} ≠ zużycie ${consumedValue}`);
-  }
-  for (const o of s.serviceOrders) if (o.kind === 'renovation' && !jobIds.has(s.reno.jobs.find((j) => j.orderId === o.id)?.id ?? '')) fail(`zlecenie ${o.id}: brak kontraktu remontowego`);
-  const complained = new Set<string>();
-  for (const c of s.reno.complaints) {
-    if (complained.has(c.jobId)) fail(`kontrakt ${c.jobId}: zduplikowana reklamacja`);
-    complained.add(c.jobId);
-    if (!jobIds.has(c.jobId)) fail(`reklamacja ${c.id}: nieznany kontrakt`);
-  }
-  const reviewed = new Set<string>();
-  for (const r of s.reno.reviews) {
-    if (reviewed.has(r.jobId)) fail(`kontrakt ${r.jobId}: zduplikowana opinia`);
-    reviewed.add(r.jobId);
-  }
-  if (s.accounting.office && !s.accounting.office.planId) fail('księgowość: brak planu');
-
-  // 8. Pracownicy, podwykonawcy, ekipy, przydziały i pojazdy (v0.6).
-  const personIds = new Set<string>();
-  for (const pr of s.ops.people) {
-    if (personIds.has(pr.id)) fail(`zduplikowana osoba ${pr.id}`);
-    personIds.add(pr.id);
-  }
-  const empIds = new Set<string>();
-  for (const e of s.ops.employments) {
-    if (empIds.has(e.id)) fail(`zduplikowana umowa ${e.id}`);
-    empIds.add(e.id);
-    if (!personIds.has(e.personId)) fail(`umowa ${e.id}: nieznana osoba`);
-    if (e.endDate !== null && e.endDate < e.startDate) fail(`umowa ${e.id}: koniec przed początkiem`);
-    for (let i = 1; i < e.wageHistory.length; i++) if (e.wageHistory[i]!.from <= e.wageHistory[i - 1]!.from) fail(`umowa ${e.id}: historia wynagrodzeń nie rośnie`);
-  }
-  for (const pr of s.ops.people) {
-    const overlapping = s.ops.employments.filter((e) => e.personId === pr.id).sort((a, b) => a.startDate.localeCompare(b.startDate));
-    for (let i = 1; i < overlapping.length; i++) if ((overlapping[i - 1]!.endDate ?? '9999-12-31') >= overlapping[i]!.startDate) fail(`osoba ${pr.id}: nakładające się umowy`);
-  }
-  const slipKeys = new Set<string>();
-  for (const ps of s.ops.payslips) {
-    if (slipKeys.has(ps.id)) fail(`zduplikowana lista płac ${ps.id}`);
-    slipKeys.add(ps.id);
-    if (ps.net + ps.socialTotal + ps.health + ps.pitAdvance !== ps.gross) fail(`lista płac ${ps.id}: netto + potrącenia ≠ brutto`);
-    if (ps.gross + ps.employer.total !== ps.totalCost) fail(`lista płac ${ps.id}: brutto + składki pracodawcy ≠ koszt całkowity`);
-    const d = docById.get(ps.docId);
-    if (!d || d.part !== 'payroll' || d.net !== ps.totalCost || d.taxAmount !== ps.totalCost) fail(`lista płac ${ps.id}: brak dokumentu kosztowego o kwocie ${ps.totalCost}`);
-    const sum = ps.obligationIds.reduce((a, id) => a + (s.obligations.find((o) => o.id === id)?.amount ?? 0), 0);
-    if (sum !== ps.totalCost) fail(`lista płac ${ps.id}: zobowiązania ${sum} ≠ koszt całkowity ${ps.totalCost}`);
-  }
-  const reservations = new Map<string, { jobId: string; from: string; to: string }[]>();
-  const jobById = new Map(s.reno.jobs.map((j) => [j.id, j]));
-  for (const a of s.ops.assignments) {
-    if (!jobById.has(a.jobId)) fail(`przydział ${a.id}: nieznany kontrakt`);
-    const k = `${a.kind}:${a.resourceId}`;
-    for (const o of reservations.get(k) ?? []) if (o.jobId !== a.jobId && o.from <= a.to && a.from <= o.to) fail(`zasób ${k} przydzielony do dwóch kontraktów w tym samym czasie (${o.jobId}, ${a.jobId})`);
-    reservations.set(k, [...(reservations.get(k) ?? []), { jobId: a.jobId, from: a.from, to: a.to }]);
-  }
-  const subIds = new Set(s.ops.subcontractors.map((x) => x.id));
-  const activeScope = new Map<string, number>();
-  for (const c of s.ops.subcontracts) {
-    if (!subIds.has(c.subId)) fail(`umowa z podwykonawcą ${c.id}: nieznany podwykonawca`);
-    if (!jobById.has(c.jobId)) fail(`umowa z podwykonawcą ${c.id}: nieznany kontrakt`);
-    if (c.prepaid > c.advanceNet) fail(`umowa z podwykonawcą ${c.id}: przedpłata ponad zaliczkę`);
-    if (c.status === 'settled' && c.prepaid !== 0) fail(`umowa z podwykonawcą ${c.id}: rozliczona z niezerową przedpłatą`);
-    if (c.status === 'settled' && c.settledNet > 0 && !docById.get(c.settlementDocId ?? '')) fail(`umowa z podwykonawcą ${c.id}: brak dokumentu rozliczenia`);
-    if (c.performedCenti > c.requiredCenti) fail(`umowa z podwykonawcą ${c.id}: wykonano ponad zakres`);
-    if (['accepted', 'in_progress', 'delivered'].includes(c.status)) activeScope.set(c.jobId, (activeScope.get(c.jobId) ?? 0) + c.scopeBps);
-  }
-  for (const [job, scope] of activeScope) if (scope > 10_000) fail(`kontrakt ${job}: podwykonawcom zlecono ${scope / 100}% zakresu`);
-  for (const j of s.reno.jobs) {
-    if (j.crew.teamId && !s.ops.teams.some((t) => t.id === j.crew.teamId)) fail(`kontrakt ${j.id}: nieznana ekipa`);
-    if (j.vehicleId && !s.ops.vehicles.some((v) => v.id === j.vehicleId)) fail(`kontrakt ${j.id}: nieznany pojazd`);
-    if (j.advanceMode === 'deferred' && j.advanceNet > 0) {
-      const adv = docById.get(j.advanceDocId ?? '');
-      if (!adv || adv.part !== 'advance' || adv.taxAmount !== 0 || adv.net !== j.advanceNet) fail(`kontrakt ${j.id}: zaliczka nie jest zobowiązaniem do wykonania usługi (przychód podatkowy ≠ 0)`);
-      const fin = docById.get(j.finalDocId ?? '');
-      if (j.stage === 'done' && (!fin || fin.taxAmount !== fin.net + j.advanceNet)) fail(`kontrakt ${j.id}: przychód podatkowy po wykonaniu ≠ cena − kara`);
-    }
-  }
-  for (const v of s.ops.vehicles) {
-    const d = docById.get(v.docId);
-    if (!d || d.part !== 'capital' || d.taxAmount !== 0 || d.net !== v.cost) fail(`pojazd ${v.id}: brak dokumentu zakupu bez kosztu podatkowego`);
-    if (v.conditionBps < 0 || v.conditionBps > 10_000) fail(`pojazd ${v.id}: stan poza zakresem`);
-  }
   // 14. Rynek (v0.7): konkurenci, budżety marketingowe, strategia i odwołania zapytań do konkurentów.
   const m = s.market;
   const compIds = new Set<string>();
@@ -411,16 +283,160 @@ export function checkInvariants(s: GameState): string[] {
   }
   if (m.initializedOn === null && (m.competitors.length > 0 || m.current !== null)) fail('rynek nie jest uruchomiony, a zawiera konkurentów lub bieżący miesiąc');
   if (m.initializedOn !== null && m.competitors.filter((c) => c.status === 'active').length === 0 && m.competitors.length === 0) fail('rynek uruchomiony bez konkurentów');
-  for (const [ch, v] of Object.entries(m.marketing.budgets)) if (!(ch in CHANNELS) || v < 0) fail(`marketing: nieprawidłowy budżet kanału ${ch}`);
-  for (const [ch, v] of Object.entries(m.marketing.reach)) if (!(ch in CHANNELS) || v < 0) fail(`marketing: nieprawidłowa widoczność kanału ${ch}`);
-  if (m.strategy.previous !== null && m.strategy.previous === m.strategy.positioning) fail('strategia: poprzednie pozycjonowanie równe obecnemu');
+  const orderById = new Map(s.serviceOrders.map((o) => [o.id, o]));
+  const allJobIds = new Set<string>();
+  const checkSlice = (label: string): void => {
+    const fail = (msg: string) => errors.push(label ? `${label}: ${msg}` : msg);
+    const m = s.market;
+    const moveIds = new Set<string>();
+    const stockSums: Record<string, { qty: number; value: number }> = {};
+    const usedByJob = new Map<string, { qty: number; value: number }>();
+    for (const m of s.reno.stockMoves) {
+      if (moveIds.has(m.id)) fail(`zduplikowany ruch magazynowy ${m.id}`);
+      moveIds.add(m.id);
+      const acc = (stockSums[m.key] ??= { qty: 0, value: 0 });
+      acc.qty += m.qty;
+      acc.value += m.value;
+      if (m.kind === 'purchase') {
+        const d = m.docId ? docById.get(m.docId) : undefined;
+        if (!d || d.kind !== 'cost' || d.taxAmount !== m.value) fail(`zakup magazynowy ${m.id}: brak dokumentu kosztowego o wartości ${m.value}`);
+        if (m.qty <= 0 || m.value <= 0) fail(`zakup magazynowy ${m.id}: nieprawidłowa ilość lub wartość`);
+      } else {
+        if (m.qty >= 0 || m.value > 0) fail(`zużycie ${m.id}: nieprawidłowy znak`);
+        const k = `${m.jobId}:${m.key}`;
+        const u = usedByJob.get(k) ?? { qty: 0, value: 0 };
+        usedByJob.set(k, { qty: u.qty - m.qty, value: u.value - m.value });
+      }
+    }
+    for (const [key, st] of Object.entries(s.reno.stock)) {
+      if (st.qty < 0 || st.value < 0) fail(`zapas ${key}: ujemna ilość lub wartość`);
+      const sum = stockSums[key] ?? { qty: 0, value: 0 };
+      if (sum.qty !== st.qty || sum.value !== st.value) fail(`zapas ${key}: ${st.qty}/${st.value} ≠ suma ruchów ${sum.qty}/${sum.value} (podwójne zużycie lub zakup?)`);
+    }
+    for (const key of Object.keys(stockSums)) if (!s.reno.stock[key]) fail(`ruchy magazynowe bez zapasu ${key}`);
+    for (const e of s.reno.equipment) {
+      if (e.conditionBps < 0 || e.conditionBps > 10_000) fail(`sprzęt ${e.id}: stan poza zakresem`);
+      const d = docById.get(e.docId);
+      if (!d || d.kind !== 'cost' || d.taxAmount !== e.cost) fail(`sprzęt ${e.id}: brak dokumentu zakupu o wartości ${e.cost}`);
+    }
+    const jobIds = new Set<string>();
+    for (const j of s.reno.jobs) {
+      if (jobIds.has(j.id)) fail(`zduplikowany kontrakt ${j.id}`);
+      jobIds.add(j.id);
+      const order = orderById.get(j.orderId);
+      if (!order || order.kind !== 'renovation') fail(`kontrakt ${j.id}: brak zlecenia typu renovation`);
+      if (j.progressCenti > j.normCenti + j.extraCenti) fail(`kontrakt ${j.id}: postęp ponad zakres`);
+      const advanceDocs = s.documents.filter((d) => d.orderId === j.orderId && d.part === 'advance');
+      const finalDocs = s.documents.filter((d) => d.orderId === j.orderId && d.kind === 'sales' && d.part !== 'advance');
+      if (advanceDocs.length > (j.advanceNet > 0 ? 1 : 0)) fail(`kontrakt ${j.id}: wielokrotnie zaksięgowana zaliczka`);
+      if (j.advanceNet > 0 && advanceDocs[0]?.net !== j.advanceNet) fail(`kontrakt ${j.id}: zaliczka ${advanceDocs[0]?.net} ≠ ${j.advanceNet}`);
+      if (finalDocs.length > (j.stage === 'done' ? 1 : 0)) fail(`kontrakt ${j.id}: ${finalDocs.length} dokumentów rozliczenia końcowego`);
+      if (j.stage === 'done') {
+        const f = finalDocs[0];
+        if (!f || f.id !== j.finalDocId) fail(`kontrakt ${j.id}: brak dokumentu rozliczenia`);
+        else if (advanceDocs.reduce((a, d) => a + d.net, 0) + f.net !== j.priceNet - j.penaltyNet) fail(`kontrakt ${j.id}: zaliczka + rozliczenie ≠ cena − kara`);
+        if (order && order.status !== 'completed') fail(`kontrakt ${j.id}: zlecenie nie jest zakończone`);
+      }
+      for (const [key, c] of Object.entries(j.consumed)) {
+        const u = usedByJob.get(`${j.id}:${key}`) ?? { qty: 0, value: 0 };
+        if (u.qty !== c.qty || u.value !== c.value) fail(`kontrakt ${j.id}: zużycie ${key} ${c.qty}/${c.value} ≠ ruchy ${u.qty}/${u.value}`);
+      }
+      const consumedValue = Object.values(j.consumed).reduce((a, c) => a + c.value, 0);
+      if (consumedValue !== j.actual.materials) fail(`kontrakt ${j.id}: koszt materiałów ${j.actual.materials} ≠ zużycie ${consumedValue}`);
+    }
+    const complained = new Set<string>();
+    for (const c of s.reno.complaints) {
+      if (complained.has(c.jobId)) fail(`kontrakt ${c.jobId}: zduplikowana reklamacja`);
+      complained.add(c.jobId);
+      if (!jobIds.has(c.jobId)) fail(`reklamacja ${c.id}: nieznany kontrakt`);
+    }
+    const reviewed = new Set<string>();
+    for (const r of s.reno.reviews) {
+      if (reviewed.has(r.jobId)) fail(`kontrakt ${r.jobId}: zduplikowana opinia`);
+      reviewed.add(r.jobId);
+    }
+
+    // 8. Pracownicy, podwykonawcy, ekipy, przydziały i pojazdy (v0.6).
+    const personIds = new Set<string>();
+    for (const pr of s.ops.people) {
+      if (personIds.has(pr.id)) fail(`zduplikowana osoba ${pr.id}`);
+      personIds.add(pr.id);
+    }
+    const empIds = new Set<string>();
+    for (const e of s.ops.employments) {
+      if (empIds.has(e.id)) fail(`zduplikowana umowa ${e.id}`);
+      empIds.add(e.id);
+      if (!personIds.has(e.personId)) fail(`umowa ${e.id}: nieznana osoba`);
+      if (e.endDate !== null && e.endDate < e.startDate) fail(`umowa ${e.id}: koniec przed początkiem`);
+      for (let i = 1; i < e.wageHistory.length; i++) if (e.wageHistory[i]!.from <= e.wageHistory[i - 1]!.from) fail(`umowa ${e.id}: historia wynagrodzeń nie rośnie`);
+    }
+    for (const pr of s.ops.people) {
+      const overlapping = s.ops.employments.filter((e) => e.personId === pr.id).sort((a, b) => a.startDate.localeCompare(b.startDate));
+      for (let i = 1; i < overlapping.length; i++) if ((overlapping[i - 1]!.endDate ?? '9999-12-31') >= overlapping[i]!.startDate) fail(`osoba ${pr.id}: nakładające się umowy`);
+    }
+    const slipKeys = new Set<string>();
+    for (const ps of s.ops.payslips) {
+      if (slipKeys.has(ps.id)) fail(`zduplikowana lista płac ${ps.id}`);
+      slipKeys.add(ps.id);
+      if (ps.net + ps.socialTotal + ps.health + ps.pitAdvance !== ps.gross) fail(`lista płac ${ps.id}: netto + potrącenia ≠ brutto`);
+      if (ps.gross + ps.employer.total !== ps.totalCost) fail(`lista płac ${ps.id}: brutto + składki pracodawcy ≠ koszt całkowity`);
+      const d = docById.get(ps.docId);
+      if (!d || d.part !== 'payroll' || d.net !== ps.totalCost || d.taxAmount !== ps.totalCost) fail(`lista płac ${ps.id}: brak dokumentu kosztowego o kwocie ${ps.totalCost}`);
+      const sum = ps.obligationIds.reduce((a, id) => a + (s.obligations.find((o) => o.id === id)?.amount ?? 0), 0);
+      if (sum !== ps.totalCost) fail(`lista płac ${ps.id}: zobowiązania ${sum} ≠ koszt całkowity ${ps.totalCost}`);
+    }
+    const reservations = new Map<string, { jobId: string; from: string; to: string }[]>();
+    const jobById = new Map(s.reno.jobs.map((j) => [j.id, j]));
+    for (const a of s.ops.assignments) {
+      if (!jobById.has(a.jobId)) fail(`przydział ${a.id}: nieznany kontrakt`);
+      const k = `${a.kind}:${a.resourceId}`;
+      for (const o of reservations.get(k) ?? []) if (o.jobId !== a.jobId && o.from <= a.to && a.from <= o.to) fail(`zasób ${k} przydzielony do dwóch kontraktów w tym samym czasie (${o.jobId}, ${a.jobId})`);
+      reservations.set(k, [...(reservations.get(k) ?? []), { jobId: a.jobId, from: a.from, to: a.to }]);
+    }
+    const subIds = new Set(s.ops.subcontractors.map((x) => x.id));
+    const activeScope = new Map<string, number>();
+    for (const c of s.ops.subcontracts) {
+      if (!subIds.has(c.subId)) fail(`umowa z podwykonawcą ${c.id}: nieznany podwykonawca`);
+      if (!jobById.has(c.jobId)) fail(`umowa z podwykonawcą ${c.id}: nieznany kontrakt`);
+      if (c.prepaid > c.advanceNet) fail(`umowa z podwykonawcą ${c.id}: przedpłata ponad zaliczkę`);
+      if (c.status === 'settled' && c.prepaid !== 0) fail(`umowa z podwykonawcą ${c.id}: rozliczona z niezerową przedpłatą`);
+      if (c.status === 'settled' && c.settledNet > 0 && !docById.get(c.settlementDocId ?? '')) fail(`umowa z podwykonawcą ${c.id}: brak dokumentu rozliczenia`);
+      if (c.performedCenti > c.requiredCenti) fail(`umowa z podwykonawcą ${c.id}: wykonano ponad zakres`);
+      if (['accepted', 'in_progress', 'delivered'].includes(c.status)) activeScope.set(c.jobId, (activeScope.get(c.jobId) ?? 0) + c.scopeBps);
+    }
+    for (const [job, scope] of activeScope) if (scope > 10_000) fail(`kontrakt ${job}: podwykonawcom zlecono ${scope / 100}% zakresu`);
+    for (const j of s.reno.jobs) {
+      if (j.crew.teamId && !s.ops.teams.some((t) => t.id === j.crew.teamId)) fail(`kontrakt ${j.id}: nieznana ekipa`);
+      if (j.vehicleId && !s.ops.vehicles.some((v) => v.id === j.vehicleId)) fail(`kontrakt ${j.id}: nieznany pojazd`);
+      if (j.advanceMode === 'deferred' && j.advanceNet > 0) {
+        const adv = docById.get(j.advanceDocId ?? '');
+        if (!adv || adv.part !== 'advance' || adv.taxAmount !== 0 || adv.net !== j.advanceNet) fail(`kontrakt ${j.id}: zaliczka nie jest zobowiązaniem do wykonania usługi (przychód podatkowy ≠ 0)`);
+        const fin = docById.get(j.finalDocId ?? '');
+        if (j.stage === 'done' && (!fin || fin.taxAmount !== fin.net + j.advanceNet)) fail(`kontrakt ${j.id}: przychód podatkowy po wykonaniu ≠ cena − kara`);
+      }
+    }
+    for (const v of s.ops.vehicles) {
+      const d = docById.get(v.docId);
+      if (!d || d.part !== 'capital' || d.taxAmount !== 0 || d.net !== v.cost) fail(`pojazd ${v.id}: brak dokumentu zakupu bez kosztu podatkowego`);
+      if (v.conditionBps < 0 || v.conditionBps > 10_000) fail(`pojazd ${v.id}: stan poza zakresem`);
+    }
+    for (const [ch, v] of Object.entries(m.marketing.budgets)) if (!(ch in CHANNELS) || v < 0) fail(`marketing: nieprawidłowy budżet kanału ${ch}`);
+    for (const [ch, v] of Object.entries(m.marketing.reach)) if (!(ch in CHANNELS) || v < 0) fail(`marketing: nieprawidłowa widoczność kanału ${ch}`);
+    if (m.strategy.previous !== null && m.strategy.previous === m.strategy.positioning) fail('strategia: poprzednie pozycjonowanie równe obecnemu');
+    for (const e of s.reno.enquiries) {
+      if (e.rivals > 0 && (!e.rivalId || !compIds.has(e.rivalId))) fail(`zapytanie ${e.id}: nieznany konkurent ${e.rivalId}`);
+      if (e.rivalAwarded && !e.rivalId) fail(`zapytanie ${e.id}: zlecenie przyznane konkurentowi bez konkurenta`);
+      if (e.rivalAwarded && (e.status === 'open' || e.status === 'quoted')) fail(`zapytanie ${e.id}: przyznane konkurentowi, a nadal otwarte`);
+    }
+    for (const id of jobIds) allJobIds.add(id);
+  };
+  checkSlice('');
+  for (const co of s.corp.companies) if (co.operation) withOperator(s, co.id, () => checkSlice(`spółka ${co.id}`));
+  for (const o of s.serviceOrders) if (o.kind === 'renovation' && !allJobIds.has(o.id) && ![s.reno, ...s.corp.companies.map((c) => c.slices.reno)].some((r) => r.jobs.some((j) => j.orderId === o.id))) fail(`zlecenie ${o.id}: brak kontraktu remontowego`);
+  if (s.accounting.office && !s.accounting.office.planId) fail('księgowość: brak planu');
   const last = m.months.at(-1);
   for (let i = 1; i < m.months.length; i++) if (m.months[i]!.month <= m.months[i - 1]!.month) fail('rynek: miesiące nie są chronologiczne');
   if (m.current && last && m.current.month <= last.month) fail('rynek: bieżący miesiąc nie jest po ostatnim zamkniętym');
-  for (const e of s.reno.enquiries) {
-    if (e.rivals > 0 && (!e.rivalId || !compIds.has(e.rivalId))) fail(`zapytanie ${e.id}: nieznany konkurent ${e.rivalId}`);
-    if (e.rivalAwarded && !e.rivalId) fail(`zapytanie ${e.id}: zlecenie przyznane konkurentowi bez konkurenta`);
-    if (e.rivalAwarded && (e.status === 'open' || e.status === 'quoted')) fail(`zapytanie ${e.id}: przyznane konkurentowi, a nadal otwarte`);
-  }
+  errors.push(...corpInvariantErrors(s));
   return errors;
 }

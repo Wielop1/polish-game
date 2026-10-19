@@ -45,10 +45,22 @@ export const CATEGORIES: readonly CategoryInfo[] = [
   { id: 'zaliczka_podwykonawcy', label: 'Zaliczka dla podwykonawcy (przedpłata)', kind: 'capital', color: '#a8a29e' },
   { id: 'zwrot_zaliczki', label: 'Zwrot zaliczki', kind: 'capital', color: '#a8a29e' },
   { id: 'zakup_pojazdu', label: 'Zakup pojazdu (aktywo)', kind: 'capital', color: '#a8a29e' },
+  { id: 'wklad_kapitalowy', label: 'Wkład na kapitał spółki (udziały)', kind: 'capital', color: '#a8a29e' },
+  { id: 'zakup_udzialow', label: 'Zakup udziałów (aktywo)', kind: 'capital', color: '#a8a29e' },
+  { id: 'sprzedaz_udzialow', label: 'Sprzedaż udziałów', kind: 'capital', color: '#a8a29e' },
+  { id: 'dywidenda', label: 'Dywidenda (netto)', kind: 'income', color: '#34d399' },
+  { id: 'dywidenda_wyplata', label: 'Wypłata dywidendy (netto)', kind: 'capital', color: '#94a3b8' },
+  { id: 'dywidenda_podatek', label: 'Podatek od dywidend (zryczałtowany)', kind: 'capital', color: '#fbbf24' },
+  { id: 'cit_zaliczka', label: 'Zaliczka CIT', kind: 'expense', color: '#fbbf24' },
+  { id: 'cit_roczny', label: 'Rozliczenie roczne CIT', kind: 'expense', color: '#f59e0b' },
+  { id: 'oplata_sadowa', label: 'Opłata sądowa (KRS)', kind: 'expense', color: '#94a3b8' },
+  { id: 'pcc', label: 'Podatek od czynności cywilnoprawnych', kind: 'expense', color: '#94a3b8' },
+  { id: 'pit_udzialy', label: 'PIT od zbycia udziałów', kind: 'expense', color: '#f59e0b' },
+  { id: 'wplaty_podwyzszenie', label: 'Wpłaty na podwyższenie kapitału (do wpisu)', kind: 'capital', color: '#a8a29e' },
 ];
 
 /** Kategorie, które nie są przychodem ani kosztem (ruchy kapitałowe/własne) — pomijane w przepływach miesięcznych. */
-export const NON_FLOW_CATEGORIES: ReadonlySet<string> = new Set(['kapital_poczatkowy', 'przelew_wlasny', 'kaucja', 'zwrot_kaucji', 'zaliczka_klienta', 'zaliczka_podwykonawcy', 'zwrot_zaliczki', 'zakup_pojazdu']);
+export const NON_FLOW_CATEGORIES: ReadonlySet<string> = new Set(['kapital_poczatkowy', 'przelew_wlasny', 'kaucja', 'zwrot_kaucji', 'zaliczka_klienta', 'zaliczka_podwykonawcy', 'zwrot_zaliczki', 'zakup_pojazdu', 'wklad_kapitalowy', 'zakup_udzialow', 'sprzedaz_udzialow', 'wplaty_podwyzszenie']);
 
 const BY_ID = new Map(CATEGORIES.map((c) => [c.id, c]));
 

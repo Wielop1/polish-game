@@ -1,4 +1,5 @@
 import { activeBusiness } from './business.ts';
+import { currentOperator } from './operator.ts';
 import type { RegisterInput } from './business.ts';
 import { commands } from './commands.ts';
 import type { CommandResult } from './commands.ts';
@@ -59,7 +60,7 @@ export function craftEnquiry(s: GameState, o: Partial<RenoEnquiry> = {}): RenoEn
   const clientId = `party:client:${id}`;
   s.parties[clientId] = { id: clientId, name: 'Klient testowy (fikcyjny)', role: 'service' };
   const enq: RenoEnquiry = {
-    id, businessId: activeBusiness(s)!.id, clientId, clientName: 'Klient testowy (fikcyjny)', location: 'Jaroty', serviceId: 'malowanie', units: 60, complexity: 'standard', qualityReq: 2,
+    id, businessId: (currentOperator(s) ?? activeBusiness(s)!).id, clientId, clientName: 'Klient testowy (fikcyjny)', location: 'Jaroty', serviceId: 'malowanie', units: 60, complexity: 'standard', qualityReq: 2,
     desiredStart: addDays(s.clock.today, 5), maxDays: 40, budgetGross: zl(6_000), walkAwayGross: zl(6_800), haggler: false, flexDays: 3, receivedOn: s.clock.today, respondBy: addDays(s.clock.today, 7), status: 'open', segment: 'standard', source: null, rivals: 0, rivalId: null, rivalUtility: 0, rivalAwarded: false, ...o,
   };
   s.reno.enquiries.push(enq);
@@ -103,7 +104,7 @@ export function buyAll(s0: GameState, jobId: string): GameState {
 /** Wstawia kandydata (osobę + zgłoszenie) bez losowania — do testów negocjacji wynagrodzenia. */
 export function craftCandidate(s: GameState, o: { expected?: number; level?: number; availableFrom?: string; skillId?: string; birth?: string } = {}): { cand: Candidate; person: WorkerPerson } {
   const lid = s.ops.listings.at(-1)?.id ?? `listing:${(s.counters['hr:listing'] ?? 0) + 1}`;
-  if (!s.ops.listings.some((l) => l.id === lid)) s.ops.listings.push({ id: lid, businessId: activeBusiness(s)!.id, role: 'malarz', skillId: 'malowanie', minLevel: 1, tier: 'basic', postedOn: s.clock.today, endsOn: addDays(s.clock.today, 21), status: 'active', costDocId: null, commitmentId: null });
+  if (!s.ops.listings.some((l) => l.id === lid)) s.ops.listings.push({ id: lid, businessId: (currentOperator(s) ?? activeBusiness(s)!).id, role: 'malarz', skillId: 'malowanie', minLevel: 1, tier: 'basic', postedOn: s.clock.today, endsOn: addDays(s.clock.today, 21), status: 'active', costDocId: null, commitmentId: null });
   const pn = (s.counters['hr:person'] ?? 0) + 1;
   s.counters['hr:person'] = pn;
   const person: WorkerPerson = {

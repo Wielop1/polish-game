@@ -34,9 +34,9 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
   if (!result.ok) throw new Error(`fixture v1 nie wczytał się: ${result.error}`);
   const migrated = result.state;
 
-  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 7', () => {
+  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 8', () => {
     expect(JSON.parse(rawV1).version).toBe(1);
-    expect(SAVE_VERSION).toBe(7);
+    expect(SAVE_VERSION).toBe(8);
   });
 
   it('historia finansowa zostaje nietknięta: salda, majątek netto, rejestr, zobowiązania, zdarzenia', () => {

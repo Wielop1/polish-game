@@ -7,6 +7,7 @@ import type { Grosze } from './money.ts';
 import { NON_FLOW_CATEGORIES } from './categories.ts';
 import { projectedAmount } from './schedule.ts';
 import { weeklyHours } from './time.ts';
+import { playerSharesBook, playerSharesValue } from './shares.ts';
 import type { Account, GameState, Obligation } from './state.ts';
 
 export function playerAccount(s: GameState): Account {
@@ -29,7 +30,7 @@ export function savingsBalance(s: GameState): Grosze {
 
 /** Suma sald rachunków PRYWATNYCH (bieżący + oszczędnościowy; bez rachunku firmowego). */
 export function totalBalance(s: GameState): Grosze {
-  return Object.values(s.accounts).filter((a) => a.type !== 'business').reduce((a, acc) => a + acc.balance, 0);
+  return Object.values(s.accounts).filter((a) => a.type === 'checking' || a.type === 'savings').reduce((a, acc) => a + acc.balance, 0);
 }
 
 /** Saldo rachunku firmowego JDG (0, gdy brak). */
@@ -89,7 +90,16 @@ export interface NetWorthBreakdown {
   receivables: Grosze;
   /** Otwarte zobowiązania gracza (np. naliczony, nieopłacony czynsz). */
   payables: Grosze;
+  /** Szacunkowa wartość udziałów w spółkach z o.o. (udział w ostatniej wycenie; przed rejestracją — koszt nabycia). Nie dodajemy aktywów spółki ani jej gotówki. */
+  shares: Grosze;
+  /** Koszt nabycia udziałów (aktywo wg kosztu — podstawa tożsamości księgowej; w majątku netto wartość ujęta jest w polu `shares`). */
+  sharesBook: Grosze;
   netWorth: Grosze;
+}
+
+/** Czy zobowiązanie należy do osoby gracza (jej rachunek osobisty lub rachunek JDG), a nie do spółki z o.o. */
+export function isPlayerObligation(s: GameState, o: Obligation): boolean {
+  return s.accounts[o.accountId]?.ownerId === s.person.id;
 }
 
 export function openObligations(s: GameState, direction?: Obligation['direction']): Obligation[] {
@@ -101,7 +111,7 @@ export function netWorthBreakdown(s: GameState): NetWorthBreakdown {
   let receivables = 0;
   let payables = 0;
   for (const o of s.obligations) {
-    if (o.status !== 'open') continue;
+    if (o.status !== 'open' || o.scope === 'company') continue;
     if (o.direction === 'receivable') receivables += o.amount;
     else payables += o.amount;
   }
@@ -114,7 +124,9 @@ export function netWorthBreakdown(s: GameState): NetWorthBreakdown {
   const veh = vehiclesValue(s);
   const pre = prepaidValue(s);
   const def = deferredAdvances(s);
-  return { cash: c, savings: sv, business: biz, deposits: dep, inventory: inv, equipment: eq, vehicles: veh, prepaid: pre, deferred: def, receivables, payables, netWorth: c + sv + biz + dep + inv + eq + veh + pre + receivables - payables - def };
+  const shares = s.corp.holdings.length > 0 ? playerSharesValue(s) : 0;
+  const sharesBook = s.corp.holdings.length > 0 ? playerSharesBook(s) : 0;
+  return { cash: c, savings: sv, business: biz, deposits: dep, inventory: inv, equipment: eq, vehicles: veh, prepaid: pre, deferred: def, receivables, payables, shares, sharesBook, netWorth: c + sv + biz + dep + inv + eq + veh + pre + receivables - payables - def + shares };
 }
 
 export function netWorth(s: GameState): Grosze {
@@ -166,7 +178,7 @@ export function monthlySummaries(s: GameState): MonthSummary[] {
     });
   }
   for (const o of s.obligations) {
-    if (o.scope === 'business') continue; // JDG ma odrębną ewidencję (businessSummaries)
+    if (o.scope !== 'personal') continue; // JDG ma odrębną ewidencję (businessSummaries), spółka — własną
     const m = map.get(monthKey(o.issueDate));
     if (!m) continue;
     if (o.direction === 'receivable') m.income += o.amount;
@@ -176,7 +188,7 @@ export function monthlySummaries(s: GameState): MonthSummary[] {
     }
   }
   for (const tx of s.ledger) {
-    if (NON_FLOW_CATEGORIES.has(tx.category) || s.accounts[tx.accountId]?.type === 'business') continue;
+    if (NON_FLOW_CATEGORIES.has(tx.category) || s.accounts[tx.accountId]?.type === 'business' || s.accounts[tx.accountId]?.type === 'company') continue;
     const m = map.get(monthKey(tx.date));
     if (!m) continue;
     if (tx.amount > 0) m.cashIn += tx.amount;
@@ -309,12 +321,14 @@ export function businessSummaries(s: GameState): BusinessMonth[] {
 
 /** Płynność firmy: saldo rachunku firmowego, należności i zobowiązania wymagalne w ciągu `days` dni. */
 export function businessLiquidity(s: GameState, days = 30): { balance: Grosze; receivablesDue: Grosze; payablesDue: Grosze; coverage: Grosze } {
-  const acc = Object.values(s.accounts).find((a) => a.type === 'business');
+  // w kontekście spółki (widok operatora) — jej rachunek i jej zobowiązania; inaczej rachunek JDG
+  const ctxCompany = s.corp.context !== null ? s.corp.companies.find((c) => c.id === s.corp.context) : undefined;
+  const acc = ctxCompany ? s.accounts[ctxCompany.accountId] : Object.values(s.accounts).find((a) => a.type === 'business');
   const limit = addDaysIso(s.clock.today, days);
   let receivablesDue = 0;
   let payablesDue = 0;
   for (const o of s.obligations) {
-    if (o.scope !== 'business' || o.status !== 'open' || o.dueDate > limit) continue;
+    if (o.status !== 'open' || o.dueDate > limit || (ctxCompany ? o.accountId !== ctxCompany.accountId : o.scope !== 'business')) continue;
     if (o.direction === 'receivable') receivablesDue += o.amount;
     else payablesDue += o.amount;
   }

@@ -1,3 +1,4 @@
+import { ownerAvailable } from './operator.ts';
 import { CommandError, logEvent, nextCounter } from './core.ts';
 import { addDays, formatDatePL } from './date.ts';
 import type { IsoDate } from './date.ts';
@@ -62,6 +63,7 @@ function validateMembers(s: GameState, members: TeamMember[]): void {
     if (seen.has(key)) throw new CommandError('Ten członek jest już w ekipie.');
     seen.add(key);
     if (m.kind === 'owner' && m.id !== 'owner') throw new CommandError('Nieprawidłowy członek ekipy.');
+    if (m.kind === 'owner' && !ownerAvailable(s)) throw new CommandError('Właściciel nie może być członkiem ekipy spółki (praca wspólnika dla spółki wymaga odrębnej umowy).');
     if (m.kind === 'employee') {
       const e = employmentById(s, m.id);
       if (!e || e.status !== 'active') throw new CommandError('Do ekipy można dodać tylko aktualnie zatrudnionego pracownika (umowa).');

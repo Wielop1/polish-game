@@ -1,4 +1,4 @@
-import { activeBusiness, businessState, isSuspendedOn, issueDocument } from './business.ts';
+import { businessState, isSuspendedOn, issueDocument } from './business.ts';
 import { grossOfNet, purchaseCost, requireBusiness, requireCash, supplier, SUPPLIER_PARTY, vatRateNow } from './opsCommon.ts';
 export { availableCash, grossOfNet, SUPPLIER_PARTY, vatRateNow } from './opsCommon.ts';
 import { CommandError, createObligation, ensureParty, logEvent, nextCounter } from './core.ts';
@@ -9,7 +9,9 @@ import { formatPLN, mulBps, roundDiv, zl } from './money.ts';
 import type { Grosze } from './money.ts';
 import { createRng } from './rng.ts';
 import { awardToRival, contestRival, processMarketDay, recordPlayerWin } from './market.ts';
-import type { MarketHooks, PlayerInquiry, PlayerView } from './market.ts';
+import type { MarketFirm, MarketHooks, PlayerInquiry, PlayerView } from './market.ts';
+import { JDG, companyOperations, currentOperator, jdgOperator, ownerAvailable, withOperator } from './operator.ts';
+import { industryOf as moduleOf } from './industry.ts';
 import { macroAt } from './macro.ts';
 import { SEGMENTS } from './marketConfig.ts';
 import type { SegmentId } from './marketConfig.ts';
@@ -27,7 +29,7 @@ import { describeConflict, ensureCrewTeam, releaseJob, reserve, resourceBusy } f
 import { ACTIVE_SUB, processSubcontracts, requestSubOffer, settleJobSubcontracts, subById, subPrice, subSpeedBps, subcontractsOfJob } from './subcontractors.ts';
 import { employmentActiveOn, employmentById, hoursPerWorkday, personById, personLevel, personName, personPerformanceBps } from './workforce.ts';
 import type {
-  Business, Complexity, EquipmentItem, GameState, MaterialStandard, RenoCostPlan, RenoEnquiry, RenoJob, RenoQuote, RenovationState, ServiceOrder,
+  Operator, Complexity, EquipmentItem, GameState, MaterialStandard, RenoCostPlan, RenoEnquiry, RenoJob, RenoQuote, RenovationState, ServiceOrder,
 } from './state.ts';
 
 /**
@@ -285,7 +287,7 @@ export function parseCrewKey(teamId: string | null | undefined): CrewMember[] | 
 export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: boolean } = {}): QuotePreview {
   const members = parseCrewKey(i.teamId);
   if (!members) return previewQuoteInner(s, i, opts);
-  const valid = members.length > 0 && members.every((m) => (m.kind === 'owner' ? m.id === 'owner' : m.kind === 'employee' ? employmentById(s, m.id)?.status === 'active' : s.ops.subcontractors.some((x) => x.id === m.id)));
+  const valid = members.length > 0 && members.every((m) => (m.kind === 'owner' ? m.id === 'owner' && ownerAvailable(s) : m.kind === 'employee' ? employmentById(s, m.id)?.status === 'active' : s.ops.subcontractors.some((x) => x.id === m.id)));
   if (!valid) return previewQuoteInner(s, { ...i, teamId: 'team:missing' }, opts);
   // tymczasowa ekipa tylko do wyliczenia podglądu (usuwana w finally — stan gry po wywołaniu jest bez zmian)
   s.ops.teams.push({ id: i.teamId!, name: 'podgląd', members, createdOn: s.clock.today });
@@ -295,7 +297,7 @@ export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: b
 function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boolean } = {}): QuotePreview {
   const def = SERVICE_BY_ID.get(i.serviceId);
   if (!def) throw new CommandError('Nieznana usługa.');
-  const b = activeBusiness(s);
+  const b = currentOperator(s);
   const today = s.clock.today;
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -304,6 +306,7 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
   const team = i.teamId ? s.ops.teams.find((t) => t.id === i.teamId) ?? null : null;
   if (i.teamId && !team) errors.push('Nie ma takiej ekipy.');
   const ownerWorks = !team || team.members.some((m) => m.kind === 'owner');
+  if (ownerWorks && !ownerAvailable(s)) errors.push('Spółka nie ma właściciela-wykonawcy: wskaż ekipę z pracowników spółki lub podwykonawców (praca wspólnika na rzecz spółki wymagałaby odrębnej umowy — CO-KSH-ART210).');
   const supervision: 'worker' | 'supervise' | 'hands-off' = ownerWorks ? 'worker' : i.supervision === 'hands-off' ? 'hands-off' : 'supervise';
   let speed = speedBps(s, i.serviceId);
   let plannedCenti = Math.max(1, roundDiv(norm * 10_000, Math.max(1, speed)));
@@ -606,7 +609,7 @@ export function playerQuality(s: GameState): number {
 
 /** Co rynek wie o graczu — wyłącznie informacje publiczne (opinie, portfolio, kolejka prac); bez gotówki, kosztów i ofert w toku. */
 export function playerMarketView(s: GameState, date: IsoDate): PlayerView {
-  const b = activeBusiness(s);
+  const b = currentOperator(s);
   const active = !!b && businessState(b, date) === 'active' && reno(s).specializations.length > 0;
   const jobsActive = reno(s).jobs.filter((j) => j.stage !== 'done' && j.stage !== 'cancelled').length;
   const slots = 1 + s.ops.employments.filter((e) => e.status === 'active').length;
@@ -621,7 +624,7 @@ export function playerMarketView(s: GameState, date: IsoDate): PlayerView {
   };
 }
 
-function createEnquiryFrom(s: GameState, b: Business, date: IsoDate, inq: PlayerInquiry): boolean {
+function createEnquiryFrom(s: GameState, b: Operator, date: IsoDate, inq: PlayerInquiry): boolean {
   const spec = inq.spec;
   const def = SERVICE_BY_ID.get(spec.serviceId)!;
   const n = nextCounter(s, 'reno:enquiry');
@@ -640,7 +643,7 @@ function createEnquiryFrom(s: GameState, b: Business, date: IsoDate, inq: Player
   return true;
 }
 
-function marketHooks(s: GameState, b: Business, date: IsoDate): MarketHooks {
+function marketHooks(s: GameState, b: Operator, date: IsoDate): MarketHooks {
   return {
     industry: RENOVATION_MARKET,
     view: playerMarketView(s, date),
@@ -884,6 +887,7 @@ export function signContract(s: GameState, quoteId: string, crew?: CrewMember[])
       if (m.kind === 'employee' && employmentById(s, m.id)?.status !== 'active') throw new CommandError('Ten pracownik nie ma aktywnej umowy.');
     }
     const ownerIn = crew.some((m) => m.kind === 'owner');
+    if (ownerIn && !ownerAvailable(s)) throw new CommandError('Właściciel nie może być wykonawcą w spółce — wskaż pracowników spółki lub podwykonawców.');
     q.teamId = crew.length === 1 && ownerIn ? null : ensureCrewTeam(s, crew);
     q.supervision = ownerIn ? 'worker' : 'supervise';
     if (crew.every((m) => m.kind === 'sub')) q.vehicleId = null;
@@ -968,6 +972,7 @@ export function assignCrew(s: GameState, jobId: string, teamId: string | null, s
   job.vehicleId = vehicleId;
   const team = teamId ? s.ops.teams.find((t) => t.id === teamId) : undefined;
   const ownerWorks = !team || team.members.some((m) => m.kind === 'owner');
+  if (ownerWorks && !ownerAvailable(s)) throw new CommandError('Właściciel nie może być wykonawcą w spółce — wskaż ekipę z pracowników lub podwykonawców.');
   job.hoursPerDay = ownerWorks ? clamp(ownerHoursPerDay ?? (job.hoursPerDay || 4), 1, 8) : 1;
   order.hoursPerDay = job.hoursPerDay;
   setupCrew(s, job, order);
@@ -1002,7 +1007,7 @@ export function terminateJob(s: GameState, jobId: string): string {
   return 'Umowa rozwiązana. Zaliczka została zwrócona klientowi, a opinia firmy ucierpiała.';
 }
 
-function cancelJob(s: GameState, b: Business, job: RenoJob, date: IsoDate, reason: string): void {
+function cancelJob(s: GameState, b: Operator, job: RenoJob, date: IsoDate, reason: string): void {
   job.stage = 'cancelled';
   job.settledOn = date;
   const order = s.serviceOrders.find((o) => o.id === job.orderId)!;
@@ -1021,14 +1026,14 @@ function cancelJob(s: GameState, b: Business, job: RenoJob, date: IsoDate, reaso
       const advDoc = s.documents.find((d) => d.id === job.advanceDocId);
       const gross = advDoc?.gross ?? job.advanceNet;
       createObligation(s, {
-        occurrenceId: `refund:${job.id}`, ruleId: `refund:${job.id}`, direction: 'payable', counterpartyId: job.clientId, accountId: b.accountId, scope: 'business', amount: gross,
+        occurrenceId: `refund:${job.id}`, ruleId: `refund:${job.id}`, direction: 'payable', counterpartyId: job.clientId, accountId: b.accountId, amount: gross,
         issueDate: date, dueDate: addDays(date, 3), category: 'zwrot_zaliczki', description: `Zwrot zaliczki klientowi: ${order.title}`,
       });
       if (advDoc && advDoc.vat > 0) {
         // korekta VAT od zaliczki (SIMPLIFIED): VAT wraca od urzędu skarbowego w terminie rozliczenia następnego miesiąca
         const ny = parseIso(firstOfNextMonth(date));
         createObligation(s, {
-          occurrenceId: `refund-vat:${job.id}`, ruleId: `refund:${job.id}`, direction: 'receivable', counterpartyId: 'party:us', accountId: b.accountId, scope: 'business', amount: advDoc.vat,
+          occurrenceId: `refund-vat:${job.id}`, ruleId: `refund:${job.id}`, direction: 'receivable', counterpartyId: 'party:us', accountId: b.accountId, amount: advDoc.vat,
           issueDate: date, dueDate: dateInMonth(ny.year, ny.month, R.vat.dueDay), category: 'vat_naliczony', description: `Korekta VAT od zaliczki: ${order.title}`,
         });
       }
@@ -1285,7 +1290,7 @@ function crewIdleReason(s: GameState, job: RenoJob, date: IsoDate): string {
   return `Brak dostępnych wykonawców: ${why.length ? why.join('; ') : 'nikt z ekipy nie jest dziś dostępny'}`.slice(0, 380); // limit pola w zapisie (blockedReason ≤ 400 znaków)
 }
 
-function workJob(s: GameState, b: Business, job: RenoJob, date: IsoDate, used: Set<string>): void {
+function workJob(s: GameState, b: Operator, job: RenoJob, date: IsoDate, used: Set<string>): void {
   const order = s.serviceOrders.find((o) => o.id === job.orderId)!;
   const commitment = s.commitments.find((c) => c.id === order.commitmentId);
   if (job.lastDay !== null && date <= job.lastDay) return;
@@ -1411,7 +1416,7 @@ const COMMENTS: Record<string, string[]> = {
   good: ['Polecam — solidna robota.', 'Wszystko zgodnie z umową, jestem zadowolony.', 'Czysto, terminowo, sprawnie.'],
 };
 
-function handover(s: GameState, b: Business, job: RenoJob, date: IsoDate): void {
+function handover(s: GameState, b: Operator, job: RenoJob, date: IsoDate): void {
   const order = s.serviceOrders.find((o) => o.id === job.orderId)!;
   const quote = reno(s).quotes.find((x) => x.id === job.quoteId);
   const quality = jobQuality(s, job);
@@ -1547,7 +1552,7 @@ function processComplaints(s: GameState, date: IsoDate): void {
 
 /* ---------- Przetwarzanie dnia i rejestracja modułu ---------- */
 
-export function processRenovation(s: GameState, b: Business, date: IsoDate): void {
+export function processRenovation(s: GameState, b: Operator, date: IsoDate): void {
   const key = `reno:day:${b.id}:${date}`;
   if (s.processed[key]) return;
   s.processed[key] = true;
@@ -1562,10 +1567,25 @@ export function processRenovation(s: GameState, b: Business, date: IsoDate): voi
   }
   processQuotes(s, date);
   processComplaints(s, date);
-  processMarketDay(s, date, marketHooks(s, b, date));
 }
 
-export function renovationGaps(s: GameState, b: Business, date: IsoDate): { key: string; text: string }[] {
+/**
+ * Dzień rynku dla wszystkich firm gracza w branży (JDG i spółki z uruchomioną działalnością): każda ma własny marketing, strategię, reputację i zapytania.
+ * Rynek (popyt, konkurenci) jest jeden; wywoływany raz dziennie po przetworzeniu operatorów.
+ */
+export function processMarket(s: GameState, date: IsoDate): void {
+  const firms: MarketFirm[] = [];
+  const j = jdgOperator(s);
+  if (j && moduleOf(j)?.id === 'renovation' && date >= j.startDate && !isSuspendedOn(j, date)) firms.push({ id: 'player', operatorId: JDG, hooks: marketHooks(s, j, date) });
+  for (const c of companyOperations(s)) {
+    const op = c.operation!;
+    if (moduleOf(op)?.id !== 'renovation' || date < op.startDate || isSuspendedOn(op, date)) continue;
+    firms.push({ id: `player:${c.id}`, operatorId: c.id, hooks: withOperator(s, c.id, () => marketHooks(s, op, date)) });
+  }
+  processMarketDay(s, date, firms);
+}
+
+export function renovationGaps(s: GameState, b: Operator, date: IsoDate): { key: string; text: string }[] {
   const out: { key: string; text: string }[] = [];
   for (const job of reno(s).jobs) {
     if (job.businessId !== b.id || job.stage === 'done' || job.stage === 'cancelled') continue;

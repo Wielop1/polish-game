@@ -1,10 +1,13 @@
 import './industries.ts';
 import { processAccounting } from './accounting.ts';
+import { processCorp } from './corp.ts';
+import { syncDividends } from './dividends.ts';
+import { processMarket } from './renovation.ts';
 import { processFleet } from './fleet.ts';
 import { processWorkforce } from './workforce.ts';
 import { addDays, ageOn, diffDays, firstOfNextMonth, formatDatePL } from './date.ts';
 import type { IsoDate } from './date.ts';
-import { accountById, createObligation, logEvent, partyName, periodLabel, postTransaction, recordHistory } from './core.ts';
+import { accountById, createObligation, logEvent, partyName, periodLabel, recordHistory, settleOne } from './core.ts';
 import { formatPLN, mulBps } from './money.ts';
 import type { Grosze } from './money.ts';
 import { createRng } from './rng.ts';
@@ -16,7 +19,7 @@ import { applySavingsInterest } from './savings.ts';
 import { computeDueDate, isBirthday, isIssueDay } from './schedule.ts';
 import { clampFatigue, budgetFor, fatigueDelta } from './time.ts';
 import { buildPayslip, materializeLegacyPayslips } from './payroll.ts';
-import type { EmploymentContract, GameState, Obligation, ObligationRule, Payslip } from './state.ts';
+import type { EmploymentContract, GameState, ObligationRule, Payslip } from './state.ts';
 
 export { postTransaction, logEvent } from './core.ts';
 export type { PostingInput } from './core.ts';
@@ -133,7 +136,8 @@ export function settleDueObligations(s: GameState, date: IsoDate): void {
     .filter((o) => o.status === 'open' && o.dueDate <= date)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.id.localeCompare(b.id));
 
-  for (const o of due.filter((x) => x.direction === 'receivable')) settleOne(s, o, date);
+  // należność z dywidendy rozlicza się dopiero, gdy spółka faktycznie wypłaciła dywidendę (`syncDividends`), a nie automatycznie w terminie
+  for (const o of due.filter((x) => x.direction === 'receivable' && !x.ruleId.startsWith('div:'))) settleOne(s, o, date);
 
   for (const o of due.filter((x) => x.direction === 'payable')) {
     if (accountById(s, o.accountId).balance >= o.amount) {
@@ -152,34 +156,6 @@ export function settleDueObligations(s: GameState, date: IsoDate): void {
       });
     }
   }
-}
-
-function settleOne(s: GameState, o: Obligation, date: IsoDate): void {
-  const receivable = o.direction === 'receivable';
-  const tx = postTransaction(s, {
-    eventId: `settle:${o.id}`,
-    accountId: o.accountId,
-    date,
-    amount: receivable ? o.amount : -o.amount,
-    category: o.category,
-    description: o.description,
-    counterpartyId: o.counterpartyId,
-    obligationId: o.id,
-  });
-  o.status = 'settled';
-  o.settledDate = date;
-  o.settlementTxId = tx.id;
-  const late = o.overdueSince !== null;
-  logEvent(s, {
-    id: `settle:${o.id}`,
-    date,
-    type: 'obligation.settled',
-    tone: receivable ? 'positive' : 'negative',
-    title: receivable ? `Wpływ: ${o.description}` : `Zapłacono: ${o.description}`,
-    detail: `${partyName(s, o.counterpartyId)} · ${formatPLN(o.amount)}${late ? ' · po terminie' : ''}`,
-    amount: receivable ? o.amount : -o.amount,
-    category: o.category,
-  });
 }
 
 /* ---------- Zmęczenie ---------- */
@@ -218,8 +194,11 @@ export function processDay(s: GameState, date: IsoDate): void {
     processWorkforce(s, b, date);
     processFleet(s, b, date);
   }
+  processCorp(s, date);
+  processMarket(s, date);
   processAnnual(s, date);
   settleDueObligations(s, date);
+  syncDividends(s, date);
   updateFatigue(s, date);
   recordHistory(s, date);
 }

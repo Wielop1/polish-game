@@ -7,7 +7,7 @@ import type { Grosze } from './money.ts';
 import { SUPPLIER_PARTY, requireBusiness, requireCash, supplier } from './opsCommon.ts';
 import { VEHICLES, VEHICLE_AGING_BPS_PER_MONTH, VEHICLE_BY_ID } from './renovationCatalog.ts';
 import type { VehicleDef } from './renovationCatalog.ts';
-import type { Business, GameState, Vehicle } from './state.ts';
+import type { Operator, GameState, Vehicle } from './state.ts';
 
 /**
  * Pojazdy firmowe (v0.6): zakup za gotówkę przez wspólny silnik finansowy (zobowiązanie wobec sprzedawcy), wartość majątkowa
@@ -47,7 +47,7 @@ export function useVehicle(s: GameState, v: Vehicle, date: IsoDate): Grosze {
 }
 
 /** Koniec miesiąca: koszty stałe i zmienne pojazdów jako jeden dokument kosztowy oraz starzenie. Idempotentne. */
-export function processFleet(s: GameState, b: Business, date: IsoDate): void {
+export function processFleet(s: GameState, b: Operator, date: IsoDate): void {
   const { year, month } = parseIso(date);
   if (parseIso(date).day !== daysInMonth(year, month)) return;
   const m = monthKey(date);

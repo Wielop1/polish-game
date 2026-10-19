@@ -225,3 +225,18 @@ export function migrateV6ToV7(raw: unknown): unknown {
   }
   return s;
 }
+
+/**
+ * v7 → v8: spółki z o.o., wspólnicy, rejestr udziałów, uchwały, dywidendy i CIT (`corp`). Stare JDG zostają JDG (nie są spółkami),
+ * historia finansowa, dokumenty, kontrakty i rynek są nietknięte — nie przepisujemy niczego na nowy podmiot. Pula wspólników i inwestorów
+ * jest deterministyczna z ziarna gry (jak pula podwykonawców w v5 → v6).
+ */
+export function migrateV7ToV8(raw: unknown, buildPool: (seed: string) => unknown[]): unknown {
+  if (typeof raw !== 'object' || raw === null) throw new Error('Zapis v7 ma nieprawidłową strukturę stanu.');
+  const s = structuredClone(raw) as Json;
+  s.corp = {
+    companies: [], partners: buildPool(s.seed as string), holdings: [], shareEvents: [], resolutions: [], negotiations: [], dividends: [],
+    citReturns: [], citLosses: [], selected: 'jdg', context: null,
+  };
+  return s;
+}

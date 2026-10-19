@@ -1,3 +1,4 @@
+import { currentOperator } from './operator.ts';
 import { addDays, dateInMonth, monthKey, parseIso } from './date.ts';
 import type { IsoDate } from './date.ts';
 import { businessBalance } from './selectors.ts';
@@ -74,10 +75,11 @@ export interface FixedCosts {
 
 export function fixedCosts(s: GameState, month: string): FixedCosts {
   const pay = payrollMonth(s, month);
-  const docs = s.documents.filter((d) => d.kind === 'cost' && d.issueDate.startsWith(month));
+  const op = currentOperator(s);
+  const docs = s.documents.filter((d) => d.kind === 'cost' && d.issueDate.startsWith(month) && (!op || d.businessId === op.id));
   const sum = (prefix: string) => docs.filter((d) => d.description.startsWith(prefix)).reduce((a, d) => a + d.taxAmount, 0);
   const vehicleFixed = s.ops.vehicles.filter((v) => monthKey(v.purchasedOn) <= month).reduce((a, v) => a + vehicleDef(v).fixedMonthly, 0);
-  const owner = s.obligations.filter((o) => o.scope === 'business' && o.issueDate.startsWith(month) && (o.category === 'zus_spoleczne' || o.category === 'zus_zdrowotna')).reduce((a, o) => a + o.amount, 0);
+  const owner = s.corp.context !== null ? 0 : s.obligations.filter((o) => o.scope === 'business' && o.issueDate.startsWith(month) && (o.category === 'zus_spoleczne' || o.category === 'zus_zdrowotna')).reduce((a, o) => a + o.amount, 0);
   const advertising = sum('Marketing') + sum('Reklama') + sum('Pozycjonowanie');
   const accounting = sum('Obsługa księgowa');
   const recruitment = sum('Ogłoszenie o pracę');
@@ -94,12 +96,13 @@ export function liquidityForecast(s: GameState, days = 60, step = 7): { points: 
   const today = s.clock.today;
   const end = addDays(today, days);
   const flows: { date: IsoDate; amount: Grosze }[] = [];
+  const opAcc = currentOperator(s)?.accountId;
   for (const o of s.obligations) {
-    if (o.scope !== 'business' || o.status !== 'open') continue;
+    if (o.status !== 'open' || (opAcc ? o.accountId !== opAcc : o.scope !== 'business')) continue;
     flows.push({ date: o.dueDate > today ? o.dueDate : addDays(today, 1), amount: o.direction === 'receivable' ? o.amount : -o.amount });
   }
   // szacunek obciążeń cyklicznych, jeszcze nienaliczonych (pierwszy dzień miesiąca po dzisiejszym do końca horyzontu)
-  const lastPeriod = [...s.taxPeriods].reverse()[0];
+  const lastPeriod = s.corp.context !== null ? undefined : [...s.taxPeriods].reverse()[0];
   const ownerMonthly = lastPeriod ? lastPeriod.social + lastPeriod.health : 0;
   const vehicleMonthly = s.ops.vehicles.reduce((a, v) => a + vehicleDef(v).fixedMonthly, 0);
   let payrollNet = 0, payrollRest = 0;
@@ -125,7 +128,7 @@ export function liquidityForecast(s: GameState, days = 60, step = 7): { points: 
     const fixedDue = dateInMonth(y, m, 7);
     if (fixedDue > today && fixedDue <= end && vehicleMonthly > 0) flows.push({ date: fixedDue, amount: -vehicleMonthly });
   }
-  let bal = businessBalance(s);
+  let bal = opAcc ? s.accounts[opAcc]!.balance : businessBalance(s);
   const points: LiquidityPoint[] = [{ date: today, balance: bal }];
   let min = bal;
   let firstShortfall: IsoDate | null = null;

@@ -474,7 +474,7 @@ describe('rejestr reguł prawnych', () => {
     expect(LEGAL_RULES.length).toBeGreaterThan(30);
     for (const r of LEGAL_RULES) {
       expect(r.source).toMatch(/^https:\/\/(www\.)?(podatki|biznes|zus)\.gov\.pl|^https:\/\/(www\.)?zus\.pl|^https:\/\/(podatki-arch|eureka)\.mf\.gov\.pl|^https:\/\/api\.sejm\.gov\.pl/); // urzędowe: MF (archiwum serwisu, interpretacje), Sejm (ISAP)
-      expect(r.verifiedOn).toBe('2026-10-18');
+      expect(['2026-10-18', '2026-10-19']).toContain(r.verifiedOn);
       expect(['VERIFIED', 'SIMPLIFIED', 'DEFERRED']).toContain(r.status);
       expect(r.note.length).toBeGreaterThan(5);
     }

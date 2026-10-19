@@ -8,7 +8,7 @@ import { requireActiveBusiness, requireCash } from './opsCommon.ts';
 import { COMPLEXITY_HOURS_BPS, SERVICE_BY_ID } from './renovationCatalog.ts';
 import { createRng } from './rng.ts';
 import { firstFree, releaseJob, reserve, resourceBusy } from './teams.ts';
-import type { Business, GameState, RenoJob, Subcontract, Subcontractor } from './state.ts';
+import type { Operator, GameState, RenoJob, Subcontract, Subcontractor } from './state.ts';
 
 /**
  * Podwykonawcy (B2B): inne firmy wykonują zakres kontraktu za umówioną cenę. Nie są pracownikami — brak ZUS i płacy etatowej;
@@ -100,7 +100,7 @@ export function acceptSubOffer(s: GameState, subcontractId: string): string {
   c.defects = createRng(s.seed, `sub:defects:${c.id}`).int(0, 9_999) < clamp((70 - q) * 110, 0, 6_000);
   if (c.advanceNet > 0) {
     const ob = createObligation(s, {
-      occurrenceId: `subc:${c.id}:advance`, ruleId: `subc:${c.id}`, direction: 'payable', counterpartyId: subParty(sub.id), accountId: b.accountId, scope: 'business', amount: c.advanceNet,
+      occurrenceId: `subc:${c.id}:advance`, ruleId: `subc:${c.id}`, direction: 'payable', counterpartyId: subParty(sub.id), accountId: b.accountId, amount: c.advanceNet,
       issueDate: today, dueDate: addDays(today, 2), category: 'zaliczka_podwykonawcy', description: `Zaliczka dla podwykonawcy: ${sub.name}`,
     });
     c.advanceObligationId = ob?.id ?? null;
@@ -126,7 +126,7 @@ export function cancelSubcontract(s: GameState, subcontractId: string): string {
   const sub = subById(s, c.subId)!;
   if (c.prepaid > 0) {
     createObligation(s, {
-      occurrenceId: `subc:${c.id}:refund`, ruleId: `subc:${c.id}`, direction: 'receivable', counterpartyId: subParty(sub.id), accountId: b.accountId, scope: 'business', amount: c.prepaid,
+      occurrenceId: `subc:${c.id}:refund`, ruleId: `subc:${c.id}`, direction: 'receivable', counterpartyId: subParty(sub.id), accountId: b.accountId, amount: c.prepaid,
       issueDate: s.clock.today, dueDate: addDays(s.clock.today, 7), category: 'zwrot_zaliczki', description: `Zwrot zaliczki od podwykonawcy: ${sub.name}`,
     });
     c.prepaid = 0;
@@ -137,7 +137,7 @@ export function cancelSubcontract(s: GameState, subcontractId: string): string {
 }
 
 /** Odbiór pracy i rozliczenie: dokument kosztowy na pełną (lub proporcjonalną) cenę, zapłata reszty ponad zaliczkę. */
-export function settleSubcontract(s: GameState, b: Business, c: Subcontract, job: RenoJob, date: IsoDate, auto: boolean): void {
+export function settleSubcontract(s: GameState, b: Operator, c: Subcontract, job: RenoJob, date: IsoDate, auto: boolean): void {
   if (c.status === 'settled' || c.status === 'cancelled' || c.status === 'declined' || c.status === 'expired' || c.status === 'offered') return;
   const sub = subById(s, c.subId)!;
   const complete = c.performedCenti >= c.requiredCenti;
@@ -151,13 +151,13 @@ export function settleSubcontract(s: GameState, b: Business, c: Subcontract, job
     c.settlementDocId = doc.id;
     if (cash < 0) {
       createObligation(s, {
-        occurrenceId: `subc:${c.id}:surplus`, ruleId: `subc:${c.id}`, direction: 'receivable', counterpartyId: subParty(sub.id), accountId: b.accountId, scope: 'business', amount: -cash,
+        occurrenceId: `subc:${c.id}:surplus`, ruleId: `subc:${c.id}`, direction: 'receivable', counterpartyId: subParty(sub.id), accountId: b.accountId, amount: -cash,
         issueDate: date, dueDate: addDays(date, 7), category: 'zwrot_zaliczki', description: `Zwrot nadpłaconej zaliczki: ${sub.name}`,
       });
     }
   } else if (c.prepaid > 0) {
     createObligation(s, {
-      occurrenceId: `subc:${c.id}:surplus`, ruleId: `subc:${c.id}`, direction: 'receivable', counterpartyId: subParty(sub.id), accountId: b.accountId, scope: 'business', amount: c.prepaid,
+      occurrenceId: `subc:${c.id}:surplus`, ruleId: `subc:${c.id}`, direction: 'receivable', counterpartyId: subParty(sub.id), accountId: b.accountId, amount: c.prepaid,
       issueDate: date, dueDate: addDays(date, 7), category: 'zwrot_zaliczki', description: `Zwrot zaliczki od podwykonawcy: ${sub.name}`,
     });
   }
@@ -180,7 +180,7 @@ export function acceptSubWork(s: GameState, subcontractId: string): string {
 }
 
 /** Przy zakończeniu kontraktu rozlicza wszystkich jego podwykonawców (zakres częściowy proporcjonalnie). */
-export function settleJobSubcontracts(s: GameState, b: Business, job: RenoJob, date: IsoDate): void {
+export function settleJobSubcontracts(s: GameState, b: Operator, job: RenoJob, date: IsoDate): void {
   for (const c of s.ops.subcontracts.filter((x) => x.jobId === job.id)) {
     if (c.status === 'offered') { c.status = 'expired'; continue; }
     if (ACTIVE_SUB.includes(c.status)) {
@@ -188,7 +188,7 @@ export function settleJobSubcontracts(s: GameState, b: Business, job: RenoJob, d
         // praca się nie zaczęła (kontrakt skończył się bez udziału podwykonawcy) — umowa wygasa, zaliczka wraca
         c.status = 'cancelled';
         const sub = subById(s, c.subId)!;
-        if (c.prepaid > 0) createObligation(s, { occurrenceId: `subc:${c.id}:refund`, ruleId: `subc:${c.id}`, direction: 'receivable', counterpartyId: subParty(sub.id), accountId: b.accountId, scope: 'business', amount: c.prepaid, issueDate: date, dueDate: addDays(date, 7), category: 'zwrot_zaliczki', description: `Zwrot zaliczki od podwykonawcy: ${sub.name}` });
+        if (c.prepaid > 0) createObligation(s, { occurrenceId: `subc:${c.id}:refund`, ruleId: `subc:${c.id}`, direction: 'receivable', counterpartyId: subParty(sub.id), accountId: b.accountId, amount: c.prepaid, issueDate: date, dueDate: addDays(date, 7), category: 'zwrot_zaliczki', description: `Zwrot zaliczki od podwykonawcy: ${sub.name}` });
         c.prepaid = 0;
         s.ops.assignments = s.ops.assignments.filter((a) => !(a.kind === 'sub' && a.jobId === c.jobId && a.resourceId === c.subId));
         continue;

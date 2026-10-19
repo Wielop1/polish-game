@@ -16,6 +16,13 @@ import { createTeam, deleteTeam, updateTeam } from './teams.ts';
 import type { TeamMember } from './teams.ts';
 import { buyVehicle } from './fleet.ts';
 import { transferFunds } from './savings.ts';
+import { EQUIPMENT_BY_ID, VEHICLE_BY_ID } from './renovationCatalog.ts';
+import { agreementPreview, createCompanyDraft, deleteDraft, fileForRegistration, requireAssetConsent, requireAuthority, resignFromBoard, selectOperator, signAgreement, startOperation } from './company.ts';
+import type { AgreementInput, DraftInput } from './company.ts';
+import { acceptCounter, completeSecondary, proposeDeal, reviseDeal, withdrawDeal } from './negotiation.ts';
+import { cancelResolution, castVote, proposeResolution } from './resolutions.ts';
+import { selectedOperatorId, withOperator } from './operator.ts';
+import type { DealTerms, Negotiation, ResolutionPayload } from './state.ts';
 import { setMarketingBudget, setPositioning } from './market.ts';
 import type { Grosze } from './money.ts';
 import type { GameState, Lifestyle, TaxForm } from './state.ts';
@@ -41,6 +48,22 @@ export function runCommand(state: GameState, fn: (draft: GameState) => string): 
     throw e;
   }
 }
+
+/**
+ * Komenda operatora: wykonuje się na wybranym przez gracza podmiocie (JDG albo spółka z o.o.) — te same moduły, ale na jego własnym
+ * stanie (kontrakty, pracownicy, sprzęt, marketing, rachunek). Czynności wiążące spółkę wymagają reprezentacji (`requireAuthority`).
+ */
+const op = (d: GameState, fn: () => string): string => withOperator(d, selectedOperatorId(d), () => {
+  if (d.corp.context !== null) {
+    const co = d.corp.companies.find((x) => x.id === d.corp.context)!;
+    if (!co.board.some((m) => m.endedOn === null && m.personId === d.person.id)) throw new CommandError('Nie jesteś członkiem zarządu tej spółki — udziały nie dają prawa prowadzenia jej spraw ani reprezentacji (art. 201, 205 KSH).');
+  }
+  return fn();
+});
+const bind = (d: GameState, label: string, amountOf: () => number, fn: () => string): string => op(d, () => {
+  requireAuthority(d, label, amountOf());
+  return fn();
+});
 
 function changeLifestyle(s: GameState, level: Lifestyle): string {
   if (!LifestyleSchema.safeParse(level).success) throw new CommandError('Nieprawidłowy styl życia.');
@@ -100,39 +123,57 @@ export const commands = {
   resignMalyZusPlus: (state: GameState) => runCommand(state, (d) => resignMalyZusPlus(d)),
   claimHealthRefund: (state: GameState, settlementId: string) => runCommand(state, (d) => claimHealthRefund(d, settlementId)),
   // v0.5 — branża remontowa
-  buyEquipment: (state: GameState, catalogId: string) => runCommand(state, (d) => buyEquipment(d, catalogId)),
-  maintainEquipment: (state: GameState, itemId: string) => runCommand(state, (d) => maintainEquipment(d, itemId)),
-  buyMaterial: (state: GameState, key: string, qty: number) => runCommand(state, (d) => buyMaterial(d, key, qty)),
-  buyMissingForJob: (state: GameState, jobId: string) => runCommand(state, (d) => buyMissingForJob(d, jobId)),
-  setMarketingBudget: (state: GameState, channel: string, monthlyNet: Grosze) => runCommand(state, (d) => setMarketingBudget(d, channel, monthlyNet)),
-  setPositioning: (state: GameState, positioning: string) => runCommand(state, (d) => setPositioning(d, positioning)),
-  addSpecialization: (state: GameState, serviceId: string) => runCommand(state, (d) => addSpecialization(d, serviceId)),
-  declineEnquiry: (state: GameState, enquiryId: string) => runCommand(state, (d) => declineEnquiry(d, enquiryId)),
-  sendQuote: (state: GameState, enquiryId: string, input: QuoteInput) => runCommand(state, (d) => sendQuote(d, enquiryId, input)),
-  respondToCounter: (state: GameState, quoteId: string, action: 'accept' | 'decline' | 'hold') => runCommand(state, (d) => respondToCounter(d, quoteId, action)),
-  signContract: (state: GameState, quoteId: string, crew?: CrewMember[]) => runCommand(state, (d) => signContract(d, quoteId, crew)),
-  terminateJob: (state: GameState, jobId: string) => runCommand(state, (d) => terminateJob(d, jobId)),
-  resolveComplaint: (state: GameState, complaintId: string, action: 'repair' | 'discount' | 'reject') => runCommand(state, (d) => resolveComplaint(d, complaintId, action)),
+  buyEquipment: (state: GameState, catalogId: string) => runCommand(state, (d) => bind(d, 'Zakup sprzętu', () => EQUIPMENT_BY_ID.get(catalogId)?.priceNet ?? 0, () => { requireAssetConsent(d, 'Zakup sprzętu', EQUIPMENT_BY_ID.get(catalogId)?.priceNet ?? 0); return buyEquipment(d, catalogId); })),
+  maintainEquipment: (state: GameState, itemId: string) => runCommand(state, (d) => op(d, () => maintainEquipment(d, itemId))),
+  buyMaterial: (state: GameState, key: string, qty: number) => runCommand(state, (d) => op(d, () => buyMaterial(d, key, qty))),
+  buyMissingForJob: (state: GameState, jobId: string) => runCommand(state, (d) => op(d, () => buyMissingForJob(d, jobId))),
+  setMarketingBudget: (state: GameState, channel: string, monthlyNet: Grosze) => runCommand(state, (d) => op(d, () => setMarketingBudget(d, channel, monthlyNet))),
+  setPositioning: (state: GameState, positioning: string) => runCommand(state, (d) => op(d, () => setPositioning(d, positioning))),
+  addSpecialization: (state: GameState, serviceId: string) => runCommand(state, (d) => op(d, () => addSpecialization(d, serviceId))),
+  declineEnquiry: (state: GameState, enquiryId: string) => runCommand(state, (d) => op(d, () => declineEnquiry(d, enquiryId))),
+  sendQuote: (state: GameState, enquiryId: string, input: QuoteInput) => runCommand(state, (d) => op(d, () => sendQuote(d, enquiryId, input))),
+  respondToCounter: (state: GameState, quoteId: string, action: 'accept' | 'decline' | 'hold') => runCommand(state, (d) => op(d, () => respondToCounter(d, quoteId, action))),
+  signContract: (state: GameState, quoteId: string, crew?: CrewMember[]) => runCommand(state, (d) => bind(d, 'Podpisanie kontraktu', () => d.reno.quotes.find((q) => q.id === quoteId)?.planned.total ?? 0, () => signContract(d, quoteId, crew))),
+  terminateJob: (state: GameState, jobId: string) => runCommand(state, (d) => op(d, () => terminateJob(d, jobId))),
+  resolveComplaint: (state: GameState, complaintId: string, action: 'repair' | 'discount' | 'reject') => runCommand(state, (d) => op(d, () => resolveComplaint(d, complaintId, action))),
   // v0.5 — księgowość
   hireAccountingOffice: (state: GameState, planId: string) => runCommand(state, (d) => hireAccountingOffice(d, planId)),
   terminateAccountingOffice: (state: GameState) => runCommand(state, (d) => terminateAccountingOffice(d)),
   // v0.6 — pracownicy i rekrutacja (wspólny silnik)
-  publishListing: (state: GameState, input: { role: string; minLevel: number; tier: 'basic' | 'premium' }) => runCommand(state, (d) => publishListing(d, input)),
-  closeListing: (state: GameState, listingId: string) => runCommand(state, (d) => closeListing(d, listingId)),
-  makeOffer: (state: GameState, candidateId: string, offer: Offer) => runCommand(state, (d) => makeOffer(d, candidateId, offer)),
-  rejectCandidate: (state: GameState, candidateId: string) => runCommand(state, (d) => rejectCandidate(d, candidateId)),
-  giveNotice: (state: GameState, employmentId: string) => runCommand(state, (d) => giveNotice(d, employmentId)),
-  setWage: (state: GameState, employmentId: string, gross: Grosze) => runCommand(state, (d) => setWage(d, employmentId, gross)),
+  publishListing: (state: GameState, input: { role: string; minLevel: number; tier: 'basic' | 'premium' }) => runCommand(state, (d) => op(d, () => publishListing(d, input))),
+  closeListing: (state: GameState, listingId: string) => runCommand(state, (d) => op(d, () => closeListing(d, listingId))),
+  makeOffer: (state: GameState, candidateId: string, offer: Offer) => runCommand(state, (d) => bind(d, 'Zatrudnienie pracownika', () => offer.gross * 12, () => makeOffer(d, candidateId, offer))),
+  rejectCandidate: (state: GameState, candidateId: string) => runCommand(state, (d) => op(d, () => rejectCandidate(d, candidateId))),
+  giveNotice: (state: GameState, employmentId: string) => runCommand(state, (d) => op(d, () => giveNotice(d, employmentId))),
+  setWage: (state: GameState, employmentId: string, gross: Grosze) => runCommand(state, (d) => op(d, () => setWage(d, employmentId, gross))),
   // v0.6 — podwykonawcy, ekipy, pojazdy
-  requestSubOffer: (state: GameState, subId: string, jobId: string, scopeBps: number) => runCommand(state, (d) => requestSubOffer(d, subId, jobId, scopeBps)),
-  acceptSubOffer: (state: GameState, subcontractId: string) => runCommand(state, (d) => acceptSubOffer(d, subcontractId)),
-  declineSubOffer: (state: GameState, subcontractId: string) => runCommand(state, (d) => declineSubOffer(d, subcontractId)),
-  cancelSubcontract: (state: GameState, subcontractId: string) => runCommand(state, (d) => cancelSubcontract(d, subcontractId)),
-  acceptSubWork: (state: GameState, subcontractId: string) => runCommand(state, (d) => acceptSubWork(d, subcontractId)),
-  createTeam: (state: GameState, name: string, members: TeamMember[]) => runCommand(state, (d) => createTeam(d, name, members)),
-  updateTeam: (state: GameState, teamId: string, members: TeamMember[]) => runCommand(state, (d) => updateTeam(d, teamId, members)),
-  deleteTeam: (state: GameState, teamId: string) => runCommand(state, (d) => deleteTeam(d, teamId)),
-  assignCrew: (state: GameState, jobId: string, teamId: string | null, supervision: 'worker' | 'supervise' | 'hands-off', vehicleId: string | null, ownerHoursPerDay?: number) => runCommand(state, (d) => assignCrew(d, jobId, teamId, supervision, vehicleId, ownerHoursPerDay)),
-  assignVehicle: (state: GameState, jobId: string, vehicleId: string | null) => runCommand(state, (d) => assignVehicle(d, jobId, vehicleId)),
-  buyVehicle: (state: GameState, catalogId: string) => runCommand(state, (d) => buyVehicle(d, catalogId)),
+  requestSubOffer: (state: GameState, subId: string, jobId: string, scopeBps: number) => runCommand(state, (d) => op(d, () => requestSubOffer(d, subId, jobId, scopeBps))),
+  acceptSubOffer: (state: GameState, subcontractId: string) => runCommand(state, (d) => bind(d, 'Umowa z podwykonawcą', () => d.ops.subcontracts.find((c) => c.id === subcontractId)?.priceNet ?? 0, () => acceptSubOffer(d, subcontractId))),
+  declineSubOffer: (state: GameState, subcontractId: string) => runCommand(state, (d) => op(d, () => declineSubOffer(d, subcontractId))),
+  cancelSubcontract: (state: GameState, subcontractId: string) => runCommand(state, (d) => op(d, () => cancelSubcontract(d, subcontractId))),
+  acceptSubWork: (state: GameState, subcontractId: string) => runCommand(state, (d) => op(d, () => acceptSubWork(d, subcontractId))),
+  createTeam: (state: GameState, name: string, members: TeamMember[]) => runCommand(state, (d) => op(d, () => createTeam(d, name, members))),
+  updateTeam: (state: GameState, teamId: string, members: TeamMember[]) => runCommand(state, (d) => op(d, () => updateTeam(d, teamId, members))),
+  deleteTeam: (state: GameState, teamId: string) => runCommand(state, (d) => op(d, () => deleteTeam(d, teamId))),
+  assignCrew: (state: GameState, jobId: string, teamId: string | null, supervision: 'worker' | 'supervise' | 'hands-off', vehicleId: string | null, ownerHoursPerDay?: number) => runCommand(state, (d) => op(d, () => assignCrew(d, jobId, teamId, supervision, vehicleId, ownerHoursPerDay))),
+  assignVehicle: (state: GameState, jobId: string, vehicleId: string | null) => runCommand(state, (d) => op(d, () => assignVehicle(d, jobId, vehicleId))),
+  buyVehicle: (state: GameState, catalogId: string) => runCommand(state, (d) => bind(d, 'Zakup pojazdu', () => VEHICLE_BY_ID.get(catalogId)?.priceNet ?? 0, () => { requireAssetConsent(d, 'Zakup pojazdu', VEHICLE_BY_ID.get(catalogId)?.priceNet ?? 0); return buyVehicle(d, catalogId); })),
+  // v0.8 — spółki z o.o., wspólnicy, udziały, uchwały
+  selectOperator: (state: GameState, id: string) => runCommand(state, (d) => selectOperator(d, id)),
+  createCompanyDraft: (state: GameState, input: DraftInput) => runCommand(state, (d) => createCompanyDraft(d, input)),
+  deleteCompanyDraft: (state: GameState, companyId: string) => runCommand(state, (d) => deleteDraft(d, companyId)),
+  proposeDeal: (state: GameState, input: { kind: Negotiation['kind']; companyId: string; partnerId: string; terms: DealTerms }) => runCommand(state, (d) => proposeDeal(d, input)),
+  reviseDeal: (state: GameState, negotiationId: string, terms: DealTerms) => runCommand(state, (d) => reviseDeal(d, negotiationId, terms)),
+  acceptCounter: (state: GameState, negotiationId: string) => runCommand(state, (d) => acceptCounter(d, negotiationId)),
+  withdrawDeal: (state: GameState, negotiationId: string) => runCommand(state, (d) => withdrawDeal(d, negotiationId)),
+  completeSecondary: (state: GameState, negotiationId: string) => runCommand(state, (d) => completeSecondary(d, negotiationId)),
+  signAgreement: (state: GameState, input: AgreementInput) => runCommand(state, (d) => signAgreement(d, input)),
+  fileForRegistration: (state: GameState, companyId: string) => runCommand(state, (d) => fileForRegistration(d, companyId)),
+  startCompanyOperation: (state: GameState, companyId: string, input: { specialization?: string; vat?: 'exempt' | 'active' }) => runCommand(state, (d) => startOperation(d, companyId, input)),
+  proposeResolution: (state: GameState, companyId: string, payload: ResolutionPayload) => runCommand(state, (d) => proposeResolution(d, { companyId, payload })),
+  castVote: (state: GameState, resolutionId: string, vote: 'for' | 'against' | 'abstain') => runCommand(state, (d) => castVote(d, resolutionId, vote)),
+  cancelResolution: (state: GameState, resolutionId: string) => runCommand(state, (d) => cancelResolution(d, resolutionId)),
+  resignFromBoard: (state: GameState, companyId: string) => runCommand(state, (d) => resignFromBoard(d, companyId)),
 };
+
+export { agreementPreview };

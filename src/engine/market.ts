@@ -11,6 +11,7 @@ import { formatPLN, mulBps, roundDiv, zl } from './money.ts';
 import type { Grosze } from './money.ts';
 import { RENOVATION_MARKET } from './renovationMarket.ts';
 import { createRng } from './rng.ts';
+import { withOperator } from './operator.ts';
 import type { Competitor, GameState, MarketMonth, MarketState } from './state.ts';
 
 /**
@@ -80,6 +81,14 @@ export interface MarketHooks {
   /** Księguje koszt marketingu/pozycjonowania jako koszt działalności. */
   charge(description: string, net: Grosze): void;
 }
+
+/**
+ * Firma gracza na rynku (v0.8): JDG ma id `player`, każda spółka z o.o. — `player:<id spółki>`. Każda ma własny marketing, strategię, reputację
+ * i zapytania; rynek rozdziela klientów między wszystkie firmy gracza i konkurentów (klient nie rozważa dwóch firm tego samego właściciela naraz).
+ * `operatorId` = 'jdg' albo id spółki: widoczność i opłaty liczone są w kontekście tego operatora (`withOperator`).
+ */
+export interface MarketFirm { id: string; operatorId: string; hooks: MarketHooks }
+export const isPlayerFirm = (id: string): boolean => id === 'player' || id.startsWith('player:');
 
 /* ---------- Pozycjonowanie ---------- */
 
@@ -305,7 +314,7 @@ export function ensureMarket(s: GameState, date: IsoDate): void {
 /* ---------- Dzienny przepływ klientów ---------- */
 
 interface DayContext {
-  s: GameState; date: IsoDate; hooks: MarketHooks; macro: Macro; priceIdx: number;
+  s: GameState; date: IsoDate; firms: MarketFirm[]; industry: MarketIndustry; macro: Macro; priceIdx: number;
   weights: Map<string, { id: string; w: number }[]>;
 }
 
@@ -314,7 +323,7 @@ function weightsFor(ctx: DayContext, seg: SegmentId, serviceId: string): { id: s
   const hit = ctx.weights.get(key);
   if (hit) return hit;
   const arr = ctx.s.market.competitors.filter((c) => c.status === 'active').map((c) => ({ id: c.id, w: competitorVisibility(c, seg, serviceId) }));
-  if (ctx.hooks.view.active) arr.push({ id: 'player', w: playerVisibility(ctx.s, seg, serviceId, ctx.hooks.view, ctx.date) });
+  for (const f of ctx.firms) if (f.hooks.view.active) arr.push({ id: f.id, w: withOperator(ctx.s, f.operatorId, () => playerVisibility(ctx.s, seg, serviceId, f.hooks.view, ctx.date)) });
   ctx.weights.set(key, arr);
   return arr;
 }
@@ -353,8 +362,8 @@ function pickChannel(rng: { int(lo: number, hi: number): number }, parts: Visibi
 }
 
 function processProject(ctx: DayContext, serviceId: string, index: number, shares: Record<SegmentId, number>): void {
-  const { s, date, hooks } = ctx;
-  const ind = hooks.industry;
+  const { s, date } = ctx;
+  const ind = ctx.industry;
   const rng = createRng(s.seed, `market:proj:${date}:${serviceId}:${index}`);
   bumpCurrent(s, { demand: 1 });
   // ceny na rynku: drożej → więcej projektów odkładanych lub robionych samodzielnie
@@ -371,29 +380,33 @@ function processProject(ctx: DayContext, serviceId: string, index: number, share
   // zestaw firm, z którymi klient porównuje oferty
   const weights = weightsFor(ctx, seg, serviceId);
   let set = pickWeighted(rng, weights, segDef.considerationSize);
+  // klient nie rozważa dwóch firm tego samego właściciela: zostaje pierwsza wylosowana firma gracza
+  const mine = set.filter(isPlayerFirm);
+  if (mine.length > 1) set = set.filter((id) => !isPlayerFirm(id) || id === mine[0]);
+  const firm = ctx.firms.find((f) => f.id === mine[0]) ?? null;
   let source: ChannelId | null = null;
-  const withPlayer = set.includes('player');
-  if (withPlayer) {
-    source = pickChannel(rng, playerVisibilityParts(s, seg, hooks.view, date));
+  if (firm) {
+    source = withOperator(s, firm.operatorId, () => pickChannel(rng, playerVisibilityParts(s, seg, firm.hooks.view, date)));
     const ch = source ? CHANNELS[source] : null;
-    if (ch && rng.int(0, 99) < ch.exclusivePct) set = ['player']; // klient zapytał tylko tę firmę (np. z polecenia)
+    if (ch && rng.int(0, 99) < ch.exclusivePct) set = [firm.id]; // klient zapytał tylko tę firmę (np. z polecenia)
     else if (ch && ch.extraRivals > 0) {
-      const extra = pickWeighted(rng, weights.filter((x) => x.id !== 'player' && !set.includes(x.id)), ch.extraRivals);
+      const extra = pickWeighted(rng, weights.filter((x) => !isPlayerFirm(x.id) && !set.includes(x.id)), ch.extraRivals);
       set = [...set, ...extra];
     }
   }
   // oferty konkurentów z zestawu
-  const rivals = set.filter((id) => id !== 'player').map((id) => s.market.competitors.find((c) => c.id === id)!).filter(Boolean);
+  const rivals = set.filter((id) => !isPlayerFirm(id)).map((id) => s.market.competitors.find((c) => c.id === id)!).filter(Boolean);
   const offers = rivals.map((c) => ({ c, ...competitorOffer(c, spec, seg, rng) })).sort((a, b) => b.utility - a.utility);
-  if (!withPlayer) {
+  if (!firm) {
     const winner = offers.find((o) => awardCompetitor(o.c, spec, o.priceGross, ind));
     if (winner) bumpCurrent(s, { rivalWon: 1 });
     else bumpCurrent(s, { unserved: 1 });
     return;
   }
-  // gracz w zestawie: tworzy zapytanie (o ile ma moce na obsługę zapytań)
+  // firma gracza w zestawie: tworzy zapytanie (o ile ma moce na obsługę zapytań)
   const best = offers[0] ?? null;
-  const created = hooks.view.openEnquiries < DEMAND.maxOpenEnquiries && hooks.createEnquiry({ spec, segment: seg, source, rivals: rivals.length, rivalId: best?.c.id ?? null, rivalUtility: best?.utility ?? 0 });
+  const hooks = firm.hooks;
+  const created = hooks.view.openEnquiries < DEMAND.maxOpenEnquiries && withOperator(s, firm.operatorId, () => hooks.createEnquiry({ spec, segment: seg, source, rivals: rivals.length, rivalId: best?.c.id ?? null, rivalUtility: best?.utility ?? 0 }));
   if (created) {
     hooks.view.openEnquiries += 1;
     bumpCurrent(s, { playerInquiries: 1 });
@@ -422,7 +435,7 @@ function competitorsWork(s: GameState, date: IsoDate): void {
 
 /* ---------- Miesięczne zamknięcie rynku ---------- */
 
-function closeMonth(s: GameState, closing: string, date: IsoDate): void {
+function closeMonth(s: GameState, closing: string, date: IsoDate, firms: MarketFirm[]): void {
   const m = s.market;
   const macro = macroAt(s.seed, closing);
   const active = m.competitors.filter((c) => c.status === 'active');
@@ -432,7 +445,7 @@ function closeMonth(s: GameState, closing: string, date: IsoDate): void {
   cur.avgReputation = active.length ? Math.round(active.reduce((a, c) => a + c.reputation, 0) / active.length) : 0;
   const workers = active.reduce((a, c) => a + c.workers, 0);
   cur.competitorUtilBps = workers > 0 ? Math.round((active.reduce((a, c) => a + c.month.hours, 0) * 10_000) / (workers * COMPETITORS.hoursPerWorkerMonth)) : 0;
-  cur.marketingSpend = m.marketing.spend.filter((x) => x.month === closing).reduce((a, x) => a + x.amount, 0);
+  cur.marketingSpend = firms.reduce((sum, f) => sum + withOperator(s, f.operatorId, () => s.market.marketing.spend.filter((x) => x.month === closing).reduce((a, x) => a + x.amount, 0)), 0);
   m.months.push(cur);
   if (m.months.length > 60) m.months.splice(0, m.months.length - 60);
 
@@ -501,14 +514,19 @@ function closeMonth(s: GameState, closing: string, date: IsoDate): void {
     }
   }
 
-  // marketing gracza: widoczność zbliża się do celu (opóźnienie efektu), potem opłata za nowy miesiąc
+  // marketing firm gracza: widoczność zbliża się do celu (opóźnienie efektu), potem opłata za nowy miesiąc
   const nowMacro = macroAt(s.seed, monthKey(date));
-  for (const ch of CHANNEL_IDS) {
-    const budget = m.marketing.budgets[ch] ?? 0;
-    const target = marketingTargetReach(s, ch, budget, nowMacro);
-    const cur = m.marketing.reach[ch] ?? 0;
-    const next = Math.round(cur + (target - cur) / (1 + CHANNELS[ch].delayMonths));
-    m.marketing.reach[ch] = target === 0 && next < 5 ? 0 : Math.max(0, next); // resztki po wyłączeniu kanału wygaszamy do zera
+  for (const f of firms) {
+    withOperator(s, f.operatorId, () => {
+      const mk = s.market.marketing;
+      for (const ch of CHANNEL_IDS) {
+        const budget = mk.budgets[ch] ?? 0;
+        const target = marketingTargetReach(s, ch, budget, nowMacro);
+        const cur = mk.reach[ch] ?? 0;
+        const next = Math.round(cur + (target - cur) / (1 + CHANNELS[ch].delayMonths));
+        mk.reach[ch] = target === 0 && next < 5 ? 0 : Math.max(0, next); // resztki po wyłączeniu kanału wygaszamy do zera
+      }
+    });
   }
 }
 
@@ -535,7 +553,8 @@ function chargeMonthly(s: GameState, date: IsoDate, hooks: MarketHooks): void {
 
 /* ---------- Punkt wejścia: jeden dzień rynku ---------- */
 
-export function processMarketDay(s: GameState, date: IsoDate, hooks: MarketHooks): void {
+export function processMarketDay(s: GameState, date: IsoDate, firms: MarketFirm[]): void {
+  if (firms.length === 0) return;
   const key = `market:day:${date}`;
   if (s.processed[key]) return;
   s.processed[key] = true;
@@ -545,14 +564,15 @@ export function processMarketDay(s: GameState, date: IsoDate, hooks: MarketHooks
   if (m.current && m.current.month !== month) {
     // po przerwie dłuższej niż miesiąc (np. zawieszenie firmy) rynek „stał” — nie zamykamy zaległych miesięcy, żeby konkurenci nie ponieśli skutków dni, których nie symulowano
     const gap = (Number(month.slice(0, 4)) - Number(m.current.month.slice(0, 4))) * 12 + Number(month.slice(5, 7)) - Number(m.current.month.slice(5, 7));
-    if (gap === 1) closeMonth(s, m.current.month, date);
+    if (gap === 1) closeMonth(s, m.current.month, date, firms);
     m.current = emptyMonth(s, month);
   }
-  chargeMonthly(s, date, hooks);
+  for (const f of firms) withOperator(s, f.operatorId, () => chargeMonthly(s, date, f.hooks));
+  const hooks = firms[0]!.hooks;
   const macro = macroAt(s.seed, month);
   const active = m.competitors.filter((c) => c.status === 'active');
   const priceIdx = active.length ? active.reduce((a, c) => a + c.priceBps, 0) / active.length / 10_000 : 1;
-  const ctx: DayContext = { s, date, hooks, macro, priceIdx: clamp(priceIdx, 0.6, 1.6), weights: new Map() };
+  const ctx: DayContext = { s, date, firms, industry: hooks.industry, macro, priceIdx: clamp(priceIdx, 0.6, 1.6), weights: new Map() };
   const shares = segmentShares(macro);
   for (const { serviceId, expected } of expectedDailyDemand(s, date, hooks.industry, macro)) {
     const whole = Math.floor(expected);
@@ -607,7 +627,7 @@ export function recordPlayerWin(s: GameState): void { bumpCurrent(s, { playerWon
 /* ---------- Komendy gracza ---------- */
 
 export function setMarketingBudget(s: GameState, channel: string, monthlyNet: Grosze): string {
-  if (s.market.initializedOn === null && s.businesses.every((b) => b.status !== 'active')) throw new CommandError('Marketing wymaga działającej firmy.');
+  if (s.market.initializedOn === null && s.businesses.every((b) => b.status !== 'active') && !s.corp.companies.some((c) => c.operation !== null)) throw new CommandError('Marketing wymaga działającej firmy.');
   if (!(channel in CHANNELS)) throw new CommandError('Nieznany kanał marketingowy.');
   if (!Number.isInteger(monthlyNet) || monthlyNet < 0 || monthlyNet > zl(10_000)) throw new CommandError('Budżet miesięczny: od 0 do 10 000 zł netto.');
   const ch = CHANNELS[channel as ChannelId];

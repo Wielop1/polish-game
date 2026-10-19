@@ -7,13 +7,14 @@ import { formatPLN, mulBps, roundDiv, zl } from './money.ts';
 import type { Grosze } from './money.ts';
 import { issueDocument, US_PARTY, ZUS_PARTY } from './business.ts';
 import { requireActiveBusiness, requireCash } from './opsCommon.ts';
+import { CORP } from './corpConfig.ts';
 import { createRng } from './rng.ts';
 import { macroAt } from './macro.ts';
 import {
   FIRST_NAMES, LAST_NAMES, LEVEL_START_XP, LISTING_DAYS, LISTING_TIERS, MARKET_GROSS_BY_LEVEL, MAX_CANDIDATES_PER_LISTING, MAX_EMPLOYEES, ROLE_BY_ID, levelFromXp,
 } from './renovationCatalog.ts';
 import type {
-  Business, Candidate, EmployerContributions, EmployerPayslip, Employment, GameState, JobListing, WorkerPerson,
+  Operator, Candidate, EmployerContributions, EmployerPayslip, Employment, GameState, JobListing, WorkerPerson,
 } from './state.ts';
 import { firstOverload, performanceBps, workHoursPerWorkday } from './time.ts';
 
@@ -178,7 +179,7 @@ export function offerChecks(s: GameState, c: Candidate, o: Offer): string | null
   return null;
 }
 
-function hire(s: GameState, b: Business, c: Candidate, o: Offer): Employment {
+function hire(s: GameState, b: Operator, c: Candidate, o: Offer): Employment {
   const person = personById(s, c.personId)!;
   const l = s.ops.listings.find((x) => x.id === c.listingId)!;
   const n = nextCounter(s, 'hr:employment');
@@ -286,7 +287,7 @@ function ytdFor(s: GameState, personId: string, accrualYear: number, payYear: nu
   return { pensionBase, pitBase, exempt };
 }
 
-function issuePayroll(s: GameState, b: Business, e: Employment, date: IsoDate): void {
+function issuePayroll(s: GameState, b: Operator, e: Employment, date: IsoDate): void {
   const month = monthKey(date);
   const id = `eps:${e.id}:${month}`;
   if (s.ops.payslips.some((p) => p.id === id)) return;
@@ -311,14 +312,14 @@ function issuePayroll(s: GameState, b: Business, e: Employment, date: IsoDate): 
   const seq = nextCounter(s, `doc:cost:${month}`);
   const docId = `doc:${b.id}:payroll:${month}:${e.id}`;
   const number = `LP/${month.replace('-', '/')}/${String(seq).padStart(3, '0')}`;
-  const termDate = dateInMonth(ny.year, ny.month, R.employer.zusDay);
+  const termDate = dateInMonth(ny.year, ny.month, b.ownerId === s.person.id ? R.employer.zusDay : CORP.zusDayLegalEntity);
   s.documents.push({
     id: docId, businessId: b.id, kind: 'cost', number, issueDate: date, saleDate: date, counterpartyId: `party:emp:${person.id}`, orderId: null,
     description: `Lista płac ${month}: ${personName(person)}`, net: totalCost, vatRateBps: 0, vat: 0, gross: totalCost, vatTreatment: 'exempt', termDate, obligationIds: [], taxAmount: totalCost, part: 'payroll',
   });
   const doc = s.documents[s.documents.length - 1]!;
   ensureParty(s, { id: `party:emp:${person.id}`, name: personName(person), role: 'service' });
-  const base = { ruleId: `payroll:${e.id}`, issueDate: date, accountId: b.accountId, scope: 'business' as const, direction: 'payable' as const };
+  const base = { ruleId: `payroll:${e.id}`, issueDate: date, accountId: b.accountId, direction: 'payable' as const };
   const make = (suffix: string, counterpartyId: string, amount: Grosze, dueDate: IsoDate, category: string, description: string) => {
     if (amount <= 0) return;
     const ob = createObligation(s, { ...base, occurrenceId: `${docId}:${suffix}`, counterpartyId, amount, dueDate, category, description });
@@ -358,7 +359,7 @@ function updateWellbeing(s: GameState, date: IsoDate): void {
   }
 }
 
-export function processWorkforce(s: GameState, b: Business, date: IsoDate): void {
+export function processWorkforce(s: GameState, b: Operator, date: IsoDate): void {
   const key = `ops:day:${b.id}:${date}`;
   if (s.processed[key]) return;
   s.processed[key] = true;

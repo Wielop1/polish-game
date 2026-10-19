@@ -1,3 +1,4 @@
+import { CORP_LEGAL_RULES } from './legalCorp.ts';
 import { zl } from './money.ts';
 
 /**
@@ -12,7 +13,7 @@ export type LegalStatus = 'VERIFIED' | 'SIMPLIFIED' | 'DEFERRED';
 
 export interface LegalRule {
   id: string;
-  scope: 'PIT' | 'ETAT' | 'ZUS' | 'ZDROWOTNA' | 'VAT' | 'REJESTRACJA' | 'BRANZA' | 'KSIEGOWOSC' | 'PRACODAWCA';
+  scope: 'PIT' | 'ETAT' | 'ZUS' | 'ZDROWOTNA' | 'VAT' | 'REJESTRACJA' | 'BRANZA' | 'KSIEGOWOSC' | 'PRACODAWCA' | 'KSH' | 'KRS' | 'PCC' | 'CIT';
   title: string;
   validFrom: string;
   validTo: string | null;
@@ -153,6 +154,8 @@ export const LEGAL_RULES: readonly LegalRule[] = [
   r('SUB-B2B', 'BRANZA', 'Podwykonawcy (B2B): usługa za cenę umowną, bez pracowniczego ZUS i płacy etatowej', 'SIMPLIFIED', RENO_FIXED_ASSETS, 'Podwykonawcy to fikcyjne firmy zwolnione z VAT (faktura bez VAT); składki i podatki podwykonawcy to jego sprawa. Odwrotne obciążenie VAT, solidarna odpowiedzialność inwestora/wykonawcy i weryfikacja kontrahenta — niezaimplementowane.'),
   r('ADV-SUB', 'BRANZA', 'Zaliczka dla podwykonawcy: przedpłata (aktywo), koszt przy odbiorze pracy', 'SIMPLIFIED', ADV_SOURCE, 'Gra: zaliczka nie jest kosztem w dacie wpłaty; koszt podatkowy i ekonomiczny powstaje przy odbiorze (dokument na pełną cenę, zapłata reszty ponad zaliczkę). Zwrot zaliczki od podwykonawcy to należność. Zasady kosztu dla zaliczek w KPiR niezweryfikowane w tekście przepisów.'),
   r('VEH-TAX-DEFERRED', 'BRANZA', 'Pojazdy firmowe: amortyzacja, limity kosztów, odliczenie VAT (50%/100%), ewidencja przebiegu, leasing', 'DEFERRED', RENO_FIXED_ASSETS, 'Niezaimplementowane (polecenie właściciela). Gra: zakup pojazdu to wydatek gotówkowy i aktywo wyceniane wg stanu technicznego, bez kosztu podatkowego i bez odliczenia VAT; koszty eksploatacji to zwykłe koszty z dokumentów.'),
+  // --- v0.8: spółka z o.o., wspólnicy, CIT, dywidendy (legalCorp.ts) ---
+  ...CORP_LEGAL_RULES,
 ];
 
 export const LEGAL_BY_ID = new Map(LEGAL_RULES.map((x) => [x.id, x]));

@@ -50,7 +50,7 @@ export const AccountSchema = z.object({
   id: IdSchema,
   ownerId: IdSchema,
   name: z.string().min(1).max(80),
-  type: z.enum(['checking', 'savings', 'business']),
+  type: z.enum(['checking', 'savings', 'business', 'company']),
   currency: z.literal('PLN'),
   balance: GroszeSchema,
   interest: AccountInterestSchema.nullable(),
@@ -192,8 +192,8 @@ export const ObligationSchema = z.object({
   counterpartyId: IdSchema,
   /** Rachunek, z którego/na który ma nastąpić rozliczenie. */
   accountId: IdSchema,
-  /** Ewidencja: prywatna albo działalności gospodarczej (JDG). */
-  scope: z.enum(['personal', 'business']),
+  /** Ewidencja: prywatna, działalności gospodarczej (JDG) albo spółki z o.o. (odrębny podmiot prawny). */
+  scope: z.enum(['personal', 'business', 'company']),
   amount: PositiveGroszeSchema,
   issueDate: IsoDateSchema,
   dueDate: IsoDateSchema,
@@ -265,6 +265,14 @@ export const EventTypeSchema = z.enum([
   'sub.contract',
   'fleet.vehicle',
   'crew.assignment',
+  'corp.company',
+  'corp.shares',
+  'corp.board',
+  'corp.resolution',
+  'corp.dividend',
+  'corp.tax',
+  'corp.negotiation',
+  'corp.partner',
 ]);
 
 export const GameEventSchema = z.object({
@@ -399,11 +407,11 @@ export const TaxFormSchema = z.enum(['skala', 'liniowy', 'ryczalt']);
 export const ZusStartSchema = z.enum(['ulga', 'preferencyjny', 'standard']);
 
 /**
- * JDG: jednoosobowa działalność gospodarcza osoby fizycznej. To NIE jest osoba prawna —
- * właścicielem rachunku i wszystkich zobowiązań jest osoba gracza (`ownerId`); „firmowy” jest tylko
- * rachunek i odrębna ewidencja (zobowiązania z `scope: 'business'`).
+ * Operator gospodarczy (v0.8): wspólna część działalności prowadzonej przez JDG albo spółkę z o.o. — to, czego potrzebują moduły
+ * wspólnego silnika (dokumenty, rachunek, VAT, pracownicy, branża). Nie zawiera niczego z podatków osoby fizycznej (forma opodatkowania, ZUS właściciela).
+ * `ownerId` = osoba gracza (JDG) albo identyfikator spółki.
  */
-export const BusinessSchema = z.object({
+export const OperatorSchema = z.object({
   id: IdSchema,
   ownerId: IdSchema,
   name: z.string().min(1).max(80),
@@ -411,18 +419,29 @@ export const BusinessSchema = z.object({
   /** Kod PKD 2025 (np. „62.10.B”). */
   pkd: z.string().min(1).max(20),
   registeredOn: IsoDateSchema,
-  /** Pierwszy dzień działalności (zawsze 1. dzień miesiąca w v0.3). */
+  /** Pierwszy dzień działalności (zawsze 1. dzień miesiąca). */
   startDate: IsoDateSchema,
   /** Ostatni dzień działalności po złożeniu wniosku o zakończenie (null = działa). */
   closeOn: IsoDateSchema.nullable(),
   status: z.enum(['active', 'closed']),
-  taxForm: TaxFormSchema,
   vat: z.object({
     status: z.enum(['exempt', 'active']),
     activeFrom: IsoDateSchema.nullable(),
     /** Data czynności, która przekroczyła limit zwolnienia (jeśli to była przyczyna utraty zwolnienia). */
     limitExceededOn: IsoDateSchema.nullable(),
   }),
+  accountId: IdSchema,
+  /** Zawieszenia działalności (pełne miesiące; `to` = ostatni dzień zawieszenia, null = trwa). */
+  suspensions: z.array(z.object({ from: IsoDateSchema, to: IsoDateSchema.nullable() })),
+});
+
+/**
+ * JDG: jednoosobowa działalność gospodarcza osoby fizycznej. To NIE jest osoba prawna —
+ * właścicielem rachunku i wszystkich zobowiązań jest osoba gracza (`ownerId`); „firmowy” jest tylko
+ * rachunek i odrębna ewidencja (zobowiązania z `scope: 'business'`).
+ */
+export const BusinessSchema = OperatorSchema.extend({
+  taxForm: TaxFormSchema,
   zus: z.object({
     start: ZusStartSchema,
     /** Dobrowolne ubezpieczenie chorobowe. */
@@ -436,9 +455,6 @@ export const BusinessSchema = z.object({
       baseYear: z.number().int().nullable(),
     }),
   }),
-  accountId: IdSchema,
-  /** Zawieszenia działalności (pełne miesiące; `to` = ostatni dzień zawieszenia, null = trwa). */
-  suspensions: z.array(z.object({ from: IsoDateSchema, to: IsoDateSchema.nullable() })),
   /** Zaplanowana zmiana formy opodatkowania od 1 stycznia roku `effectiveYear`. */
   taxFormPlan: z.object({ form: TaxFormSchema, effectiveYear: z.number().int(), declaredOn: IsoDateSchema }).nullable(),
   /** Historia form opodatkowania (od daty). */
@@ -1131,6 +1147,302 @@ export const AccountingSchema = z.object({
   })),
 });
 
+
+/* ---------- Spółki z o.o., wspólnicy, udziały, uchwały i dywidendy (v0.8) ---------- */
+
+const ScoreSchema = z.number().int().min(0).max(100);
+const BpsSchema = z.number().int().min(0).max(10_000);
+
+/** Postać AI: wspólnik albo inwestor. Kapitał prywatny postaci jest poza księgą gracza (strona zewnętrzna). */
+export const PartnerSchema = z.object({
+  id: IdSchema,
+  firstName: z.string().min(1).max(40),
+  lastName: z.string().min(1).max(40),
+  birthYear: z.number().int().min(1940).max(2010),
+  kind: z.enum(['partner', 'investor']),
+  /** Dostępny kapitał prywatny postaci (maleje przy inwestycjach, rośnie o dywidendy netto i sprzedaż udziałów). */
+  capital: NonNegGroszeSchema,
+  experience: ScoreSchema,
+  competence: ScoreSchema,
+  riskTolerance: ScoreSchema,
+  goal: z.enum(['income', 'growth', 'exit']),
+  /** 0 = woli reinwestować zysk, 100 = woli dywidendy. */
+  dividendPreference: ScoreSchema,
+  horizonMonths: z.number().int().min(6).max(240),
+  /** Zaufanie do gracza (0–100); zmienia się wyłącznie od wyników spółki i decyzji zgodnych lub sprzecznych z interesami postaci. */
+  trust: ScoreSchema,
+  tradeSkill: z.string().nullable(),
+  bio: z.string().max(260),
+  history: z.array(z.object({ date: IsoDateSchema, note: z.string().max(240), trustDelta: z.number().int() })),
+  lastReviewMonth: z.string().nullable(),
+});
+
+export const BoardMemberSchema = z.object({
+  id: IdSchema,
+  /** Osoba gracza albo postać AI. Funkcja zarządcza jest niezależna od udziałów i od umowy o pracę. */
+  personId: IdSchema,
+  role: z.enum(['president', 'member']),
+  appointedOn: IsoDateSchema,
+  endedOn: IsoDateSchema.nullable(),
+  endReason: z.enum(['dismissed', 'resigned']).nullable(),
+  /** Uchwała powołująca (null = powołany w umowie spółki). */
+  resolutionId: IdSchema.nullable(),
+});
+
+export const CitLossSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  year: z.number().int(),
+  amount: PositiveGroszeSchema,
+  usages: z.array(z.object({ year: z.number().int(), amount: PositiveGroszeSchema })),
+});
+
+export const CompanyYearResultSchema = z.object({
+  year: z.number().int(),
+  /** Aktywa netto na koniec roku (po wszystkich naliczeniach, w tym podatku). */
+  netAssetsEnd: GroszeSchema,
+  /** Wpłaty wspólników na kapitał (nominał + nadwyżka) zarejestrowane w roku — nie są przychodem. */
+  contributions: NonNegGroszeSchema,
+  /** Dywidendy uchwalone w roku (brutto) — nie są kosztem. */
+  dividendsDeclared: NonNegGroszeSchema,
+  /** Przeniesienia z zysku na kapitał zapasowy uchwalone w roku. */
+  transfersToReserve: NonNegGroszeSchema,
+  /** Wynik finansowy netto roku = zmiana aktywów netto − wpłaty + dywidendy. */
+  netProfit: GroszeSchema,
+  citTax: NonNegGroszeSchema,
+});
+
+export const CompanyMonthSchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  netAssets: GroszeSchema,
+  revenue: NonNegGroszeSchema,
+  /** Wpłaty wspólników na kapitał zarejestrowane w miesiącu i dywidendy uchwalone w miesiącu (korekty wyniku). */
+  contributions: NonNegGroszeSchema,
+  dividends: NonNegGroszeSchema,
+});
+
+export const CompanyValuationSchema = z.object({
+  asOf: IsoDateSchema,
+  netAssets: GroszeSchema,
+  profit12: GroszeSchema,
+  months: z.number().int().min(0),
+  multipleBps: z.number().int().min(0),
+  earningsValue: NonNegGroszeSchema,
+  estimate: NonNegGroszeSchema,
+  low: NonNegGroszeSchema,
+  high: NonNegGroszeSchema,
+  /** Czynniki wyceny w czytelnej postaci (ślad dla gracza). */
+  factors: z.array(z.string().max(160)),
+});
+
+export const CompanySchema = z.object({
+  id: IdSchema,
+  name: z.string().min(2).max(60),
+  cityId: IdSchema,
+  profileId: IdSchema,
+  specialization: z.string().nullable(),
+  /** `draft` = szkic (negocjacje ze wspólnikami), `organizing` = spółka w organizacji (umowa zawarta, wniosek do KRS), `registered` = wpis do KRS. */
+  status: z.enum(['draft', 'organizing', 'registered', 'closed']),
+  createdOn: IsoDateSchema,
+  agreementOn: IsoDateSchema.nullable(),
+  filedOn: IsoDateSchema.nullable(),
+  /** Dzień rozpoznania wniosku przez sąd rejestrowy (S24: następny dzień po złożeniu wniosku, art. 20a ust. 2 ustawy o KRS). */
+  decisionOn: IsoDateSchema.nullable(),
+  registeredOn: IsoDateSchema.nullable(),
+  /** Numer KRS (symulowany — gra nie łączy się z rejestrem). */
+  krsNumber: z.string().nullable(),
+  /** Kapitał zakładowy z umowy spółki oraz wartość nominalna i liczba udziałów (rejestr: `corp.holdings`). */
+  capital: NonNegGroszeSchema,
+  nominal: PositiveGroszeSchema,
+  shareCount: z.number().int().min(0),
+  /** Kapitał zapasowy (nadwyżka ponad wartość nominalną przy objęciu udziałów + przeniesienia z zysku). */
+  supplementary: NonNegGroszeSchema,
+  accountId: IdSchema,
+  partyId: IdSchema,
+  board: z.array(BoardMemberSchema),
+  representation: z.enum(['each_alone', 'joint_two', 'all_jointly']),
+  /** Status VAT, o który spółka wystąpi przy uruchomieniu działalności. */
+  vatPlan: z.enum(['exempt', 'active']),
+  operation: OperatorSchema.nullable(),
+  slices: z.object({
+    reno: RenovationStateSchema,
+    ops: OpsSchema,
+    marketing: MarketStateSchema.shape.marketing,
+    strategy: MarketStateSchema.shape.strategy,
+  }),
+  /** Podwyższenie kapitału oczekujące na wpis do KRS (skuteczne dopiero z chwilą wpisu — art. 262 § 4 KSH). */
+  pendingIncrease: z.object({
+    resolutionId: IdSchema, subscriberId: IdSchema, shares: z.number().int().min(1), contribution: PositiveGroszeSchema,
+    nominalTotal: PositiveGroszeSchema, filedOn: IsoDateSchema, decisionOn: IsoDateSchema, negotiationId: IdSchema.nullable(),
+  }).nullable(),
+  /** Lata obrotowe, za które zgromadzenie wspólników zatwierdziło sprawozdanie finansowe. */
+  statementsApproved: z.array(z.number().int()),
+  yearResults: z.array(CompanyYearResultSchema),
+  /** Migawki miesięczne (aktywa netto na koniec miesiąca i przychód podatkowy) — podstawa wyceny i wyniku 12 miesięcy. */
+  monthly: z.array(CompanyMonthSchema),
+  /** Ostatnia wycena spółki (szacunek, nie cena transakcji); odświeżana co miesiąc i po zdarzeniach zmieniających kapitał. */
+  valuation: CompanyValuationSchema.nullable(),
+  /** Okresy, w których jedyny wspólnik (osoba gracza) podlegał ubezpieczeniom — dla składek ZUS. */
+  soleHistory: z.array(z.object({ holderId: IdSchema, from: IsoDateSchema, to: IsoDateSchema.nullable() })),
+});
+
+export const ShareLotSchema = z.object({
+  id: IdSchema,
+  count: z.number().int().min(1),
+  acquiredOn: IsoDateSchema,
+  via: z.enum(['founding', 'issue', 'purchase']),
+  /** Cena zapłacona za pozostałe udziały partii (koszt nabycia). */
+  paid: NonNegGroszeSchema,
+  eventId: IdSchema,
+});
+
+/** Centralny rejestr udziałów: jeden wiersz = wspólnik w spółce. */
+export const ShareHoldingSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  holderId: IdSchema,
+  count: z.number().int().min(0),
+  nominal: PositiveGroszeSchema,
+  /** Prawa głosu na udział (domyślnie 1 — art. 242 KSH). Pole przygotowane pod udziały uprzywilejowane (poza zakresem). */
+  votesPerShare: z.number().int().min(1),
+  restrictions: z.array(z.object({ kind: z.enum(['lockup', 'pledge']), until: IsoDateSchema.nullable(), note: z.string().max(120) })),
+  lots: z.array(ShareLotSchema),
+  history: z.array(z.object({ date: IsoDateSchema, kind: z.enum(['acquire', 'dispose']), count: z.number().int().min(1), eventId: IdSchema, note: z.string().max(200) })),
+});
+
+export const ShareEventSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  date: IsoDateSchema,
+  kind: z.enum(['founding', 'issue', 'transfer']),
+  fromId: IdSchema.nullable(),
+  toId: IdSchema,
+  count: z.number().int().min(1),
+  nominal: PositiveGroszeSchema,
+  /** Łączna cena (nowe udziały: wkład; przeniesienie: cena sprzedaży). */
+  price: NonNegGroszeSchema,
+  /** Koszt nabycia przeniesionych udziałów u zbywcy (FIFO) — do ustalenia zysku ze sprzedaży; 0 dla zawiązania i emisji. */
+  costBasis: NonNegGroszeSchema,
+  resolutionId: IdSchema.nullable(),
+  note: z.string().max(240),
+});
+
+export const ResolutionPayloadSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('appoint_board'), personId: IdSchema, role: z.enum(['president', 'member']) }),
+  z.object({ type: z.literal('dismiss_board'), memberId: IdSchema }),
+  z.object({ type: z.literal('approve_statements'), year: z.number().int() }),
+  z.object({ type: z.literal('allocate_profit'), year: z.number().int(), dividendGross: NonNegGroszeSchema, toReserve: NonNegGroszeSchema, dividendDay: IsoDateSchema, payDay: IsoDateSchema }),
+  z.object({ type: z.literal('capital_increase'), negotiationId: IdSchema, subscriberId: IdSchema, shares: z.number().int().min(1), issuePriceEach: PositiveGroszeSchema }),
+  z.object({ type: z.literal('change_representation'), mode: z.enum(['each_alone', 'joint_two', 'all_jointly']) }),
+  z.object({ type: z.literal('consent_acquisition'), label: z.string().max(80), maxAmount: PositiveGroszeSchema, validUntil: IsoDateSchema }),
+]);
+
+export const ResolutionSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  title: z.string().min(1).max(160),
+  payload: ResolutionPayloadSchema,
+  proposedOn: IsoDateSchema,
+  proposedBy: IdSchema,
+  /** Dzień zgromadzenia wspólników (zwołanie: min. 2 tygodnie — art. 238 § 1 KSH; jedyny wspólnik — od razu, art. 156). */
+  assemblyOn: IsoDateSchema,
+  threshold: z.object({ kind: z.enum(['absolute', 'two_thirds', 'three_quarters', 'unanimous']), ruleId: z.string() }),
+  voters: z.array(z.object({ holderId: IdSchema, votes: z.number().int().min(0), excluded: z.string().nullable() })),
+  votes: z.array(z.object({ holderId: IdSchema, vote: z.enum(['for', 'against', 'abstain']), votes: z.number().int().min(0), castOn: IsoDateSchema })),
+  status: z.enum(['scheduled', 'passed', 'rejected', 'executed', 'failed', 'cancelled']),
+  tally: z.object({ for: z.number().int(), against: z.number().int(), abstain: z.number().int(), cast: z.number().int(), needed: z.number().int() }).nullable(),
+  decidedOn: IsoDateSchema.nullable(),
+  executedOn: IsoDateSchema.nullable(),
+  outcome: z.string().max(400),
+  history: z.array(z.object({ date: IsoDateSchema, text: z.string().max(240) })),
+});
+
+export const DealTermsSchema = z.object({
+  shares: z.number().int().min(0),
+  /** Łączna kwota: wkład (objęcie udziałów) albo cena (zakup/sprzedaż istniejących udziałów). */
+  amount: NonNegGroszeSchema,
+  /** Udział w kapitale po transakcji (pkt bazowe) — dla emisji wynika z liczby udziałów. */
+  percentBps: BpsSchema,
+  role: z.enum(['none', 'board_member', 'president']),
+  dividendPolicy: z.enum(['none', 'distribute', 'reinvest']),
+});
+
+export const NegotiationSchema = z.object({
+  id: IdSchema,
+  /** found = wspólnik zakładający spółkę; subscribe = objęcie nowych udziałów (pieniądze do spółki); secondary_sell = gracz sprzedaje istniejące udziały; secondary_buy = gracz kupuje istniejące udziały. */
+  kind: z.enum(['found', 'subscribe', 'secondary_sell', 'secondary_buy']),
+  companyId: IdSchema,
+  partnerId: IdSchema,
+  status: z.enum(['open', 'countered', 'agreed', 'declined', 'expired', 'completed', 'void']),
+  terms: DealTermsSchema,
+  rounds: z.array(z.object({ by: z.enum(['player', 'partner']), date: IsoDateSchema, terms: DealTermsSchema, note: z.string().max(260) })),
+  openedOn: IsoDateSchema,
+  expiresOn: IsoDateSchema,
+  resolutionId: IdSchema.nullable(),
+  reason: z.string().max(300),
+});
+
+export const DividendSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  /** Rok obrotowy, z którego zysku pochodzi uchwała. */
+  year: z.number().int(),
+  resolutionId: IdSchema,
+  grossTotal: PositiveGroszeSchema,
+  declaredOn: IsoDateSchema,
+  dividendDay: IsoDateSchema,
+  payDay: IsoDateSchema,
+  taxDueDay: IsoDateSchema,
+  /** Kwota dostępna do podziału w dniu uchwały (art. 192 KSH) i aktywa netto po wypłacie — ślad weryfikacji. */
+  distributableAtDeclaration: NonNegGroszeSchema,
+  lines: z.array(z.object({
+    holderId: IdSchema, shares: z.number().int().min(1), gross: PositiveGroszeSchema, tax: NonNegGroszeSchema, net: PositiveGroszeSchema,
+    obligationId: IdSchema, receivableId: IdSchema.nullable(),
+  })),
+  taxObligationId: IdSchema.nullable(),
+  status: z.enum(['declared', 'paid']),
+});
+
+export const CitReturnSchema = z.object({
+  id: IdSchema,
+  companyId: IdSchema,
+  year: z.number().int(),
+  revenue: NonNegGroszeSchema,
+  costs: NonNegGroszeSchema,
+  /** Dochód (przychody − koszty) przed odliczeniem straty; ujemny = strata roku. */
+  income: GroszeSchema,
+  lossDeducted: NonNegGroszeSchema,
+  base: NonNegGroszeSchema,
+  rateBps: z.number().int().min(0).max(10_000),
+  /** Dlaczego taka stawka: id reguły z LEGAL_RULES + krótki opis. */
+  rateReason: z.string().max(240),
+  tax: NonNegGroszeSchema,
+  advances: NonNegGroszeSchema,
+  /** Dodatnie = do zapłaty, ujemne = nadpłata. */
+  balance: GroszeSchema,
+  dueDate: IsoDateSchema,
+  obligationId: IdSchema.nullable(),
+  smallTaxpayer: z.boolean(),
+  startYear: z.boolean(),
+  carriedForward: z.boolean(),
+});
+
+export const CorpSchema = z.object({
+  companies: z.array(CompanySchema),
+  partners: z.array(PartnerSchema),
+  holdings: z.array(ShareHoldingSchema),
+  shareEvents: z.array(ShareEventSchema),
+  resolutions: z.array(ResolutionSchema),
+  negotiations: z.array(NegotiationSchema),
+  dividends: z.array(DividendSchema),
+  citReturns: z.array(CitReturnSchema),
+  citLosses: z.array(CitLossSchema),
+  /** Aktywny podmiot przy zarządzaniu działalnością: 'jdg' albo id spółki. */
+  selected: z.string(),
+  /** Kontekst operatora w trakcie obliczeń (zawsze null w stanie spoczynkowym — niezmiennik). */
+  context: z.string().nullable(),
+});
+
 /* ---------- Stan gry ---------- */
 
 export const GameStateSchema = z.object({
@@ -1180,6 +1492,8 @@ export const GameStateSchema = z.object({
   accounting: AccountingSchema,
   /** Pracownicy, rekrutacja, podwykonawcy, ekipy, przydziały zasobów i pojazdy (v0.6; wspólny silnik, nie moduł branży). */
   ops: OpsSchema,
+  /** Spółki z o.o., wspólnicy, rejestr udziałów, uchwały, dywidendy i CIT (v0.8). */
+  corp: CorpSchema,
 });
 
 export type Person = z.infer<typeof PersonSchema>;
@@ -1204,6 +1518,7 @@ export type Life = z.infer<typeof LifeSchema>;
 export type TaxForm = z.infer<typeof TaxFormSchema>;
 export type ZusStart = z.infer<typeof ZusStartSchema>;
 export type Business = z.infer<typeof BusinessSchema>;
+export type Operator = z.infer<typeof OperatorSchema>;
 export type ServiceOffer = z.infer<typeof ServiceOfferSchema>;
 export type ServiceOrder = z.infer<typeof ServiceOrderSchema>;
 export type BusinessDocument = z.infer<typeof DocumentSchema>;
@@ -1244,4 +1559,21 @@ export type Obligation = z.infer<typeof ObligationSchema>;
 export type GameEvent = z.infer<typeof GameEventSchema>;
 export type EventType = z.infer<typeof EventTypeSchema>;
 export type HistoryPoint = z.infer<typeof HistoryPointSchema>;
+export type Partner = z.infer<typeof PartnerSchema>;
+export type BoardMember = z.infer<typeof BoardMemberSchema>;
+export type Company = z.infer<typeof CompanySchema>;
+export type CompanyMonth = z.infer<typeof CompanyMonthSchema>;
+export type CompanyValuation = z.infer<typeof CompanyValuationSchema>;
+export type CompanyYearResult = z.infer<typeof CompanyYearResultSchema>;
+export type ShareHolding = z.infer<typeof ShareHoldingSchema>;
+export type ShareLot = z.infer<typeof ShareLotSchema>;
+export type ShareEvent = z.infer<typeof ShareEventSchema>;
+export type Resolution = z.infer<typeof ResolutionSchema>;
+export type ResolutionPayload = z.infer<typeof ResolutionPayloadSchema>;
+export type DealTerms = z.infer<typeof DealTermsSchema>;
+export type Negotiation = z.infer<typeof NegotiationSchema>;
+export type Dividend = z.infer<typeof DividendSchema>;
+export type CitReturn = z.infer<typeof CitReturnSchema>;
+export type CitLoss = z.infer<typeof CitLossSchema>;
+export type Corp = z.infer<typeof CorpSchema>;
 export type GameState = z.infer<typeof GameStateSchema>;

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CITIES, ECONOMY_V01, GAME_START, LIFESTYLE, SAVINGS, START_HOME, START_SKILLS, TIME } from './config.ts';
 import { addDays, addMonths, diffDays } from './date.ts';
 import { createRng } from './rng.ts';
+import { emptyCorp } from './partners.ts';
 import { emptyAccounting, emptyOps, emptyReno } from './industryDefaults.ts';
 import { initialMarketState } from './market.ts';
 import { logEvent, postTransaction } from './core.ts';
@@ -216,6 +217,7 @@ export function createNewGame(input: NewGameInput): GameState {
     market: initialMarketState(),
     accounting: emptyAccounting(),
     ops: emptyOps(seed),
+    corp: emptyCorp(seed),
   };
 
   postTransaction(state, {

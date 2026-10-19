@@ -11,7 +11,7 @@ import { createRng } from './rng.ts';
 import { industryOf } from './industry.ts';
 import { SERVICE_BY_ID } from './renovationCatalog.ts';
 import { periodLabel } from './core.ts';
-import type { Business, BusinessDocument, GameState, ServiceOffer, ServiceOrder, TaxForm, TaxPeriod, ZusStart } from './state.ts';
+import type { Business, Operator, BusinessDocument, GameState, ServiceOffer, ServiceOrder, TaxForm, TaxPeriod, ZusStart } from './state.ts';
 import { grossOf } from './payroll.ts';
 import { healthFromIncome, healthRyczalt, monthsBetween, pitCumulative, socialContributions, socialForRegime, vatExemptionLimit, vatOf, zusRegimeFor } from './tax.ts';
 import type { ZusRegime } from './tax.ts';
@@ -44,6 +44,12 @@ export const VAT_PASS_THROUGH: ReadonlySet<string> = new Set(['vat_nalezny', 'va
 
 /* ---------- Zapytania ---------- */
 
+/** Zlecenia w toku należące do JDG (zlecenia spółek są odrębne — ich kontrakty leżą w stanie spółki). */
+export function jdgOrdersInProgress(s: GameState): boolean {
+  const companyOrders = new Set(s.corp.companies.flatMap((c) => c.slices.reno.jobs.map((j) => j.orderId)));
+  return s.serviceOrders.some((o) => o.status === 'in_progress' && !companyOrders.has(o.id));
+}
+
 export function activeBusiness(s: GameState): Business | null {
   return s.businesses.find((b) => b.status === 'active') ?? null;
 }
@@ -55,20 +61,20 @@ export function formOn(b: Business, date: IsoDate): TaxForm {
   return form;
 }
 
-export function isSuspendedOn(b: Business, date: IsoDate): boolean {
+export function isSuspendedOn(b: Operator, date: IsoDate): boolean {
   return b.suspensions.some((x) => x.from <= date && (x.to === null || date <= x.to));
 }
 
 export type BusinessState = 'pending' | 'active' | 'suspended' | 'closing' | 'closed';
 
-export function businessState(b: Business, date: IsoDate): BusinessState {
+export function businessState(b: Operator, date: IsoDate): BusinessState {
   if (b.status === 'closed') return 'closed';
   if (date < b.startDate) return 'pending';
   if (isSuspendedOn(b, date)) return 'suspended';
   return b.closeOn !== null ? 'closing' : 'active';
 }
 
-export function profileOf(b: Business): BusinessProfile {
+export function profileOf(b: Operator): BusinessProfile {
   const p = PROFILE_BY_ID.get(b.profileId);
   if (!p) throw new Error(`Nieznany profil działalności ${b.profileId}`);
   return p;
@@ -77,7 +83,7 @@ export function profileOf(b: Business): BusinessProfile {
 const inMonth = (d: BusinessDocument, mk: string) => d.issueDate.startsWith(mk);
 const inYearUpTo = (d: BusinessDocument, year: number, upTo: IsoDate) => d.issueDate.startsWith(`${year}-`) && d.issueDate <= upTo;
 
-export function docsOf(s: GameState, b: Business, kind: 'sales' | 'cost'): BusinessDocument[] {
+export function docsOf(s: GameState, b: Operator, kind: 'sales' | 'cost'): BusinessDocument[] {
   return s.documents.filter((d) => d.businessId === b.id && d.kind === kind);
 }
 
@@ -148,7 +154,7 @@ interface DocInput {
 }
 
 /** Wystawia rekord sprzedaży/kosztu i księguje go przez wspólny silnik zobowiązań (rachunek firmowy). */
-export function issueDocument(s: GameState, b: Business, input: DocInput): BusinessDocument {
+export function issueDocument(s: GameState, b: Operator, input: DocInput): BusinessDocument {
   const year = parseIso(input.issueDate).year;
   if (input.kind === 'sales' && b.vat.status === 'exempt') {
     const ytd = docsOf(s, b, 'sales').filter((d) => d.issueDate.startsWith(`${year}-`)).reduce((a, d) => a + d.net, 0);
@@ -175,7 +181,7 @@ export function issueDocument(s: GameState, b: Business, input: DocInput): Busin
     net: input.net, vatRateBps: taxed ? R.vat.rateBps : 0, vat, gross, vatTreatment: taxed ? 'taxed' : 'exempt', termDate,
     obligationIds: [], taxAmount: input.taxAmountOverride ?? (input.kind === 'sales' ? input.net : taxed ? input.net : gross), part: input.part ?? 'full',
   };
-  const base = { ruleId: `doc:${id}`, issueDate: input.issueDate, accountId: b.accountId, scope: 'business' as const };
+  const base = { ruleId: `doc:${id}`, issueDate: input.issueDate, accountId: b.accountId, scope: (b.ownerId === s.person.id ? 'business' : 'company') as 'business' | 'company' };
   const vatDue = dueNextMonth(input.vatAtReceipt ? termDate : input.issueDate, R.vat.dueDay);
   const make = (suffix: string, o: { direction: 'receivable' | 'payable'; counterpartyId: string; amount: Grosze; dueDate: IsoDate; category: string; description: string }) => {
     const ob = createObligation(s, { ...base, ...o, occurrenceId: `${id}:${suffix}` });
@@ -326,7 +332,7 @@ export function closeBusiness(s: GameState): string {
   if (!b) throw new CommandError('Nie prowadzisz działalności.');
   if (b.closeOn !== null) throw new CommandError(`Działalność kończy się ${formatDatePL(b.closeOn)}.`);
   if (s.clock.today < b.startDate) throw new CommandError('Działalność jeszcze się nie rozpoczęła.');
-  if (s.serviceOrders.some((o) => o.status === 'in_progress')) throw new CommandError('Najpierw zakończ trwające zlecenia.');
+  if (jdgOrdersInProgress(s)) throw new CommandError('Najpierw zakończ trwające zlecenia.');
   const { year, month } = parseIso(s.clock.today);
   b.closeOn = dateInMonth(year, month, 'last');
   b.suspensions = b.suspensions.filter((x) => x.from <= s.clock.today); // zaplanowane zawieszenie traci sens
@@ -470,7 +476,7 @@ export function suspendBusiness(s: GameState): string {
   if (today < b.startDate) throw new CommandError('Działalność jeszcze się nie rozpoczęła.');
   if (b.closeOn !== null) throw new CommandError('Działalność jest w trakcie zamykania.');
   if (b.suspensions.some((x) => x.to === null)) throw new CommandError('Działalność jest już zawieszona (lub zawieszenie jest zaplanowane).');
-  if (s.serviceOrders.some((o) => o.status === 'in_progress')) throw new CommandError('Najpierw zakończ trwające zlecenia — w okresie zawieszenia nie wolno prowadzić bieżącej działalności.');
+  if (jdgOrdersInProgress(s)) throw new CommandError('Najpierw zakończ trwające zlecenia — w okresie zawieszenia nie wolno prowadzić bieżącej działalności.');
   const from = firstOfNextMonth(today);
   b.suspensions.push({ from, to: null });
   for (const o of s.serviceOffers) if (o.status === 'open') o.status = 'expired';

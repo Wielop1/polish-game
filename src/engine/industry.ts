@@ -1,5 +1,5 @@
 import type { IsoDate } from './date.ts';
-import type { Business, GameState } from './state.ts';
+import type { Operator, GameState } from './state.ts';
 
 /**
  * Prosty interfejs modułów branżowych (v0.5). Moduł dostarcza treści i mechanikę specyficzną dla branży
@@ -13,11 +13,11 @@ export interface IndustryModule {
   /** Profile działalności (`BusinessProfile.id`) obsługiwane przez moduł. */
   profileIds: readonly string[];
   /** Inicjalizacja stanu modułu przy rejestracji działalności (np. pierwsza specjalizacja). */
-  onRegister?(s: GameState, b: Business, input: { specialization?: string }): void;
+  onRegister?(s: GameState, b: Operator, input: { specialization?: string }): void;
   /** Przetwarzanie jednego dnia dla aktywnej (niezawieszonej) działalności; musi być idempotentne. */
-  processDay(s: GameState, b: Business, date: IsoDate): void;
+  processDay(s: GameState, b: Operator, date: IsoDate): void;
   /** Braki widoczne dla księgowości (np. brak materiałów na kontrakt) — krótkie komunikaty z kluczem idempotencji. */
-  gaps?(s: GameState, b: Business, date: IsoDate): { key: string; text: string }[];
+  gaps?(s: GameState, b: Operator, date: IsoDate): { key: string; text: string }[];
 }
 
 const registry = new Map<string, IndustryModule>();
@@ -31,6 +31,6 @@ export function industryForProfile(profileId: string): IndustryModule | null {
   return null;
 }
 
-export function industryOf(b: Business): IndustryModule | null {
+export function industryOf(b: Operator): IndustryModule | null {
   return industryForProfile(b.profileId);
 }

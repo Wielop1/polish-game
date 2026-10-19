@@ -90,7 +90,7 @@ export interface ObligationInput {
   counterpartyId: string;
   accountId?: string;
   /** Ewidencja (domyślnie prywatna). */
-  scope?: 'personal' | 'business';
+  scope?: 'personal' | 'business' | 'company';
   amount: Grosze;
   issueDate: IsoDate;
   dueDate: IsoDate;
@@ -107,7 +107,9 @@ export function createObligation(s: GameState, input: ObligationInput): Obligati
   if (input.amount <= 0) throw new RangeError(`Zobowiązanie musi mieć kwotę dodatnią (${input.occurrenceId})`);
   if (input.dueDate < input.issueDate) throw new RangeError(`Termin ${input.dueDate} przed naliczeniem ${input.issueDate}`);
   const receivable = input.direction === 'receivable';
-  const playerId = s.person.id;
+  // Stroną „własną” zobowiązania jest właściciel rachunku: osoba gracza (konto osobiste i JDG) albo spółka z o.o. (odrębny podmiot prawny).
+  const account = accountById(s, input.accountId ?? s.playerAccountId);
+  const playerId = account.ownerId;
   const obligation: Obligation = {
     id: `obl:${input.occurrenceId}`,
     direction: input.direction,
@@ -115,7 +117,7 @@ export function createObligation(s: GameState, input: ObligationInput): Obligati
     debtorId: receivable ? input.counterpartyId : playerId,
     counterpartyId: input.counterpartyId,
     accountId: input.accountId ?? s.playerAccountId,
-    scope: input.scope ?? 'personal',
+    scope: input.scope ?? (account.type === 'company' ? 'company' : account.type === 'business' ? 'business' : 'personal'),
     amount: input.amount,
     issueDate: input.issueDate,
     dueDate: input.dueDate,
@@ -146,6 +148,36 @@ export function createObligation(s: GameState, input: ObligationInput): Obligati
 export function periodLabel(base: string, date: IsoDate): string {
   return `${base} — ${formatMonthPL(monthKey(date))}`;
 }
+
+/** Rozliczenie zobowiązania/należności: jedna transakcja na rachunku zobowiązania + zdarzenie w dzienniku. */
+export function settleOne(s: GameState, o: Obligation, date: IsoDate): void {
+  const receivable = o.direction === 'receivable';
+  const tx = postTransaction(s, {
+    eventId: `settle:${o.id}`,
+    accountId: o.accountId,
+    date,
+    amount: receivable ? o.amount : -o.amount,
+    category: o.category,
+    description: o.description,
+    counterpartyId: o.counterpartyId,
+    obligationId: o.id,
+  });
+  o.status = 'settled';
+  o.settledDate = date;
+  o.settlementTxId = tx.id;
+  const late = o.overdueSince !== null;
+  logEvent(s, {
+    id: `settle:${o.id}`,
+    date,
+    type: 'obligation.settled',
+    tone: receivable ? 'positive' : 'negative',
+    title: receivable ? `Wpływ: ${o.description}` : `Zapłacono: ${o.description}`,
+    detail: `${partyName(s, o.counterpartyId)} · ${formatPLN(o.amount)}${late ? ' · po terminie' : ''}`,
+    amount: receivable ? o.amount : -o.amount,
+    category: o.category,
+  });
+}
+
 
 /* ---------- Historia ---------- */
 
