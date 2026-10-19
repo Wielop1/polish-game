@@ -307,7 +307,7 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
   if (i.teamId && !team) errors.push('Nie ma takiej ekipy.');
   const ownerWorks = !team || team.members.some((m) => m.kind === 'owner');
   if (ownerWorks && !ownerAvailable(s)) errors.push('Spółka nie ma właściciela-wykonawcy: wskaż ekipę z pracowników spółki lub podwykonawców (praca wspólnika na rzecz spółki wymagałaby odrębnej umowy — CO-KSH-ART210).');
-  const supervision: 'worker' | 'supervise' | 'hands-off' = ownerWorks ? 'worker' : i.supervision === 'hands-off' ? 'hands-off' : 'supervise';
+  const supervision: 'worker' | 'supervise' | 'hands-off' = ownerWorks ? 'worker' : i.supervision === 'supervise' ? 'supervise' : 'hands-off';
   let speed = speedBps(s, i.serviceId);
   let plannedCenti = Math.max(1, roundDiv(norm * 10_000, Math.max(1, speed)));
   let minDays = Math.ceil(plannedCenti / (hpd * 100));
@@ -482,7 +482,7 @@ export function quoteSchedule(s: GameState, i: QuoteInput): QuoteSchedule {
   const days = Number.isInteger(i.durationDays) && i.durationDays >= 1 ? Math.min(i.durationDays, 200) : 1;
   const members = parseCrewKey(i.teamId) ?? (i.teamId ? s.ops.teams.find((t) => t.id === i.teamId)?.members : undefined) ?? null;
   const ownerWorks = !i.teamId || !members || members.some((m) => m.kind === 'owner');
-  const ownerHours = ownerWorks ? hpd : i.supervision === 'hands-off' ? 0 : 1;
+  const ownerHours = ownerWorks ? hpd : i.supervision === 'supervise' ? 1 : 0;
   const employmentIds = (members ?? []).filter((m) => m.kind === 'employee').map((m) => m.id);
   const subIds = (members ?? []).filter((m) => m.kind === 'sub').map((m) => m.id);
 
@@ -692,7 +692,7 @@ export function sendQuote(s: GameState, enquiryId: string, input: QuoteInput): s
     vatRateBps: p.vatRateBps, advanceBps: input.advanceBps, paymentTermDays: input.paymentTermDays, startDate: input.startDate, durationDays: input.durationDays,
     hoursPerDay: input.hoursPerDay, laborRate: input.laborRate, planned: p.planned, plannedCenti: p.plannedCenti, sentOn: today, decideOn, status: 'sent', counter: null,
     held: false, note: '', acceptedOn: null, signBy: null, replyDays: diffDays(today, enq.receivedOn),
-    teamId: input.teamId ?? null, supervision: input.teamId ? ((s.ops.teams.find((t) => t.id === input.teamId)?.members.some((m) => m.kind === 'owner') ?? true) ? 'worker' : input.supervision === 'hands-off' ? 'hands-off' : 'supervise') : 'worker', vehicleId: input.vehicleId ?? null,
+    teamId: input.teamId ?? null, supervision: input.teamId ? ((s.ops.teams.find((t) => t.id === input.teamId)?.members.some((m) => m.kind === 'owner') ?? true) ? 'worker' : input.supervision === 'supervise' ? 'supervise' : 'hands-off') : 'worker', vehicleId: input.vehicleId ?? null,
   };
   reno(s).quotes.push(q);
   enq.status = 'quoted';
@@ -826,7 +826,7 @@ function setupCrew(s: GameState, job: RenoJob, order: ServiceOrder): void {
   const team = job.crew.teamId ? s.ops.teams.find((t) => t.id === job.crew.teamId) : undefined;
   if (job.crew.teamId && !team) throw new CommandError('Nie ma takiej ekipy.');
   const ownerWorks = !team || team.members.some((m) => m.kind === 'owner');
-  job.crew.supervision = ownerWorks ? 'worker' : job.crew.supervision === 'hands-off' ? 'hands-off' : 'supervise';
+  job.crew.supervision = ownerWorks ? 'worker' : job.crew.supervision === 'supervise' ? 'supervise' : 'hands-off';
   const def = SERVICE_BY_ID.get(job.serviceId)!;
   const ownerHours = job.crew.supervision === 'worker' ? job.hoursPerDay : job.crew.supervision === 'supervise' ? 1 : 0;
   // czas właściciela (praca albo nadzór) — kontrakt zajmuje godziny doby; delegowanie bez nadzoru ich nie zajmuje
@@ -889,7 +889,7 @@ export function signContract(s: GameState, quoteId: string, crew?: CrewMember[])
     const ownerIn = crew.some((m) => m.kind === 'owner');
     if (ownerIn && !ownerAvailable(s)) throw new CommandError('Właściciel nie może być wykonawcą w spółce — wskaż pracowników spółki lub podwykonawców.');
     q.teamId = crew.length === 1 && ownerIn ? null : ensureCrewTeam(s, crew);
-    q.supervision = ownerIn ? 'worker' : 'supervise';
+    q.supervision = ownerIn ? 'worker' : 'hands-off';
     if (crew.every((m) => m.kind === 'sub')) q.vehicleId = null;
   }
   if (isSuspendedOn(b, today) || b.suspensions.some((x) => x.from > today)) throw new CommandError('Działalność jest zawieszona — nie można podpisywać nowych umów.');

@@ -406,13 +406,13 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   const ownerBlocked = ownerIn && p.errors.some((e) => /umiejętności|specjalizacji|sprzęt/i.test(e));
   const setMembers = (next: CrewMember[]) => {
     if (next.length === 0) return;
-    set(next.length === 1 && next[0]!.kind === 'owner' ? { teamId: null, supervision: 'worker' } : { teamId: crewKey(next), supervision: next.some((m) => m.kind === 'owner') ? 'worker' : 'supervise' });
+    set(next.length === 1 && next[0]!.kind === 'owner' ? { teamId: null, supervision: 'worker' } : { teamId: crewKey(next), supervision: next.some((m) => m.kind === 'owner') ? 'worker' : 'hands-off' });
   };
   const toggle = (kind: CrewMember['kind'], id: string) => setMembers(has(kind, id) ? members.filter((m) => !(m.kind === kind && m.id === id)) : [...members, { kind, id }]);
   /** Zlecenie pracy wskazanym wykonawcom (bez właściciela) jednym kliknięciem; jeśli cena nie pokrywa kosztów, ustawia ją z narzutem 25%. */
   const delegate = (to: CrewMember[]) => {
-    const next: QuoteInput = { ...q, teamId: crewKey(to), supervision: 'supervise', priceNet: price ?? 0 };
-    set({ teamId: next.teamId, supervision: 'supervise' });
+    const next: QuoteInput = { ...q, teamId: crewKey(to), supervision: 'hands-off', priceNet: price ?? 0 };
+    set({ teamId: next.teamId, supervision: 'hands-off' });
     const np = previewQuote(game, next);
     if (price === null || np.planned.total > next.priceNet) setPriceText(String(Math.round((np.planned.total * 12_500) / 10_000 / 1_000) * 10));
   };
@@ -447,10 +447,10 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
             </div>
             {employees.length === 0 && <p className="text-xs text-slate-500">Zatrudnieni pracownicy pojawią się tu automatycznie (od dnia rozpoczęcia pracy) — nie trzeba tworzyć ekipy.</p>}
             <div className="grid grid-cols-2 gap-3">
-              {game.ops.teams.length > 0 && <div><label htmlFor="q-team" className="mb-1 block text-xs text-slate-400">Albo gotowa ekipa</label><select id="q-team" className={field} value={customCrew ? '__custom' : q.teamId ?? ''} onChange={(e) => e.target.value !== '__custom' && set({ teamId: e.target.value || null, supervision: 'supervise' })}><option value="">— skład wybrany wyżej —</option>{customCrew && <option value="__custom" hidden>własny skład</option>}{game.ops.teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}</select></div>}
+              {game.ops.teams.length > 0 && <div><label htmlFor="q-team" className="mb-1 block text-xs text-slate-400">Albo gotowa ekipa</label><select id="q-team" className={field} value={customCrew ? '__custom' : q.teamId ?? ''} onChange={(e) => e.target.value !== '__custom' && set({ teamId: e.target.value || null, supervision: 'hands-off' })}><option value="">— skład wybrany wyżej —</option>{customCrew && <option value="__custom" hidden>własny skład</option>}{game.ops.teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}</select></div>}
             <div><label htmlFor="q-veh" className="mb-1 block text-xs text-slate-400">Pojazd</label><select id="q-veh" className={field} value={q.vehicleId ?? ''} onChange={(e) => set({ vehicleId: e.target.value || null })}><option value="">bez pojazdu</option>{game.ops.vehicles.map((v) => <option key={v.id} value={v.id}>{vehicleDef(v).label}</option>)}</select></div>
               {!ownerIn && (
-                <div className="col-span-2"><label htmlFor="q-sup" className="mb-1 block text-xs text-slate-400">Nadzór właściciela</label><select id="q-sup" className={field} value={q.supervision ?? 'supervise'} onChange={(e) => set({ supervision: e.target.value as 'supervise' | 'hands-off' })}><option value="supervise">nadzoruje (1 godz. dziennie)</option><option value="hands-off">pełne delegowanie (bez godzin, większe ryzyko)</option></select></div>
+                <div className="col-span-2"><label htmlFor="q-sup" className="mb-1 block text-xs text-slate-400">Nadzór właściciela</label><select id="q-sup" className={field} value={q.supervision === 'supervise' ? 'supervise' : 'hands-off'} onChange={(e) => set({ supervision: e.target.value as 'supervise' | 'hands-off' })}><option value="hands-off">pełne delegowanie (0 godz., większe ryzyko)</option><option value="supervise">nadzoruje (1 godz. dziennie)</option></select></div>
               )}
             </div>
           </fieldset>

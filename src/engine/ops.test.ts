@@ -698,10 +698,26 @@ describe('podpisanie umowy ze zmianą wykonawcy', () => {
     const signed = ok(commands.signContract(c2.s, quote.id, [{ kind: 'sub', id: sub.id }]));
     const job = signed.reno.jobs.at(-1)!;
     expect(job.priceNet).toBe(quote.priceNet);
-    expect(job.crew.supervision).toBe('supervise');
+    expect(job.crew.supervision).toBe('hands-off');
     expect(signed.ops.teams.find((t) => t.id === job.crew.teamId)!.members).toEqual([{ kind: 'sub', id: sub.id }]);
     // podwykonawca od razu przysyła ofertę do zaakceptowania
     expect(signed.ops.subcontracts.some((c) => c.jobId === job.id && c.status === 'offered')).toBe(true);
+    consistent(signed);
+  });
+});
+
+describe('domyślnie bez godzin nadzoru właściciela', () => {
+  it('podpisanie umowy z podwykonawcą nie wymaga wolnej godziny właściciela (0 godz. nadzoru)', () => {
+    const g = opsGame({ reg: {}, equip: ['paint-basic'] });
+    const sub = g.ops.subcontractors.find((x) => x.services.includes('malowanie'))!;
+    const c = contract(g, { sign: false, quote: { hoursPerDay: 2, durationDays: 12 } });
+    const quote = c.s.reno.quotes.at(-1)!;
+    // doba właściciela zajęta w całym terminie kontraktu
+    const busy = structuredClone(c.s);
+    busy.commitments.push({ id: 'commit:zajete', label: 'Inne zobowiązania', startDate: quote.startDate, endDate: addDays(quote.startDate, 11), hoursPerDay: 12, sourceEventId: null });
+    expect(quoteSchedule(busy, { ...defaultQuoteInput(busy, busy.reno.enquiries.find((e) => e.id === quote.enquiryId)!), teamId: crewKey([{ kind: 'sub', id: sub.id }]) }).ownerHours).toBe(0);
+    const signed = ok(commands.signContract(busy, quote.id, [{ kind: 'sub', id: sub.id }]));
+    expect(signed.reno.jobs.at(-1)!.crew.supervision).toBe('hands-off');
     consistent(signed);
   });
 });
