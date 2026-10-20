@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { commands } from './commands.ts';
 import { activeBusiness } from './business.ts';
 import { addDays } from './date.ts';
+import { budgetFor } from './time.ts';
 import { checkInvariants } from './invariants.ts';
 import { zl } from './money.ts';
 import { crewDay, complaintBps, defaultQuoteInput, jobFinancials, jobQuality, previewQuote, quoteSchedule, renoDashboard } from './renovation.ts';
@@ -11,7 +12,7 @@ import { GameStateSchema } from './state.ts';
 import type { GameState } from './state.ts';
 import { bizBalance, buyAll, contract, craftEnquiry, docsFor, fail, hireEmployee, jobOf, ok, opsGame, runUntil, toDate } from './testkit.ts';
 import { crewProfitability, fixedCosts, liquidityForecast, teamLoad } from './profitability.ts';
-import { subHistory, subPrice } from './subcontractors.ts';
+import { extendSubScope, subHistory, subPrice } from './subcontractors.ts';
 import { crewKey } from './renovation.ts';
 import { vehicleBookValue } from './fleet.ts';
 import { yearReport } from './report.ts';
@@ -76,6 +77,30 @@ describe('5. podwykonawcy (B2B)', () => {
     expect(s.documents.filter((d) => d.part === 'payroll')).toHaveLength(0);
     expect(s.obligations.some((o) => o.category === 'skladki_pracownicze' || o.category === 'wynagrodzenie_pracownika')).toBe(false);
     expect(fail(commands.acceptSubOffer(s, offer.id))).toMatch(/nie jest już dostępna/);
+    consistent(s);
+  });
+
+  it('problem na budowie zwiększa zakres podwykonawcy (cena ryczałtowa) i otwiera zgłoszoną pracę — kontrakt nie zostaje bez wykonawcy', () => {
+    let { s, job } = withJob();
+    const sub = s.ops.subcontractors.find((x) => x.services.includes('malowanie') && x.reliabilityBps >= 8_500) ?? s.ops.subcontractors[3]!;
+    s = ok(commands.requestSubOffer(s, sub.id, job.id, 10_000));
+    s = ok(commands.acceptSubOffer(s, s.ops.subcontracts.at(-1)!.id));
+    s = ok(commands.createTeam(s, 'Podwykonawca', [{ kind: 'sub', id: sub.id }]));
+    s = ok(commands.assignCrew(s, job.id, s.ops.teams.at(-1)!.id, 'hands-off', null));
+    s = buyAll(s, job.id);
+    s = runUntil(s, (x) => x.ops.subcontracts.at(-1)!.status === 'in_progress' && x.ops.subcontracts.at(-1)!.performedCenti > 0, 120);
+    s = structuredClone(s);
+    const c = s.ops.subcontracts.at(-1)!;
+    const before = c.requiredCenti;
+    const j = jobOf(s, job.id);
+    j.extraCenti += 500;
+    extendSubScope(s, j, 500);
+    expect(c.requiredCenti).toBe(before + 500);
+    expect(c.status).toBe('in_progress');
+    s = runUntil(s, (x) => x.ops.subcontracts.at(-1)!.status === 'delivered', 120);
+    const d = s.ops.subcontracts.at(-1)!;
+    expect(d.performedCenti).toBe(d.requiredCenti);
+    expect(jobOf(s, job.id).progressCenti).toBe(jobOf(s, job.id).normCenti + 500);
     consistent(s);
   });
 
@@ -719,5 +744,42 @@ describe('domyślnie bez godzin nadzoru właściciela', () => {
     const signed = ok(commands.signContract(busy, quote.id, [{ kind: 'sub', id: sub.id }]));
     expect(signed.reno.jobs.at(-1)!.crew.supervision).toBe('hands-off');
     consistent(signed);
+  });
+});
+
+describe('praca właściciela po terminie umowy przy zajętej dobie', () => {
+  /** Kontrakt właściciela po planowanym terminie; „inne zobowiązanie” zostawia na dobę dokładnie `freeLeft` wolnych godzin. */
+  const overrun = (freeLeft: number) => {
+    const base = contract(opsGame(), { quote: { startDate: '2026-03-12', durationDays: 12, hoursPerDay: 4 } });
+    let s = buyAll(base.s, base.job.id);
+    s = runUntil(s, (x) => jobOf(x, base.job.id).progressCenti > 0, 60);
+    s = structuredClone(s);
+    const j = jobOf(s, base.job.id);
+    j.extraCenti += 4_000;
+    j.pauseUntil = null;
+    const c = s.commitments.find((x) => x.id === s.serviceOrders.find((o) => o.id === j.orderId)!.commitmentId)!;
+    c.endDate = addDays(s.clock.today, -1);
+    const tomorrow = addDays(s.clock.today, 1);
+    const free = budgetFor(s, tomorrow).free;
+    const extra = free - freeLeft;
+    if (extra > 0) s.commitments.push({ id: 'cm:test', label: 'inne zobowiązanie', startDate: tomorrow, endDate: addDays(tomorrow, 30), hoursPerDay: Math.min(8, extra), sourceEventId: null });
+    const before = { progress: j.progressCenti, blocked: j.blockedDays };
+    const after = advanceDays(s, 1);
+    return { before, j: jobOf(after, base.job.id), after };
+  };
+
+  it('gdy wolnych godzin jest mniej niż zwykle, kontrakt idzie wolniej zamiast stać do odstąpienia klienta', () => {
+    const full = overrun(8);
+    const partial = overrun(2);
+    expect(partial.j.progressCenti).toBeGreaterThan(partial.before.progress);
+    expect(partial.j.blockedDays).toBe(partial.before.blocked);
+    expect(partial.j.progressCenti - partial.before.progress).toBeLessThan(full.j.progressCenti - full.before.progress);
+    expect(checkInvariants(partial.after)).toEqual([]);
+  });
+
+  it('bez żadnej wolnej godziny kontrakt czeka (przestój), a nie pracuje kosztem doby', () => {
+    const none = overrun(0);
+    expect(none.j.progressCenti).toBe(none.before.progress);
+    expect(none.j.blockedDays).toBe(none.before.blocked + 1);
   });
 });

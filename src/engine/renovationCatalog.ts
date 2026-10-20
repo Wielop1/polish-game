@@ -241,18 +241,19 @@ export const VEHICLE_AGING_BPS_PER_MONTH = 40;
 /** Zapotrzebowanie transportowe kontraktu (punkty ładunku) — porównywane z pojemnością pojazdu. */
 export const loadPoints = (serviceId: string, units: number): number => 1 + Math.floor(units / (serviceId === 'panele' ? 30 : serviceId === 'drobne' ? 40 : 60));
 
+/** Ceny podwykonawców: ok. 55–60 zł za godzinę pracy (koszt pracodawcy pracownika 41 zł/godz. + narzut na narzędzia, składki i przestoje ok. 40%); w v0.8.1 podniesione o ok. 20% — przy dawnych ok. 50 zł/godz. podwykonawca był tańszy od własnego pracownika i dominował strategie (BALANCE_REPORT §11.9). */
 export const SUBCONTRACTOR_SEEDS: { name: string; services: string[]; priceBps: number; quality: number; reliabilityBps: number }[] = [
-  { name: 'Malowanie-Serwis Łyna (fikcyjna)', services: ['malowanie', 'gladzie'], priceBps: 4_200, quality: 74, reliabilityBps: 8_800 },
-  { name: 'PodłogiPro Warmia (fikcyjna)', services: ['panele', 'drobne'], priceBps: 3_800, quality: 82, reliabilityBps: 9_200 },
-  { name: 'Ekipa Remontowa Kormoran (fikcyjna)', services: ['malowanie', 'gladzie', 'panele', 'drobne'], priceBps: 3_400, quality: 62, reliabilityBps: 7_400 },
-  { name: 'Wykończenia Dajtki (fikcyjna)', services: ['gladzie', 'malowanie'], priceBps: 4_800, quality: 88, reliabilityBps: 9_400 },
-  { name: 'Montaż-Szybko Jaroty (fikcyjna)', services: ['panele', 'drobne', 'malowanie'], priceBps: 3_100, quality: 55, reliabilityBps: 6_800 },
+  { name: 'Malowanie-Serwis Łyna (fikcyjna)', services: ['malowanie', 'gladzie'], priceBps: 5_000, quality: 74, reliabilityBps: 8_800 },
+  { name: 'PodłogiPro Warmia (fikcyjna)', services: ['panele', 'drobne'], priceBps: 4_600, quality: 82, reliabilityBps: 9_200 },
+  { name: 'Ekipa Remontowa Kormoran (fikcyjna)', services: ['malowanie', 'gladzie', 'panele', 'drobne'], priceBps: 4_100, quality: 62, reliabilityBps: 7_400 },
+  { name: 'Wykończenia Dajtki (fikcyjna)', services: ['gladzie', 'malowanie'], priceBps: 5_800, quality: 88, reliabilityBps: 9_400 },
+  { name: 'Montaż-Szybko Jaroty (fikcyjna)', services: ['panele', 'drobne', 'malowanie'], priceBps: 3_700, quality: 55, reliabilityBps: 6_800 },
   // v0.8.1: pula podwykonawców jest szersza — jedna ekipa realizuje naraz jeden kontrakt, więc pięciu wykonawców ograniczało skalę modelu „generalny wykonawca” do ok. 40 kontraktów rocznie
-  { name: 'Malarz-Plus Zatorze (fikcyjna)', services: ['malowanie', 'drobne'], priceBps: 3_600, quality: 70, reliabilityBps: 8_400 },
-  { name: 'Gładź-Mistrz Pieczewo (fikcyjna)', services: ['gladzie', 'malowanie'], priceBps: 4_400, quality: 79, reliabilityBps: 8_900 },
-  { name: 'Panele-Ekspres Nagórki (fikcyjna)', services: ['panele', 'drobne'], priceBps: 3_300, quality: 68, reliabilityBps: 8_100 },
-  { name: 'Ekipa Wykończeniowa Likusy (fikcyjna)', services: ['malowanie', 'gladzie', 'panele'], priceBps: 3_900, quality: 76, reliabilityBps: 8_600 },
-  { name: 'Złota Rączka Kortowo (fikcyjna)', services: ['drobne', 'panele', 'malowanie'], priceBps: 3_500, quality: 66, reliabilityBps: 7_900 },
+  { name: 'Malarz-Plus Zatorze (fikcyjna)', services: ['malowanie', 'drobne'], priceBps: 4_300, quality: 70, reliabilityBps: 8_400 },
+  { name: 'Gładź-Mistrz Pieczewo (fikcyjna)', services: ['gladzie', 'malowanie'], priceBps: 5_300, quality: 79, reliabilityBps: 8_900 },
+  { name: 'Panele-Ekspres Nagórki (fikcyjna)', services: ['panele', 'drobne'], priceBps: 4_000, quality: 68, reliabilityBps: 8_100 },
+  { name: 'Ekipa Wykończeniowa Likusy (fikcyjna)', services: ['malowanie', 'gladzie', 'panele'], priceBps: 4_700, quality: 76, reliabilityBps: 8_600 },
+  { name: 'Złota Rączka Kortowo (fikcyjna)', services: ['drobne', 'panele', 'malowanie'], priceBps: 4_200, quality: 66, reliabilityBps: 7_900 },
 ];
 
 /** Norma pracy w setnych godziny (bez uwzględnienia wydajności wykonawcy) dla zakresu usługi. */

@@ -388,6 +388,8 @@ Bot v2 = ten sam bot co v1 + (a) domyślny nadzór (pełne delegowanie), (b) poj
 3 seedy na wariant, 2 i 4 lata; wyniki zespołów są chaotyczne (jeden seed potrafi przejść ze zysku do spirali); bot v2 jest nadal prostszy niż dobry gracz. Surowe dane: `docs/balance/v081-{before,private,projects}-{2y,4y}.json`.
 
 
+> ⚠ Tabele w §11.7–11.8 pochodzą sprzed naprawy błędów silnika opisanych w §11.9 (podwykonawcy i praca właściciela po terminie) — aktualne liczby: §11.9.
+
 ## 11.7 Druga korekta: bot v3, więcej podwykonawców, „zostaje do kieszeni” (uwaga właściciela: zlecenie 7 dni za 5–7 tys. zł przy dużych kosztach nie ma sensu)
 
 **Co zmierzyłem.** Typowe zlecenie na 7 dni pracy za 5–7 tys. zł to (audyt usług): koszty rzeczywiste 1–2 tys. zł (materiały, transport, drobne), nadwyżka ok. 4–5 tys. zł, czyli 70–90 zł za godzinę pracy. Wyceny nie pokazywały jednak, ile z tego zostaje po kosztach stałych (ZUS, zdrowotna, księgowość, reklama) i podatku, a panel „zysk ekonomiczny” odejmował od nadwyżki kalkulacyjną wartość pracy właściciela (60 zł/godz.) — przy takim zleceniu wychodziło ok. 0–1 tys. zł „zysku” za tydzień pracy, co wyglądało na kosztowną nieopłacalność. To była wada prezentacji, nie kosztów: prawdziwy koszt pracy właściciela to jego czas, nie wydatek.
@@ -421,3 +423,31 @@ Rosnąca firma, **8 seedów** (osobna seria, 2 lata): bez projektów zysk operac
 3. Projekty B2B nie poprawiają **średniego** wyniku (marża jak w małych zleceniach), a **zwiększają ryzyko** (zamrożona gotówka: płatność do 54–60 dni, zaliczki etapów 10–30%). Ich wartość to skala, referencje i stały front robót, nie wyższa marża. Mediana zysku jest bez zmian, ale ogon (25–33% niewypłacalnych) jest wyraźnie gorszy; wymaga finansowania (kredyt obrotowy / faktoring — v0.9).
 4. „Tylko podwykonawcy” pozostaje stratna na małej skali: marża pośrednika ok. 24% przychodu 140k zł rocznie < koszty stałe (ZUS + księgowość + reklama ≈ 46k), a dochód nie rośnie, bo właściciel nie pracuje i zlecenia ograniczają dostępni wykonawcy. To zgodne z rzeczywistością (pośrednik potrzebuje skali), nie jest błędem do naprawy bez rozszerzenia rynku podwykonawców i kredytu.
 5. Ograniczenia: 3 (8) seedów, wyniki zespołów chaotyczne (drobna różnica potrafi przesądzić o spirali), bot prostszy niż dobry gracz; surowe dane: `docs/balance/v081c-*.json`.
+
+
+## 11.9 Trzecia korekta: błędy silnika znalezione w przebiegach (zamiast strojenia cen) — wyniki końcowe
+
+Przejrzałem końcowy stan przebiegów, które kończyły się niewypłacalnością, i zamiast kolejnego strojenia znalazłem trzy **błędy silnika** (w pomiarze „tylko podwykonawcy” klient anulował 34 z 117 zleceń, a w „mixed” 52 z 308 — zlecenia stały bez wykonawcy mimo wykonanej pracy):
+1. **Problem na budowie nie wchodził w zakres podwykonawcy.** Podwykonawca „kończył” zakres z normy i był rozliczany, a dodatkowa praca z problemu (6–16 godz.) i poprawki po odbiorze zostawały bez wykonawcy; kontrakt stał, aż klient odstąpił od umowy (45 dni po terminie), a firma traciła przychód i zwracała zaliczkę. Naprawa: dodatkowa praca zwiększa zakres umów podwykonawców proporcjonalnie do ich zakresu (cena ryczałtowa), zgłoszona już praca wraca do wykonania; jeśli podwykonawca jest już rozliczony, poprawki robi w ramach gwarancji (`extendSubScope`, test w `ops.test.ts`).
+2. **Oferta podwykonawcy szukała terminu w krótszym oknie niż akceptacja** (praca + 3 dni zamiast + 6 dni zapasu), więc część ofert nie dawała się zaakceptować („jest już zajęty w tym terminie”). Naprawa: to samo okno przy ofercie i akceptacji. Bot w takiej sytuacji prosi o nową ofertę (jak robiłby to gracz).
+3. **Praca właściciela po terminie umowy stawała w miejscu**, gdy doba była zajęta przez inne zobowiązania — kontrakt czekał do odstąpienia klienta, a właściciel dalej przyjmował nowe zlecenia w zwolnione dni. Naprawa: gdy wolnych godzin jest mniej niż zwykle, praca idzie wolniej (tyle godzin, ile zostało), bez wolnej godziny nadal jest przestój; dzień pracy ograniczonej nie rezerwuje doby (testy w `ops.test.ts`).
+
+Dodatkowo (kalibracja zmierzona, nie „pod wynik”): ceny podwykonawców +20% (ok. 55–60 zł za godzinę pracy: koszt pracodawcy pracownika 41 zł/godz. plus narzut ok. 40% na narzędzia, składki i przestoje — wcześniej ok. 50 zł/godz., podwykonawca był tańszy od własnego pracownika) oraz w bocie prosta zasada ostrożnego pracodawcy (zatrudnia kolejną osobę, gdy gotówka firmy pokrywa ok. 3 miesiące pensji wszystkich po zatrudnieniu — to samo, co od teraz podpowiada gra przy ofercie pracy).
+
+**Wyniki końcowe, 2 lata, 3 seedy (mediany; zysk operacyjny / rok · wzrost majątku / rok · % niewypłacalnych):**
+
+| strategia | małe zlecenia | z projektami B2B |
+|---|---|---|
+| solo | 108k · 56k · 0% | 101k · 51k · 0% |
+| właściciel + 1 | 105k · 59k · 0% | 76k · 35k · 0% |
+| 3 pracowników (zatrudniani gdy jest zapas gotówki) | 36k · 4k · 33% | 33k · 1k · 0% |
+| tylko podwykonawcy | 30k · −11k · 0% | 54k · 11k · 0% |
+| 2 pracowników + podwykonawcy | 77k · 37k · 0% | 113k · 62k · 0% |
+| rosnąca (zatrudnia, gdy obłożona) | 61k · 17k · 0% | 39k · 3k · 0% |
+
+4 lata (3 seedy, bez projektów): „2 pracowników + podwykonawcy” 78k · 37k · 0%; rosnąca 32k · 1k · 33% (jeden seed: ok. 100 tys. zł rocznie bezczynnych pensji). Wykonanych zleceń 94–97% wszystkich przyjętych (reszta w toku na koniec symulacji), zero naruszeń niezmienników. Surowe dane: `docs/balance/v081e-*.json`.
+
+**Wnioski końcowe:**
+- Wszystkie strategie mają dodatni zysk operacyjny; w serii z projektami B2B nikt nie jest niewypłacalny (wcześniej 33–100%) — przyczyną „ryzyka B2B” były błędy silnika (stojące zlecenia), nie same płatności.
+- Najlepsze skalowanie: stały zespół 2 osób plus podwykonawcy na szczyty (jak w rzeczywistości); drugi najlepszy: właściciel + 1. Pensje bez zleceń nadal są głównym kosztem strategii „rosnąca”, która zatrudnia za późno lub zbyt wolno.
+- Ograniczenia: 3 seedy, 4 lata tylko dla dwóch strategii, chaos zespołów; „tylko podwykonawcy” zarabia mało (30k przy przychodzie 450k) — marża pośrednika ok. 18% jest realna.

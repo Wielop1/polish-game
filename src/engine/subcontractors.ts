@@ -63,7 +63,8 @@ export function requestSubOffer(s: GameState, subId: string, jobId: string, scop
   const required = roundDiv(job.normCenti * scopeBps, 10_000);
   const plannedDays = Math.max(1, Math.ceil(required / subDailyCenti(sub)));
   const from = job.startDate > addDays(today, 1) ? job.startDate : addDays(today, 1);
-  const startDate = firstFree(s, 'sub', subId, from, plannedDays + 3);
+  // okno szukania = okno rezerwacji przy akceptacji (praca + 6 dni zapasu); wcześniej oferta szukała okna krótszego o 4 dni i mogła nie dać się zaakceptować
+  const startDate = firstFree(s, 'sub', subId, from, plannedDays + 7);
   const price = subPrice(sub, job.serviceId, job.units, job.complexity, scopeBps);
   const advanceBps = clamp(Math.round(((10_000 - sub.reliabilityBps) * 0.6) / 500) * 500, 0, 3_000);
   const n = nextCounter(s, 'sub:contract');
@@ -197,6 +198,19 @@ export function settleJobSubcontracts(s: GameState, b: Operator, job: RenoJob, d
     }
   }
   releaseJob(s, job.id, ['sub']);
+}
+
+/**
+ * Dodatkowa praca zgłoszona w trakcie kontraktu (problem na budowie) należy do zakresu podwykonawcy w tej samej proporcji, co jego zakres, w ramach umowy ryczałtowej —
+ * inaczej podwykonawca „kończył” zakres z normy, a reszta pracy zostawała bez wykonawcy (kontrakt stał do odstąpienia klienta; 34 z 117 zleceń w pomiarze „tylko podwykonawcy”).
+ * Zgłoszona już praca wraca do wykonania.
+ */
+export function extendSubScope(s: GameState, job: RenoJob, addedCenti: number): void {
+  for (const c of s.ops.subcontracts) {
+    if (c.jobId !== job.id || !ACTIVE_SUB.includes(c.status)) continue;
+    c.requiredCenti += roundDiv(addedCenti * c.scopeBps, 10_000);
+    if (c.status === 'delivered' && c.performedCenti < c.requiredCenti) { c.status = 'in_progress'; c.deliveredOn = null; }
+  }
 }
 
 /** Dzień: wygasanie ofert, start pracy (z ewentualnym opóźnieniem). */

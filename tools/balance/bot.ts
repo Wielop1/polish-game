@@ -232,7 +232,9 @@ function nextRole(ctx: Ctx, hired: number): string {
 function staffing(ctx: Ctx): void {
   const { s, policy } = ctx;
   const active = s.ops.employments.filter((e) => e.status === 'active').length;
-  let wantMore = active < policy.employees && ctx.day >= 20;
+  // ostrożny pracodawca: zatrudnia kolejną osobę dopiero, gdy gotówka firmy pokrywa ok. 3 miesiące pensji wszystkich pracowników po zatrudnieniu (pensje płyną także bez zleceń,
+  // a marketing działa z opóźnieniem 1–5 mies.) — zatrudnienie 3 osób „od startu” kończyło się niewypłacalnością w 2/3 przebiegów
+  let wantMore = active < policy.employees && ctx.day >= 20 && bizCash(s) >= zl(22_000) * (active + 1);
   if (policy.adaptive && wantMore) {
     const teams = s.ops.teams.filter((t) => t.members.some((m) => m.kind === 'employee'));
     const load = teams.length ? teams.reduce((a, t) => a + teamLoad(s, t.id).pct, 0) / teams.length : 100;
@@ -419,6 +421,18 @@ function handleContracts(ctx: Ctx): void {
     }
   }
   for (const c of ctx.s.ops.subcontracts.filter((x) => x.status === 'offered')) exec(ctx, commands.acceptSubOffer(ctx.s, c.id), `oferta podwykonawcy ${c.id}`);
+  // oferta podwykonawcy wygasła albo nie dała się zaakceptować (zajęty termin) — dobry gracz prosi o nową, zamiast czekać aż klient odstąpi od umowy
+  for (const j of ctx.s.reno.jobs.filter((x) => x.stage !== 'done' && x.stage !== 'cancelled' && x.crew.teamId)) {
+    if (ctx.day - (ctx.retryAt.get(`subreq:${j.id}`) ?? -99) < 2) continue;
+    const team = ctx.s.ops.teams.find((t) => t.id === j.crew.teamId);
+    for (const m of team?.members ?? []) {
+      if (m.kind !== 'sub') continue;
+      const mine = subcontractsOfJob(ctx.s, j.id).filter((c) => c.subId === m.id);
+      if (mine.some((c) => ['offered', 'accepted', 'in_progress', 'delivered', 'settled'].includes(c.status))) continue;
+      ctx.retryAt.set(`subreq:${j.id}`, ctx.day);
+      exec(ctx, commands.requestSubOffer(ctx.s, m.id, j.id, 10_000), `ponowna oferta podwykonawcy ${j.id}`);
+    }
+  }
   for (const c of ctx.s.ops.subcontracts.filter((x) => x.status === 'delivered')) exec(ctx, commands.acceptSubWork(ctx.s, c.id), `odbiór ${c.id}`);
   for (const j of ctx.s.reno.jobs.filter((x) => x.stage !== 'done' && x.stage !== 'cancelled')) {
     if (diffDays(j.startDate, ctx.s.clock.today) <= 3 && bizCash(ctx.s) > zl(1_500) && ctx.day - (ctx.retryAt.get(`mat:${j.id}`) ?? -99) >= 3 && Object.keys(jobShortage(ctx.s, j)).length > 0 && (ctx.retryAt.set(`mat:${j.id}`, ctx.day), true)) exec(ctx, commands.buyMissingForJob(ctx.s, j.id), `materiały ${j.id}`);

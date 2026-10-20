@@ -27,7 +27,7 @@ import { inventoryValue, equipmentValue } from './selectors.ts';
 import { budgetFor, firstOverload, performanceBps } from './time.ts';
 import { vehicleDef, useVehicle } from './fleet.ts';
 import { describeConflict, ensureCrewTeam, releaseJob, reserve, resourceBusy } from './teams.ts';
-import { ACTIVE_SUB, processSubcontracts, requestSubOffer, settleJobSubcontracts, subById, subPrice, subSpeedBps, subcontractsOfJob } from './subcontractors.ts';
+import { ACTIVE_SUB, extendSubScope, processSubcontracts, requestSubOffer, settleJobSubcontracts, subById, subPrice, subSpeedBps, subcontractsOfJob } from './subcontractors.ts';
 import { employmentActiveOn, employmentById, hoursPerWorkday, personById, personLevel, personName, personPerformanceBps } from './workforce.ts';
 import type {
   Operator, Complexity, EquipmentItem, GameState, MaterialStandard, RenoCostPlan, RenoEnquiry, RenoJob, RenoQuote, RenovationState, ServiceOrder,
@@ -1318,6 +1318,7 @@ function maybeIssue(s: GameState, job: RenoJob, date: IsoDate, crewLevel: number
   // problem nie może dołożyć więcej niż 40% normy kontraktu (v0.8.1: w małych pakietach stała pula 6–16 godz. podwajała robociznę)
   addedCenti = Math.min(addedCenti, Math.max(100, roundDiv(job.normCenti * 4_000, 10_000)));
   job.extraCenti += addedCenti;
+  extendSubScope(s, job, addedCenti);
   if (delayDays > 0) job.pauseUntil = addDays(date, delayDays);
   const id = `issue:${job.id}:${date}`;
   job.issues.push({ id, date, kind: technical ? 'techniczny' : 'organizacyjny', title, addedCenti, delayDays });
@@ -1369,12 +1370,19 @@ function workJob(s: GameState, b: Operator, job: RenoJob, date: IsoDate, used: S
   }
 
   // praca po terminie umowy zajmuje godziny właściciela tylko wtedy, gdy doba na to pozwala (inne kontrakty mają pierwszeństwo)
+  // gdy wolnych godzin jest mniej niż zwykle, praca po terminie idzie wolniej (tyle godzin, ile zostało) zamiast stać do odstąpienia klienta: pomiar „mixed” — 52 z 308 zleceń anulowanych przez klienta mimo pracy w toku
+  let ownerCap: number | null = null;
   if (commitment && ownerTime && date > commitment.endDate) {
-    if (budgetFor(s, date).free >= commitment.hoursPerDay) commitment.endDate = date;
+    const free = budgetFor(s, date).free;
+    if (free >= commitment.hoursPerDay) commitment.endDate = date;
+    else if (free >= 1) ownerCap = Math.floor(free);
     else { job.blockedDays += 1; job.blockedReason = 'Brak wolnych godzin — doba zajęta przez inne zobowiązania'; return; }
   }
   if (job.pauseUntil && date <= job.pauseUntil) { job.blockedDays += 1; job.blockedReason = 'Przerwa organizacyjna (klient/dostawca)'; return; }
+  const normalHpd = job.hoursPerDay;
+  if (ownerCap !== null && job.crew.supervision === 'worker') job.hoursPerDay = Math.min(normalHpd, ownerCap);
   const cd = crewDay(s, job, date, used, 'actual');
+  job.hoursPerDay = normalHpd;
   if (cd.blocked) { job.blockedDays += 1; job.stage = 'materials'; job.blockedReason = cd.blocked; return; }
   if (cd.raw <= 0) {
     // zespół bez właściciela nie pracuje w weekendy — to nie jest przestój; w dzień roboczy brak ludzi to przestój
@@ -1419,7 +1427,7 @@ function workJob(s: GameState, b: Operator, job: RenoJob, date: IsoDate, used: S
     if (w.kind === 'sub') {
       const sc = s.ops.subcontracts.find((x) => x.id === w.subcontractId)!;
       sc.performedCenti = Math.min(sc.requiredCenti, sc.performedCenti + roundDiv(w.c * p, cd.raw));
-      if (sc.performedCenti >= sc.requiredCenti && sc.status !== 'delivered') { sc.status = 'delivered'; sc.deliveredOn = date; logEvent(s, { id: `sub.contract:${sc.id}:delivered`, date, type: 'sub.contract', tone: 'neutral', title: `Podwykonawca zgłasza zakończenie prac: ${w.label}`, detail: 'Odbierz pracę w ekranie „Podwykonawcy” (bez odbioru zostanie rozliczona automatycznie przy zakończeniu kontraktu).', amount: null, category: null }); }
+      if (sc.performedCenti >= sc.requiredCenti && sc.status !== 'delivered') { sc.status = 'delivered'; sc.deliveredOn = date; logEvent(s, { id: `sub.contract:${sc.id}:delivered:${sc.requiredCenti}`, date, type: 'sub.contract', tone: 'neutral', title: `Podwykonawca zgłasza zakończenie prac: ${w.label}`, detail: 'Odbierz pracę w ekranie „Podwykonawcy” (bez odbioru zostanie rozliczona automatycznie przy zakończeniu kontraktu).', amount: null, category: null }); }
       used.add(w.key);
     }
     if (w.tools.length) { wearItems(w.tools, h / 100); for (const t of w.tools) used.add(`eq:${t.id}`); }
@@ -1435,7 +1443,7 @@ function workJob(s: GameState, b: Operator, job: RenoJob, date: IsoDate, used: S
     job.stage = 'handover';
     job.finishedOn = date;
     job.lateDays = Math.max(0, diffDays(date, job.deadline));
-    if (commitment) commitment.endDate = date < commitment.startDate ? commitment.startDate : date;
+    if (commitment && ownerCap === null) commitment.endDate = date < commitment.startDate ? commitment.startDate : date; // dzień pracy ograniczonej do wolnych godzin nie rezerwuje doby
     logEvent(s, { id: `reno.work:${job.id}:finished:${job.reworkDone ? 2 : 1}`, date, type: 'reno.work', tone: 'neutral', title: `Prace zakończone: ${order.title}`, detail: 'Odbiór przez klienta następnego dnia.', amount: null, category: null });
   }
 }
@@ -1492,7 +1500,18 @@ function handover(s: GameState, b: Operator, job: RenoJob, date: IsoDate): void 
   const threshold = QUALITY_THRESHOLD[job.qualityReq]!;
   if (!job.reworkDone && quality < threshold - 3) {
     job.reworkDone = true;
-    job.extraCenti += roundDiv(job.normCenti * 1_200, 10_000);
+    const reworkCenti = roundDiv(job.normCenti * 1_200, 10_000);
+    job.extraCenti += reworkCenti;
+    const team = job.crew.teamId ? s.ops.teams.find((t) => t.id === job.crew.teamId) : undefined;
+    const subOnly = !!team && team.members.length > 0 && team.members.every((m) => m.kind === 'sub');
+    if (subOnly && !s.ops.subcontracts.some((c) => c.jobId === job.id && ACTIVE_SUB.includes(c.status))) {
+      // podwykonawca rozliczony przed odbiorem — poprawki robi w ramach gwarancji (bez dodatkowej opłaty), inaczej kontrakt stałby bez wykonawcy do odstąpienia klienta
+      job.progressCenti += reworkCenti;
+      logEvent(s, { id: `reno.work:${job.id}:rework`, date, type: 'reno.work', tone: 'warning', title: `Uwagi przy odbiorze: ${order.title}`, detail: `Jakość ${quality}/100 poniżej oczekiwań klienta (${QUALITY_REQ_LABEL[job.qualityReq]}, min. ${threshold}). Podwykonawca poprawił usterki w ramach gwarancji.`, amount: null, category: null });
+      handover(s, b, job, date);
+      return;
+    }
+    extendSubScope(s, job, reworkCenti);
     job.stage = 'execution';
     job.finishedOn = null;
     logEvent(s, { id: `reno.work:${job.id}:rework`, date, type: 'reno.work', tone: 'warning', title: `Uwagi przy odbiorze: ${order.title}`, detail: `Jakość ${quality}/100 poniżej oczekiwań klienta (${QUALITY_REQ_LABEL[job.qualityReq]}, min. ${threshold}). Poprawki wydłużają pracę.`, amount: null, category: null });
