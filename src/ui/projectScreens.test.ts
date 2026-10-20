@@ -23,6 +23,7 @@ function gameWithProject(open = true): { s: GameState; id: string } {
   let s = opsGame({ seed: 'ui-proj', equip: ['hand-tools', 'paint-basic', 'trowel-set', 'panel-kit'] });
   for (const id of ['gladzie', 'panele', 'drobne']) s = ok(commands.addSpecialization(s, id));
   s = structuredClone(s);
+  for (const c of s.contracts) if (c.type === 'employment') c.hoursPerMonth = 0; // plan uwzględnia zmęczenie właściciela — bez etatu
   const clients = ensureB2BPool(s);
   const p = buildProject(s, currentOperator(s)!, clients[2]!, 'flat_finish', 1, s.clock.today)!;
   for (const pkg of p.packages) { pkg.complexity = 'standard'; pkg.refPriceNet = referencePrice(pkg.serviceId, pkg.units, 'standard', pkg.qualityReq); }

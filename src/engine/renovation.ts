@@ -24,10 +24,10 @@ import {
 } from './renovationCatalog.ts';
 import type { MaterialStandard as Std, ServiceDef } from './renovationCatalog.ts';
 import { inventoryValue, equipmentValue } from './selectors.ts';
-import { budgetFor, firstOverload, performanceBps } from './time.ts';
+import { budgetFor, clampFatigue, fatigueDelta, firstOverload, performanceBps } from './time.ts';
 import { vehicleDef, useVehicle } from './fleet.ts';
 import { describeConflict, ensureCrewTeam, releaseJob, reserve, resourceBusy } from './teams.ts';
-import { ACTIVE_SUB, extendSubScope, processSubcontracts, requestSubOffer, settleJobSubcontracts, subById, subPrice, subSpeedBps, subcontractsOfJob } from './subcontractors.ts';
+import { ACTIVE_SUB, acceptSubOffer, extendSubScope, processSubcontracts, requestSubOffer, settleJobSubcontracts, subById, subPrice, subSpeedBps, subcontractsOfJob } from './subcontractors.ts';
 import { employmentActiveOn, employmentById, hoursPerWorkday, personById, personLevel, personName, personPerformanceBps } from './workforce.ts';
 import type {
   Operator, Complexity, EquipmentItem, GameState, MaterialStandard, RenoCostPlan, RenoEnquiry, RenoJob, RenoQuote, RenovationState, ServiceOrder,
@@ -319,6 +319,31 @@ export function previewQuote(s: GameState, i: QuoteInput, opts: { forSending?: b
   try { return previewQuoteInner(s, i, opts); } finally { s.ops.teams.pop(); }
 }
 
+/**
+ * Symulacja pracy właściciela dzień po dniu (zmęczenie z budżetu doby: obowiązki, biznes, inne zobowiązania i godziny tego kontraktu): ile godzin i dni zajmie praca,
+ * gdy wydajność spada wraz ze zmęczeniem. Zwraca null, gdy zakres jest nierealny (>200 dni).
+ */
+export function projectOwnerWork(s: GameState, normC: number, speed: number, hpd: number, startDate: IsoDate): { centi: number; days: number; fatigueEnd: number; perfEnd: number } | null {
+  let f = s.life.fatigue;
+  let d = addDays(s.clock.today, 1);
+  for (let k = 0; k < 120 && d < startDate; k++, d = addDays(d, 1)) f = clampFatigue(f + fatigueDelta(budgetFor(s, d)));
+  let progress = 0;
+  let hours = 0;
+  let days = 0;
+  let perf = performanceBps(f);
+  for (let k = 0; k < 200; k++, d = addDays(d, 1)) {
+    perf = performanceBps(f);
+    const perHour = Math.max(1, roundDiv(speed * perf, 10_000)); // postęp normy na godzinę pracy
+    const full = roundDiv(hpd * 100 * perHour, 10_000);
+    days += 1;
+    if (progress + full >= normC) { hours += Math.ceil(((normC - progress) * 10_000) / perHour); return { centi: Math.max(1, hours), days, fatigueEnd: f, perfEnd: perf }; }
+    progress += full;
+    hours += hpd * 100;
+    f = clampFatigue(f + fatigueDelta(budgetFor(s, d, { extraHoursPerDay: hpd })));
+  }
+  return null;
+}
+
 function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boolean; project?: boolean } = {}): QuotePreview {
   const def = SERVICE_BY_ID.get(i.serviceId);
   if (!def) throw new CommandError('Nieznana usługa.');
@@ -336,6 +361,18 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
   let speed = speedBps(s, i.serviceId);
   let plannedCenti = Math.max(1, roundDiv(norm * 10_000, Math.max(1, speed)));
   let minDays = Math.ceil(plannedCenti / (hpd * 100));
+  let fatigueNote: string | null = null;
+  if (!team && ownerWorks) {
+    // plan uczciwy wobec zmęczenia: przy wielu godzinach dziennie zmęczenie rośnie z dnia na dzień, a wydajność spada (praca właściciela idzie wszystkie dni kalendarzowe)
+    const pr = projectOwnerWork(s, norm, speed, hpd, i.startDate > today ? i.startDate : addDays(today, 1));
+    if (pr) {
+      const rested = plannedCenti;
+      plannedCenti = pr.centi;
+      minDays = pr.days;
+      speed = roundDiv(norm * 10_000, plannedCenti);
+      if (pr.perfEnd < 8_500 && plannedCenti > rested * 1.08) fatigueNote = `Przy ${hpd} godz. dziennie zmęczenie wzrośnie do ok. ${pr.fatigueEnd}% (wydajność ${Math.round(pr.perfEnd / 100)}%), więc praca zajmie ok. ${(plannedCenti / 100).toFixed(0)} godz. zamiast ${(rested / 100).toFixed(0)} godz. dla wypoczętego — wycena i termin uwzględniają to; mniej godzin dziennie oznacza mniejsze zmęczenie i lepszą jakość.`;
+    }
+  }
   let teamLabor: Grosze | null = null;
   let ownerLaborPart: Grosze | null = null;
   let employeeLaborPart: Grosze = 0;
@@ -446,6 +483,7 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
     timeConflict = firstOverload(s, i.startDate, addDays(i.startDate, i.durationDays - 1), { extraHoursPerDay: ownerHours });
     if (timeConflict) warnings.push(`Kolizja czasu: ${formatDatePL(timeConflict.date)} brakuje ${timeConflict.missing} godz. (etat, sen, obowiązki i inne kontrakty zajmują dobę).`);
   }
+  if (fatigueNote) warnings.push(fatigueNote);
   const priceNet = Math.max(0, i.priceNet);
   const hiredLabor = labor - ownerLabor;
   const extTotal = materials + hiredLabor + transport + other + equipmentWear;
@@ -477,14 +515,15 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
   };
 }
 
-/** Domyślne parametry wyceny (cena = koszt planowany + 25% narzutu, start za tydzień). */
+/** Domyślne parametry wyceny (cena = koszt planowany + 30% narzutu — zapas na problemy na budowie, start za tydzień). */
 export function defaultQuoteInput(s: GameState, enq: RenoEnquiry): QuoteInput {
   const base: QuoteInput = {
     serviceId: enq.serviceId, units: enq.units, complexity: enq.complexity, standard: (['eko', 'std', 'premium'] as const)[Math.min(2, enq.qualityReq - 1)]!,
     priceNet: zl(1), startDate: addDays(s.clock.today, 2), durationDays: 1, hoursPerDay: 4, advanceBps: 0, paymentTermDays: 7, laborRate: OWN_LABOR_RATE_DEFAULT,
   };
   const p0 = previewQuote(s, base);
-  const durationDays = Math.max(p0.minDays + 2, 3);
+  // zapas na problemy na budowie: w pomiarze praca trwa średnio ok. 17% dłużej niż plan (problemy +6–16 godz., poprawki po odbiorze), więc domyślny termin ma zapas ok. 20%
+  const durationDays = Math.max(p0.minDays + Math.max(2, Math.ceil(p0.minDays * 0.2)), 3);
   // najwcześniejszy start nie wcześniej niż życzenie klienta, w którym zmieści się cały kontrakt (bez przekroczenia doby)
   let start = enq.desiredStart > base.startDate ? enq.desiredStart : base.startDate;
   for (let i = 0; i < 120; i++) {
@@ -492,7 +531,7 @@ export function defaultQuoteInput(s: GameState, enq: RenoEnquiry): QuoteInput {
     start = addDays(start, 1);
   }
   const p1 = previewQuote(s, { ...base, durationDays, startDate: start });
-  return { ...base, startDate: start, durationDays, priceNet: roundTo(mulBps(p1.planned.total, 12_500), zl(10)) };
+  return { ...base, startDate: start, durationDays, priceNet: roundTo(mulBps(p1.planned.total, 13_000), zl(10)) };
 }
 
 /* ---------- Zajęte terminy przy wycenie ---------- */
@@ -997,7 +1036,7 @@ export function signContract(s: GameState, quoteId: string, crew?: CrewMember[],
   // wykonawcy-podwykonawcy: oferta od razu trafia do ekranu „Podwykonawcy” (gracz ją akceptuje; bez tego kontrakt nie ruszy)
   const subMsgs = requestCrewSubOffers(s, job, team, ownerWorks);
   logEvent(s, { id: `reno.contract:${jobId}`, date: today, type: 'reno.contract', tone: 'positive', title: `Podpisano umowę: ${order.title}`, detail: `${enq.clientName} · ${formatPLN(q.priceNet)} netto · start ${formatDatePL(start)}, termin ${formatDatePL(deadline)} · ${advanceNet > 0 ? `zaliczka ${formatPLN(advanceNet)} netto (przychód po wykonaniu usługi)` : 'bez zaliczki'} · ${team ? `ekipa „${team.name}”` : 'wykonuje właściciel'} · kara za zwłokę ${DELAY_PENALTY_BPS_PER_WEEK / 100}% za każdy rozpoczęty tydzień (max ${DELAY_PENALTY_CAP_BPS / 100}%)`, amount: null, category: null });
-  return `Umowa podpisana. Prace od ${formatDatePL(start)}, termin ${formatDatePL(deadline)}. Kup materiały przed rozpoczęciem.${subMsgs.length ? ` Podwykonawca przysłał ofertę — zaakceptuj ją w „Podwykonawcy”: ${subMsgs.join(' ')}` : ''}`;
+  return `Umowa podpisana. Prace od ${formatDatePL(start)}, termin ${formatDatePL(deadline)}. Kup materiały przed rozpoczęciem.${subMsgs.length ? ` ${subMsgs.join(' ')}` : ''}`;
 }
 
 /** Ekipa z podwykonawcami: dla każdego podwykonawcy w składzie bez aktywnej umowy prosimy o ofertę (do zaakceptowania w ekranie „Podwykonawcy”). */
@@ -1009,9 +1048,18 @@ function requestCrewSubOffers(s: GameState, job: RenoJob, team: { members: { kin
     const sub = subById(s, m.id)!;
     if (!sub.services.includes(job.serviceId)) continue;
     const workers = (team?.members ?? []).filter((x) => x.kind !== 'owner').length + (ownerWorks ? 1 : 0);
-    const msg = requestSubOffer(s, m.id, job.id, clamp(Math.floor(10_000 / Math.max(1, workers) / 500) * 500, 1_000, 10_000));
+    requestSubOffer(s, m.id, job.id, clamp(Math.floor(10_000 / Math.max(1, workers) / 500) * 500, 1_000, 10_000));
     const offer = s.ops.subcontracts.at(-1)!;
-    msgs.push(offer.startDate > job.startDate ? `${msg} UWAGA: ${sub.name.replace(' (fikcyjna)', '')} jest zajęty — zacznie dopiero ${formatDatePL(offer.startDate)}, a kontrakt startuje ${formatDatePL(job.startDate)} (do tego czasu praca stoi, a termin ${formatDatePL(job.deadline)} jest zagrożony).` : msg);
+    // wybór podwykonawcy w wycenie = zamówienie: umowa z nim zawiera się od razu (bez osobnej akceptacji w „Podwykonawcy”); gdy się nie da (brak gotówki na zaliczkę, zajęty termin), oferta czeka tam do 5 dni
+    try {
+      const accepted = acceptSubOffer(s, offer.id);
+      msgs.push(`${sub.name.replace(' (fikcyjna)', '')}: ${accepted}${offer.startDate > job.startDate ? ` UWAGA: zacznie dopiero ${formatDatePL(offer.startDate)}, a kontrakt startuje ${formatDatePL(job.startDate)} (do tego czasu praca stoi, a termin ${formatDatePL(job.deadline)} jest zagrożony).` : ''}`);
+      continue;
+    } catch (e) {
+      if (!(e instanceof CommandError)) throw e;
+      msgs.push(`${sub.name.replace(' (fikcyjna)', '')}: oferta czeka na Twoją akceptację w „Podwykonawcy” (${e.message})`);
+      continue;
+    }
   }
   return msgs;
 }

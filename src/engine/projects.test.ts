@@ -19,6 +19,7 @@ function projectGame(o: { seed?: string; open?: boolean; template?: 'flat_finish
   let s = opsGame({ seed: o.seed ?? 'proj-1', equip: ['hand-tools', 'paint-basic', 'trowel-set', 'panel-kit'] });
   for (const id of ['gladzie', 'panele', 'drobne']) s = ok(commands.addSpecialization(s, id));
   s = structuredClone(s);
+  for (const c of s.contracts) if (c.type === 'employment') c.hoursPerMonth = 0; // właściciel pracuje w firmie (etat obciążałby budżet czasu i zmęczenie, a plan uwzględnia zmęczenie)
   const clients = ensureB2BPool(s);
   const p = buildProject(s, currentOperator(s)!, clients[o.client ?? 2]!, o.template ?? 'flat_finish', o.tier ?? 1, s.clock.today);
   if (!p) throw new Error('nie udało się zbudować projektu o żądanym poziomie');
@@ -306,6 +307,7 @@ describe('v0.8.1 · klienci B2B, referencje i zdolność realizacyjna', () => {
 describe('v0.8.1 · aktywacja pakietów „na czas”', () => {
   it('pakiet startuje w najwcześniejszym terminie, gdy wykonawcy są wolni (rezerwacja na przyszłość), zamiast czekać w nieskończoność na wolny dzień', () => {
     let s = opsGame({ seed: 'jit-1', equip: ['hand-tools', 'paint-basic', 'trowel-set', 'panel-kit'] });
+    for (const c of s.contracts) if (c.type === 'employment') c.hoursPerMonth = 0; // plan uwzględnia zmęczenie właściciela — bez etatu
     for (const id of ['gladzie', 'panele', 'drobne']) s = ok(commands.addSpecialization(s, id));
     s = hireEmployee(s, { expected: zl(5_400), start: addDays(s.clock.today, 1) }).s;
     const emp = s.ops.employments.at(-1)!;

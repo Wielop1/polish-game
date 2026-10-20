@@ -638,7 +638,7 @@ describe('11. zlecenie całości podwykonawcy z poziomu wyceny (za niski poziom 
     const { s, job } = contract(s0, { enquiry: { serviceId: 'panele', units: 40, complexity: 'standard', maxDays: 60 }, quote: { ...q, teamId: `sub:${subId}`, priceNet: zl(14_000), supervision: 'supervise' } });
     const team = s.ops.teams.find((t) => t.id === job.crew.teamId)!;
     expect(team.members).toEqual([{ kind: 'sub', id: subId }]);
-    expect(s.ops.subcontracts.some((c) => c.jobId === job.id && c.subId === subId && c.status === 'offered')).toBe(true);
+    expect(s.ops.subcontracts.some((c) => c.jobId === job.id && c.subId === subId && c.status === 'accepted')).toBe(true); // wybór podwykonawcy w wycenie od razu zawiera umowę
     // druga oferta z tym samym podwykonawcą używa tej samej ekipy
     const again = contract(s, { enquiry: { serviceId: 'panele', units: 40, complexity: 'standard', maxDays: 60 }, quote: { ...q, startDate: addDays(s.clock.today, 70), teamId: `sub:${subId}`, priceNet: zl(14_000) }, sign: false });
     expect(again.s.ops.teams.filter((t) => t.members.length === 1 && t.members[0]!.id === subId).length).toBe(1);
@@ -677,7 +677,7 @@ describe('podwykonawca zajęty innym kontraktem', () => {
     const sub = g.ops.subcontractors.find((x) => x.services.includes('malowanie'))!;
     const q = { teamId: crewKey([{ kind: 'sub', id: sub.id }]), supervision: 'supervise' as const, hoursPerDay: 4 };
     const c1 = contract(g, { quote: q });
-    const s1 = ok(commands.acceptSubOffer(c1.s, c1.s.ops.subcontracts.find((c) => c.status === 'offered')!.id));
+    const s1 = c1.s; // podpisanie umowy z podwykonawcą od razu zawiera umowę z nim
     return { s1, sub, q, c1 };
   };
 
@@ -697,9 +697,10 @@ describe('podwykonawca zajęty innym kontraktem', () => {
     const { s1, q } = twoJobs();
     const c2 = contract(s1, { quote: q });
     expect(c2.s.reno.jobs.at(-1)!.crew.teamId).not.toBeNull();
-    const offer = c2.s.ops.subcontracts.find((c) => c.status === 'offered')!;
+    const offer = c2.s.ops.subcontracts.find((c) => c.jobId === c2.job.id)!;
+    expect(offer.status).toBe('accepted');
     expect(offer.startDate > c2.job.startDate).toBe(true);
-    const s2 = ok(commands.acceptSubOffer(c2.s, offer.id));
+    const s2 = c2.s;
     const stuck = runUntil(s2, (x) => !!jobOf(x, c2.job.id).blockedReason && /podwykonawca/.test(jobOf(x, c2.job.id).blockedReason!), 40);
     const reason = jobOf(stuck, c2.job.id).blockedReason!;
     expect(reason).toMatch(/zacznie dopiero/);
@@ -725,8 +726,8 @@ describe('podpisanie umowy ze zmianą wykonawcy', () => {
     expect(job.priceNet).toBe(quote.priceNet);
     expect(job.crew.supervision).toBe('hands-off');
     expect(signed.ops.teams.find((t) => t.id === job.crew.teamId)!.members).toEqual([{ kind: 'sub', id: sub.id }]);
-    // podwykonawca od razu przysyła ofertę do zaakceptowania
-    expect(signed.ops.subcontracts.some((c) => c.jobId === job.id && c.status === 'offered')).toBe(true);
+    // umowa z podwykonawcą zawiera się od razu
+    expect(signed.ops.subcontracts.some((c) => c.jobId === job.id && c.status === 'accepted')).toBe(true);
     consistent(signed);
   });
 });
@@ -781,5 +782,21 @@ describe('praca właściciela po terminie umowy przy zajętej dobie', () => {
     const none = overrun(0);
     expect(none.j.progressCenti).toBe(none.before.progress);
     expect(none.j.blockedDays).toBe(none.before.blocked + 1);
+  });
+});
+
+describe('plan wyceny uwzględnia zmęczenie właściciela', () => {
+  it('z etatem i zleceniem po godzinach praca wychodzi dłuższa niż dla wypoczętego (z ostrzeżeniem); bez etatu plan = wypoczęty', () => {
+    const g = opsGame({ reg: {} });
+    const enq = craftEnquiry(g, { serviceId: 'gladzie', units: 70, complexity: 'standard' } as never);
+    const input = { ...defaultQuoteInput(g, enq), hoursPerDay: 4, durationDays: 60 };
+    const tired = previewQuote(g, input);
+    const free = structuredClone(g);
+    for (const c of free.contracts) if (c.type === 'employment') c.hoursPerMonth = 0;
+    const rested = previewQuote(free, input);
+    expect(tired.plannedCenti).toBeGreaterThan(rested.plannedCenti * 1.08);
+    expect(tired.warnings.join(' ')).toMatch(/zmęczenie wzrośnie/);
+    expect(rested.warnings.join(' ')).not.toMatch(/zmęczenie wzrośnie/);
+    expect(tired.minDays).toBeGreaterThan(rested.minDays);
   });
 });
