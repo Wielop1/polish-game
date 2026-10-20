@@ -42,7 +42,7 @@ export function QuoteEconomicsPanel({ e, laborRate, priceGross, vatRateBps }: { 
         hint="Godziny × przyjęta stawka — to wartość porównawcza, nie wypłata i nie koszt podatkowy JDG." />
       <Row k="Zysk ekonomiczny (po wartości Twojej pracy)" v={<strong><Money value={e.economicProfit} signed /></strong>} tone={moneyTone(e.economicProfit)} />
       <Head>Wpływ na płynność firmy</Head>
-      <Row k="Wydatki gotówkowe przed zapłatą końcową" v={<Money value={e.liquidity.cashOutBeforePayment} />} hint="Brakujące materiały, płace, transport i drobne." />
+      <Row k="Wydatki gotówkowe przed zapłatą końcową" v={<Money value={e.liquidity.cashOutBeforePayment} />} hint="Brakujące materiały, podwykonawcy, transport i drobne. Płace zatrudnionych płacisz co miesiąc niezależnie od zleceń." />
       <Row k="Zaliczka od klienta" v={<Money value={e.liquidity.advance} />} />
       <Row k="Maksymalne zapotrzebowanie na gotówkę" v={<Money value={e.liquidity.peakNeed} />} tone={e.liquidity.peakNeed > 0 ? 'text-gold' : undefined} />
       <Row k={`Zapłata końcowa ok. ${formatDatePL(e.liquidity.finalPaymentDate)}`} v={<Money value={e.liquidity.finalPayment} />} hint={`Pieniądze są zamrożone w kontrakcie ok. ${e.liquidity.daysExposed} dni.`} />

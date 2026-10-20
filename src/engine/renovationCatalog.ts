@@ -104,7 +104,7 @@ export const SERVICES: readonly ServiceDef[] = [
     id: 'malowanie', label: 'Malowanie ścian i sufitów', description: 'Zabezpieczenie, gruntowanie i dwukrotne malowanie pomieszczeń.',
     unit: 'm²', normCentiPerUnit: 30, difficulty: 1,
     materialsPer100: [{ materialId: 'farba', qty: 32 }, { materialId: 'tasma-folia', qty: 7 }],
-    requiredEquipment: ['paint-basic'], referencePerUnit: zl(34), qtyRange: [30, 140], transportPerDay: zl(35),
+    requiredEquipment: ['paint-basic'], referencePerUnit: zl(38), qtyRange: [30, 140], transportPerDay: zl(35),
     risks: ['nierówne podłoże wymagające dodatkowego gruntowania', 'zmiana koloru przez klienta', 'wilgoć na ścianach'],
   },
   {

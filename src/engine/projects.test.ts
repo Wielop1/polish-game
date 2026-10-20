@@ -5,12 +5,12 @@ import { currentOperator } from './operator.ts';
 import { zl } from './money.ts';
 import { referencePrice } from './renovationCatalog.ts';
 import { PROJECT_TEMPLATES, TIER_REQUIREMENTS, tierOfValue } from './projectsCatalog.ts';
-import { buildProject, companyReferences, defaultPlanInput, ensureB2BPool, planProject, projectAcceptance, projectById, projectValueNet, requirementChecks, segmentComparison } from './projects.ts';
+import { suggestCrews, buildProject, companyReferences, defaultPlanInput, ensureB2BPool, planProject, projectAcceptance, projectById, projectValueNet, requirementChecks, segmentComparison } from './projects.ts';
 import { advanceDays } from './simulate.ts';
 import { addDays } from './date.ts';
 import type { GameState, RenoProject } from './state.ts';
-import { buyAll, contract, hireEmployee, ok, opsGame, runUntil } from './testkit.ts';
-import { crewKey } from './renovation.ts';
+import { buyAll, contract, craftEnquiry, hireEmployee, ok, opsGame, runUntil } from './testkit.ts';
+import { crewKey, defaultQuoteInput, previewQuote } from './renovation.ts';
 
 const NO_REQ = { minCompleted: 0, minValueNet: 0, minRating10: 0, minProjectTier: 0, minWorkers: 0 };
 
@@ -330,5 +330,61 @@ describe('v0.8.1 · aktywacja pakietów „na czas”', () => {
     const asg = q.ops.assignments.filter((a) => a.kind === 'employee' && a.resourceId === emp.id).sort((a, b) => a.from.localeCompare(b.from));
     for (let i = 1; i < asg.length; i++) expect(asg[i]!.from > asg[i - 1]!.to).toBe(true);
     expect(checkInvariants(q)).toEqual([]);
+  }, 120_000);
+});
+
+describe('v0.8.1 · zespoły, płynność i anulowanie (poprawki po benchmarku)', () => {
+  it('domyślne wykonawcy pakietów: zatrudnieni przed właścicielem (właściciel zostaje wolny do własnych zleceń), właściciel tylko gdy nikt inny nie ma umiejętności', () => {
+    let s = opsGame({ seed: 'crew-1', equip: ['hand-tools', 'paint-basic', 'trowel-set', 'panel-kit'] });
+    for (const id of ['gladzie', 'panele', 'drobne']) s = ok(commands.addSpecialization(s, id));
+    s = hireEmployee(s, { expected: zl(5_400), start: addDays(s.clock.today, 1) }).s;
+    const emp = s.ops.employments.at(-1)!;
+    s = advanceDays(s, 3);
+    s = structuredClone(s);
+    const p = buildProject(s, currentOperator(s)!, ensureB2BPool(s)[2]!, 'flat_finish', 1, s.clock.today)!;
+    for (const pkg of p.packages) pkg.complexity = 'standard';
+    const crews = suggestCrews(s, p);
+    const mal = p.packages.find((x) => x.serviceId === 'malowanie')!;
+    expect(crews[mal.id]).toBe(crewKey([{ kind: 'employee', id: emp.id }])); // pracownik-malarz
+    const gl = p.packages.find((x) => x.serviceId === 'gladzie')!;
+    expect(crews[gl.id]).toBeNull(); // nikt z zatrudnionych nie ma gładzi → właściciel samodzielnie
+  });
+
+  it('koszty płac zatrudnionych nie zwiększają zapotrzebowania na gotówkę przy starcie pakietu (płacisz je co miesiąc niezależnie), a podwykonawcy i materiały — tak', () => {
+    let s = opsGame({ seed: 'liq-1', equip: ['paint-basic', 'paint-basic'] });
+    s = hireEmployee(s, { expected: zl(5_400), start: addDays(s.clock.today, 1) }).s;
+    const emp = s.ops.employments.at(-1)!;
+    s = ok(commands.createTeam(s, 'Ekipa', [{ kind: 'employee', id: emp.id }]));
+    const teamId = s.ops.teams.at(-1)!.id;
+    s = advanceDays(s, 3);
+    const enq = craftEnquiry(structuredClone(s), { units: 80 });
+    const base = defaultQuoteInput(s, enq);
+    const withEmp = previewQuote(s, { ...base, teamId, supervision: 'hands-off', priceNet: zl(4_000), durationDays: 30, hoursPerDay: 4 });
+    const e = withEmp.economics;
+    expect(e.external.hiredLabor).toBeGreaterThan(0);
+    // wydatki gotówkowe = brakujące materiały + transport + drobne (bez płac zatrudnionych)
+    expect(e.liquidity.cashOutBeforePayment).toBeLessThan(e.external.materials + e.external.hiredLabor + e.external.transport + e.external.other);
+    expect(e.liquidity.cashOutBeforePayment).toBeLessThanOrEqual(e.external.materials + e.external.transport + e.external.other);
+  });
+
+  it('oferta projektu wymaga środków: zapotrzebowanie na gotówkę większe niż prognozowane saldo blokuje wysłanie oferty (bez kredytu firma nie sfinansuje projektu)', () => {
+    const { s, p } = projectGame({ seed: 'liq-2' });
+    const poor = structuredClone(s);
+    poor.accounts[currentOperator(poor)!.accountId]!.balance = zl(300);
+    const plan = planProject(poor, projectById(poor, p.id)!, defaultPlanInput(poor, projectById(poor, p.id)!));
+    expect(plan.blockers.some((b) => /Brakuje gotówki na start|Zapotrzebowanie na gotówkę/.test(b))).toBe(true);
+    expect(commands.sendProjectQuote(poor, p.id, defaultPlanInput(poor, projectById(poor, p.id)!)).ok).toBe(false);
+  });
+
+  it('anulowany kontrakt nie zajmuje już godzin w dniu anulowania (wcześniej rezerwacja była wydłużana do tego dnia i dawała ujemny wolny czas)', () => {
+    let s = opsGame({ seed: 'cancel-1', equip: ['paint-basic'] });
+    const c = contract(s, { quote: { hoursPerDay: 3, durationDays: 10, startDate: addDays(s.clock.today, 2), priceNet: zl(3_000) } });
+    s = c.s; // materiałów nie kupujemy — kontrakt stoi i po 45 dniach od terminu klient odstępuje od umowy
+    s = runUntil(s, (x) => x.reno.jobs.find((j) => j.id === c.job.id)!.stage === 'cancelled', 120);
+    const job = s.reno.jobs.find((j) => j.id === c.job.id)!;
+    expect(job.stage).toBe('cancelled');
+    const commit = s.commitments.find((x) => x.id === `commit:${job.orderId}`)!;
+    expect(commit.endDate < job.settledOn!).toBe(true);
+    expect(checkInvariants(s)).toEqual([]);
   }, 120_000);
 });

@@ -1,6 +1,7 @@
 import { CommandError, ensureParty, logEvent, nextCounter } from './core.ts';
 import { addDays, diffDays, formatDatePL, weekdayIndex } from './date.ts';
 import { firstFree } from './teams.ts';
+import { liquidityForecast } from './profitability.ts';
 import type { IsoDate } from './date.ts';
 import { formatPLN, mulBps, roundDiv, zl } from './money.ts';
 import type { Grosze } from './money.ts';
@@ -9,7 +10,7 @@ import { ownerAvailable } from './operator.ts';
 import { DISTRICTS, SERVICE_BY_ID, referencePrice, OWN_LABOR_RATE_DEFAULT } from './renovationCatalog.ts';
 import {
   SOLE_SUB_PREFIX, crewKey, equipmentStatus, grossOfNet, isSpecialized, jobDifficulty, jobFinancials, normCenti, parseCrewKey, previewQuote, reputation, signContract, skillLevel,
-  cancelProjectJob, vatRateNow, b2bPaymentDelay,
+  cancelProjectJob, vatRateNow, b2bPaymentDelay, jobShortage, materialPrice,
 } from './renovation.ts';
 import type { CrewMember, QuoteInput, QuotePreview } from './renovation.ts';
 import { requireBusiness } from './opsCommon.ts';
@@ -251,9 +252,10 @@ export function suggestCrews(s: GameState, p: RenoProject): Record<string, strin
     const ownerOk = ownerAvailable(s) && isSpecialized(s, pkg.serviceId) && skillLevel(s, pkg.serviceId) >= difficulty && eq.missing.length === 0 && eq.broken.length === 0;
     const qualified = emps.filter((e) => { const person = personById(s, e.personId); return !!person && personLevel(person, pkg.serviceId) >= difficulty; });
     const big = normCenti(pkg.serviceId, pkg.units, pkg.complexity) > 6_000;
+    // zatrudnieni wykonują pakiety, a właściciel zostaje wolny do własnych zleceń; właściciel pracuje przy pakiecie tylko, gdy nie ma kwalifikowanego pracownika
     const members: CrewMember[] = [];
-    if (ownerOk) members.push({ kind: 'owner', id: 'owner' });
-    for (const e of qualified.slice(0, big ? 3 : 1)) members.push({ kind: 'employee', id: e.id });
+    for (const e of qualified.slice(0, big ? 3 : 2)) members.push({ kind: 'employee', id: e.id });
+    if (members.length === 0 && ownerOk) members.push({ kind: 'owner', id: 'owner' });
     if (members.length === 0) {
       const sub = [...s.ops.subcontractors].filter((x) => x.services.includes(pkg.serviceId)).sort((a, c) => a.priceBps - c.priceBps)[0];
       out[pkg.id] = sub ? `${SOLE_SUB_PREFIX}${sub.id}` : null;
@@ -263,7 +265,7 @@ export function suggestCrews(s: GameState, p: RenoProject): Record<string, strin
 }
 
 export function defaultPlanInput(s: GameState, p: RenoProject): ProjectPlanInput {
-  return { startDate: addDays(s.clock.today, Math.max(2, Math.min(21, diffDays(p.desiredStart, s.clock.today)))), paymentTermDays: p.paymentTermDays, advanceBps: Math.min(p.advanceMaxBps, 1_000), crews: suggestCrews(s, p), totalPriceNet: defaultTotal(p) };
+  return { startDate: addDays(s.clock.today, Math.max(2, Math.min(21, diffDays(p.desiredStart, s.clock.today)))), paymentTermDays: p.paymentTermDays, advanceBps: p.advanceMaxBps, crews: suggestCrews(s, p), totalPriceNet: defaultTotal(p) };
 }
 
 /** Dobór godzin właściciela i czasu trwania pakietu: dzień pracy skracany do wolnego czasu doby, plan wydłużany odpowiednio do wydajności ekipy. */
@@ -338,11 +340,15 @@ export function planProject(s: GameState, p: RenoProject, input: ProjectPlanInpu
   let bal = 0;
   let low = 0;
   for (const e of ev) { bal += e.amount; low = Math.min(low, bal); }
-  const available = s.accounts[b.accountId]?.balance ?? 0;
+  // środki do dyspozycji = najniższe prognozowane saldo na 60 dni (uwzględnia należności, zobowiązania i miesięczne obciążenia), nie samo dzisiejsze saldo
+  // pomniejszone o materiały, których nie kupiono jeszcze do trwających kontraktów (zamrożone zobowiązanie gotówkowe)
+  const pendingMaterials = reno(s).jobs.filter((j) => j.stage !== 'done' && j.stage !== 'cancelled').reduce((a, j) => a + Object.entries(jobShortage(s, j)).reduce((x, [k, n]) => x + n * materialPrice(s, k, today), 0), 0);
+  const available = Math.max(0, Math.min(s.accounts[b.accountId]?.balance ?? 0, liquidityForecast(s, 60, 15).min) - pendingMaterials);
   const peakNeed = -low;
   const first = plans[0]?.preview.economics.liquidity.cashOutBeforePayment ?? 0;
   if (available < first) blockers.push(`Brakuje gotówki na start: pierwszy pakiet wymaga ok. ${formatPLN(first, { round: true })}, a firma ma ${formatPLN(available, { round: true })}.`);
-  if (peakNeed > available) risks.push(`Zapotrzebowanie na gotówkę sięgnie ok. ${formatPLN(peakNeed, { round: true })} (masz ${formatPLN(available, { round: true })}) — płatności klienta przychodzą po ${input.paymentTermDays} dniach od odbioru pakietu.`);
+  // bez kredytu (v0.9) firma nie sfinansuje projektu, którego zapotrzebowanie na gotówkę przekracza jej środki — B2B z długimi terminami płatności topi małe firmy
+  if (peakNeed > available) blockers.push(`Zapotrzebowanie na gotówkę (ok. ${formatPLN(peakNeed, { round: true })}: materiały, podwykonawcy i transport przed zapłatą klienta po ${input.paymentTermDays} dniach od odbioru pakietu) przekracza środki firmy (${formatPLN(available, { round: true })}) — zwiększ zaliczkę, skróć termin płatności albo poczekaj na gotówkę.`);
   const client = reno(s).b2bClients.find((c) => c.id === p.b2bId);
   if (client && client.reliability < 65) risks.push(`Płatnik o niskiej rzetelności (${client.reliability}/100) — spodziewaj się zwłoki w płatnościach nawet do ${Math.round((100 - client.reliability) * B2B_RULES.delayPerReliabilityPt)} dni.`);
   if (revenue > p.walkAwayNet) risks.push('Cena przekracza granicę akceptowalną dla klienta — oferta zostanie najpewniej odrzucona.');
@@ -474,6 +480,16 @@ function activatePackage(s: GameState, b: Operator, p: RenoProject, pkg: RenoPac
   // najwcześniejszy termin, w którym wykonawcy (pracownicy, podwykonawcy) są wolni na cały czas pakietu, a właściciel ma wolne godziny — rezerwacja na przyszłość
   // chroni projekt przed „zagłodzeniem” przez kolejne drobne zlecenia, które zajmowałyby tych samych ludzi bez przerwy
   let start = pkg.startDate && pkg.startDate > today ? pkg.startDate : addDays(today, 1);
+  // skład dopasowany do bieżącej dostępności: gdy ktoś z zaplanowanej ekipy zwolni się dopiero za tydzień i dłużej, zaczynamy mniejszym składem (pakiet potrwa dłużej,
+  // ale projekt nie stoi tygodniami); właściciel i co najmniej jeden wykonawca zostają
+  const crewKeyOf = (ms: CrewMember[]): string | null => (ms.length === 1 && ms[0]!.kind === 'owner' ? null : ms.length === 1 && ms[0]!.kind === 'sub' ? `${SOLE_SUB_PREFIX}${ms[0]!.id}` : crewKey(ms));
+  let live = [...crew];
+  while (live.filter((m) => m.kind !== 'owner').length > 1) {
+    const latest = live.filter((m) => m.kind !== 'owner').map((m) => ({ m, f: firstFree(s, m.kind === 'employee' ? 'employee' : 'sub', m.id, start, Math.max(1, pkg.durationDays)) })).sort((a, c) => c.f.localeCompare(a.f))[0]!;
+    if (diffDays(latest.f, start) <= 7) break;
+    live = live.filter((m) => m !== latest.m);
+  }
+  if (live.length !== crew.length) { pkg.crewKey = crewKeyOf(live); crew.splice(0, crew.length, ...live); }
   let fit = fitPackage(s, pkg, pkg.crewKey, start, pkg.hoursPerDay, pkg.priceNet, { advanceBps: q.advanceBps, paymentTermDays: q.paymentTermDays, laborRate: OWN_LABOR_RATE_DEFAULT }, pkg.durationDays);
   for (let i = 0; i < 80; i++) {
     let free = start;

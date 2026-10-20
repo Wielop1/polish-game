@@ -226,6 +226,8 @@ Raporty trafiają do `balance-out/` (poza repozytorium); wyniki użyte w tym dok
 
 # 10. v0.8.1 — audyt rentowności, kalibracja i większe projekty (B2B)
 
+> ⚠ **Rozdział 10 opisuje pierwszą serię pomiarów (bot v1). Jej wnioski o zespołach były w dużej mierze skutkiem błędów bota — korekta, nowa seria i aktualne liczby: rozdział 11.** Surowe dane serii bot v1: `docs/balance/v081-before-bot-v1-2y.json`.
+
 > Pomiary z tego rozdziału pochodzą z narzędzi w repozytorium: `node tools/balance/audit.ts` (audyt usług i projektów) oraz `npm run balance` (flaga `--projects true`). Surowe wyniki: `docs/balance/v081-*.json`. Parametry rynku, klientów B2B i projektów są **kalibracyjne** (nie dane GUS).
 
 ## 10.1 Dlaczego ten rozdział: „na JDG nie da się zarobić”
@@ -317,3 +319,70 @@ Ten sam bot (wersja z v0.7 po poprawkach, bez zmian logiki dla małych zleceń),
 - Bot wycenia projekty prostą regułą (nadwyżka ≥ 60% wartości pracy właściciela + 8% przychodu), nie zarządza gotówką pod projekty, nie planuje zmęczenia i nie unika kumulowania prac; dobry gracz może wypaść lepiej (lub gorzej).
 - Parametry klientów B2B, wymagań i częstości zapytań są kalibracyjne; sprawdziłem dwa warianty okien czasowych projektu (godziny 5 vs 6 dziennie, zapas 1,7 vs 1,4) — wariant o dłuższych oknach wypadł gorzej, pozostawiono pierwotny (`projectsCatalog.ts`).
 - Benchmark wykrył i naprawił błąd rezerwacji godzin przy anulowaniu kontraktu (10.3); wcześniejsze serie (v0.7) mogły go zawierać w niewielkim stopniu.
+
+
+---
+
+# 11. v0.8.1 — korekta po przeglądzie: zespoły, bot v2, dane rynkowe i poprawki B2B
+
+## 11.1 Co poszło źle w rozdziale 10
+
+Wniosek „zespoły ≥ 3 osób są nierentowne w 100% przebiegów, a B2B nie pomaga” był **w głównej mierze artefaktem bota**, nie ekonomii. Prześledziłem miesiące zespołu z 3 pracownikami (`tools/balance`, ślad dzienny) i znalazłem cztery przyczyny po stronie bota:
+
+1. **Nadzór właściciela:** bot jawnie ustawiał „nadzoruje” (1 godz./dzień **na każdy** kontrakt ekipy), przez co właściciel nie miał godzin, a kontrakty ekip stały („Brak wolnych godzin”). Domyślna wartość gry (od wcześniejszej poprawki) to pełne delegowanie — bot v2 używa domyślnej.
+2. **Pojazd:** bot kupował pojazd za 38 tys. zł przy 45 tys. zł na rachunku. Bez zapasu gotówki firma nie kupuje materiałów → kontrakty stają → brak przychodu, a płace i składki płyną dalej (**spirala śmierci**: gotówka 0 przez kolejne miesiące, „wykonane” kontrakty zamrożone). Bot v2 kupuje pojazd dopiero przy 90 tys. zł.
+3. **Przeładowanie kontraktami:** bot przyjmował zlecenia, aż w toku było 25–38 kontraktów przy 3–4 wykonawcach (zamrożone materiały, opóźnienia, anulowania). Bot v2: nie więcej niż 4 kontrakty (w toku + oferty) na wykonawcę.
+4. **Zbyt wąskie wymagania gotówkowe projektów** (nowa funkcja): patrz 11.3.
+
+Skutek: te same strategie na tym samym silniku v0.8 dają po korekcie bota **zupełnie inne** liczby (np. firma z 3 pracownikami: zysk operacyjny 0 zamiast −170 tys. zł; niewypłacalność 33% zamiast 100%). Pomiar poprzedni zachowuję w `docs/balance/v081-before-bot-v1-2y.json`.
+
+## 11.2 Dane rynkowe do kalibracji cen (2025–2026, serwisy porównawcze — nie źródła urzędowe)
+
+| usługa | robocizna (zł/m², bez materiałów) wg serwisów | gra (cena łączna − materiały) przed → po |
+|---|---|---|
+| malowanie ścian i sufitów | 25–36, mediana ok. 28 ([cenauslug.pl](https://cenauslug.pl/budowa-i-remont/malowanie-scian-i-sufitow/lodz)) | 24,6 → **28,6** (cena 34 → **38 zł/m²**) |
+| gładzie gipsowe | 36–52 ([cenauslug.pl](https://cenauslug.pl/budowa-i-remont/wykonanie-gladzi-gipsowej-reczne/warszawa)), 45–70 ([kb.pl](https://kb.pl/cenniki/uslugi/cennik-gladzi-gipsowej-i-szpachlowania-scian-w-calej-polsce/)), całość z materiałem 60–80 | 41,5 → **47,5** (cena 48 → **54 zł/m²**) |
+| montaż paneli | średnia ok. 33 (29–42, [cenauslug.pl](https://cenauslug.pl/budowa-i-remont/montaz-paneli-laminowanych/warszawa)), 55–90 brutto ([kb.pl](https://kb.pl/cenniki/uslugi/cennik-ukladania-paneli-podlogowych-w-calej-polsce/)) + listwy 18–25 zł/mb | 46 (z listwami) — bez zmian |
+| drobne prace (złota rączka) | brak potwierdzonych stawek w wynikach | 95 zł/godz. — bez zmian |
+
+Dane pochodzą z podsumowań wyszukiwarki (nie czytałem pełnych stron i cenników) — to **orientacyjne** źródła; parametry gry pozostają kalibracyjne. Zmiana cen: malowanie do mediany rynku, gładzie wcześniej (§10.3).
+
+## 11.3 Poprawki silnika B2B po przeglądzie
+
+- **Wykonawcy pakietów:** zatrudnieni przed właścicielem (właściciel zostaje wolny do własnych zleceń; pracuje przy pakiecie tylko, gdy nikt inny nie ma umiejętności) — wcześniej właściciel trafiał do prawie każdej ekipy i blokował drobne zlecenia (40 anulowanych zleceń prywatnych w jednym przebiegu).
+- **Skład dopasowany przy aktywacji:** gdy ktoś z zaplanowanej ekipy zwolni się dopiero za tydzień lub dłużej, pakiet startuje mniejszym składem — wcześniej mieszkanie 55 m² trwało pół roku z miesięcznymi przerwami między pakietami.
+- **Gotówka:** płace zatrudnionych nie zwiększają zapotrzebowania na gotówkę przy starcie pakietu (płacone co miesiąc niezależnie); dostępne środki = najniższe prognozowane saldo na 60 dni **minus materiały niekupione jeszcze do trwających kontraktów**; przekroczenie = **blokada** oferty („bez kredytu firma nie sfinansuje projektu”) zamiast samego ostrzeżenia.
+- **Zaliczki etapowe:** klienci B2B akceptują zaliczki 10–30% (wcześniej 0–20%), domyślnie maksymalną; ceny B2B 94–100% cen prywatnych (wcześniej 85–93% — przy marży rzędu 20 zł/godz. rabat 10% zjadał ok. 40% marży pracownika).
+- **Anulowanie projektu:** pakiet, który nie może ruszyć przez 45 dni od odbioru poprzedniego, kończy projekt (relacja z klientem −10).
+- **UI:** pojazdy pokazują, ile gotówki i ilu miesięcy kosztów stałych zostanie po zakupie; słownik: „Płynność” i „Nadzór właściciela”; pomoc przy zatrudnieniu i pojazdach.
+
+## 11.4 Wyniki końcowe — bot v2, 2 lata × 3 seedy (mediany)
+
+Bot v2 = ten sam bot co v1 + (a) domyślny nadzór (pełne delegowanie), (b) pojazd dopiero przy 90 tys. zł, (c) limit 4 kontraktów na wykonawcę, (d) projekty tylko dla firm z mocą ponad właściciela (≥ 2 zatrudnionych albo podwykonawcy) — właściciel przy projekcie przeciąża swoje drobne zlecenia. „Przed” = silnik v0.8 (`e21658d`) z botem v2.
+
+| wskaźnik | wariant | solo | owner+1 | team3 | subs-only | mixed | grow |
+|---|---|---:|---:|---:|---:|---:|---:|
+| przychód / rok | przed | 138k | 249k | 482k | 70k | 323k | 341k |
+| | po, prywatni | 154k | 260k | 499k | 74k | 499k | 346k |
+| | po, z projektami | 164k | 266k | 232k | 86k | 501k | 272k |
+| zysk operacyjny / rok | przed | 74k | 79k | 0k | −28k | −31k | 14k |
+| | po, prywatni | 88k | 88k | 25k | −26k | 53k | 37k |
+| | po, z projektami | 82k | 81k | −119k | −25k | 59k | 50k |
+| wzrost majątku / rok | przed | 29k | 37k | −27k | −87k | −105k | −19k |
+| | po, prywatni | 41k | 46k | 0k | −89k | −22k | −1k |
+| | po, z projektami | 35k | 38k | −162k | −91k | −27k | 6k |
+| niewypłacalność (% przebiegów) | przed / prywatni / z projektami | 0 / 0 / 0 | 0 / 0 / 0 | 33 / 0 / 67 | 100 / 100 / 100 | 67 / 0 / 33 | 0 / 0 / 0 |
+| projekty / rok (podpisane) | z projektami | — | — | 0,7 | 0,8 | 1,3 | 1,3 |
+
+4 lata × 3 seedy (solo, owner+1, firma rosnąca): zysk operacyjny / rok: przed 80k / 65k / −76k → po (prywatni) **90k / 82k / +14k** → po z projektami 85k / 71k / +18k; wzrost majątku / rok: 33k / 24k / −108k → **41k / 39k / −21k** → 36k / 29k / −16k. Firma rosnąca nadal oznaczana jako niewypłacalna w 4-letnich przebiegach (majątek netto < 0 po latach wypłat właściciela na życie przewyższających zysk firmy).
+
+## 11.5 Wnioski po korekcie
+
+1. **Zespoły działają, ale na cienkiej marży.** Po poprawkach (kalibracja cen, nadzór, dyscyplina zleceń, zapas gotówki) firma z 3 pracownikami ma zysk operacyjny +25 tys. zł rocznie przy 69% obłożenia, model mieszany +53 tys., firma rosnąca +37 tys.; **żaden** z tych modeli nie jest już niewypłacalny w serii prywatnej (było 33–67%). Rachunek: pracownik wnosi ok. 20 zł marży na godzinę pracy (przy cenach rynkowych i koszcie pracodawcy ok. 41 zł/godz.), więc opłaca się przy obłożeniu powyżej ok. 60–70% — poniżej firma traci. Sama praca właściciela (solo: 88 tys. zł zysku) jest nadal dochodowsza niż zarządzanie ekipą — to cecha modelu cienkich marż, nie błąd.
+2. **B2B pomaga firmom z mocą i szkodzi niezdyscyplinowanym.** Dla firmy rosnącej i modelu mieszanego projekty dają +13 tys. i +6 tys. zł zysku operacyjnego rocznie względem wariantu prywatnego (2 lata). Dla firmy z 3 pracownikami jeden z trzech przebiegów kończy się spiralą gotówkową (−119 tys. zł) — marża jest tak cienka, że jakakolwiek zmiana trajektorii (tu: pierwszy projekt) może ją przechylić; wymaga to dalszej pracy nad zabezpieczeniami gotówkowymi (kredyt/zaliczki — v0.9). Solo i „właściciel + 1” nie biorą projektów (bot) — gra ostrzega w pomocy, że projekty są dla firm z ekipą.
+3. **Co bot v2 robi „po ludzku”, a gra nadal tego nie wymusza:** nie przeładowuje się zleceniami, nie wydaje całej gotówki, deleguje bez nadzoru. Gracz nie dostaje jeszcze wprost ostrzeżeń o przeładowaniu (UI: pojazdy pokazują zapas po zakupie).
+4. **Pozostałe słabości:** strategia „tylko podwykonawcy” jest nadal niewypłacalna w 100% przebiegów (podwykonawcy zjadają marżę, kontrakty czekają na wolnego podwykonawcę i są anulowane — 52 anulowane zlecenia w jednym przebiegu); firma rosnąca przy 4 latach wypłat właściciela na życie traci majątek mimo dodatniego zysku firmy.
+
+## 11.6 Ograniczenia
+
+3 seedy na wariant, 2 i 4 lata; wyniki zespołów są chaotyczne (jeden seed potrafi przejść ze zysku do spirali); bot v2 jest nadal prostszy niż dobry gracz. Surowe dane: `docs/balance/v081-{before,private,projects}-{2y,4y}.json`.

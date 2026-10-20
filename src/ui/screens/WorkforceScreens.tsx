@@ -479,6 +479,19 @@ export function VehiclesScreen() {
                 <Row k="Eksploatacja / dzień pracy" v={<Money value={v.runPerDay} round />} />
                 <Row k="Koszty stałe / mies." v={<Money value={v.fixedMonthly} round />} />
               </dl>
+              {(() => {
+                const cash = game.accounts[biz.accountId]?.balance ?? 0;
+                const left = cash - v.priceNet;
+                const prev = monthKey(addDays(`${monthKey(game.clock.today)}-01`, -1));
+                const monthly = Math.max(1, fixedCosts(game, prev).total + v.fixedMonthly);
+                const months = left / monthly;
+                return (
+                  <p className={cx('mt-2 text-xs', left < 0 ? 'text-loss' : months < 2 ? 'text-gold' : 'text-slate-500')} data-testid={`veh-cash-${v.id}`}>
+                    {left < 0 ? 'Brakuje gotówki na zakup.' : `Po zakupie zostanie ok. ${formatPLN(left, { round: true })} (${months.toFixed(1).replace('.', ',')} mies. kosztów stałych).`}
+                    {left >= 0 && months < 2 && ' Zbyt mało — bez zapasu gotówki firma nie kupi materiałów i kontrakty staną.'}
+                  </p>
+                );
+              })()}
               <Button variant="primary" className="mt-3" onClick={() => buy(v.id)} data-testid={`buy-veh-${v.id}`}>Kup za gotówkę</Button>
             </div>
           ))}

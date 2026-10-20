@@ -338,6 +338,7 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
   let minDays = Math.ceil(plannedCenti / (hpd * 100));
   let teamLabor: Grosze | null = null;
   let ownerLaborPart: Grosze | null = null;
+  let employeeLaborPart: Grosze = 0;
   let ownerCenti = plannedCenti;
   let transportOverride: Grosze | null = null;
   let crewHours = plannedCenti;
@@ -360,7 +361,7 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
     const sumC = Math.max(1, day.workers.reduce((a, w) => a + w.c, 0));
     for (const w of day.workers) {
       if (w.c <= 0) continue;
-      if (w.kind === 'employee') labor += roundDiv(employmentById(s, w.employmentId!)!.hourlyCost * w.hoursCenti * norm, 100 * pWork);
+      if (w.kind === 'employee') { const part = roundDiv(employmentById(s, w.employmentId!)!.hourlyCost * w.hoursCenti * norm, 100 * pWork); labor += part; employeeLaborPart += part; }
       else if (w.kind === 'owner') { const part = roundDiv(i.laborRate * w.hoursCenti * norm, 100 * pWork); labor += part; ownerPart += part; ownerCenti += roundDiv(w.hoursCenti * norm, pWork); }
       else {
         const sub = subById(s, w.key.slice(4))!;
@@ -453,7 +454,8 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
   const gross = grossOfNet(priceNet, vatRateBps);
   const advance = mulBps(gross, Math.max(0, Math.min(5_000, Math.round(i.advanceBps) || 0)));
   const shortageValue = Object.entries(shortage).reduce((a, [k, n]) => a + n * materialPrice(s, k, today), 0);
-  const cashOut = shortageValue + hiredLabor + transport + other;
+  // płace zatrudnionych są płacone co miesiąc niezależnie od zlecenia (koszt stały) — nie wymagają dodatkowej gotówki na start kontraktu; podwykonawcy, materiały, transport i drobne — tak
+  const cashOut = shortageValue + Math.max(0, hiredLabor - employeeLaborPart) + transport + other;
   const termDays = Math.max(1, Math.round(i.durationDays) || 1) + Math.max(0, Math.round(i.paymentTermDays) || 0);
   const economics: QuoteEconomics = {
     revenueNet: priceNet,

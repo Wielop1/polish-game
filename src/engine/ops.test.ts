@@ -44,7 +44,7 @@ describe('5. podwykonawcy (B2B)', () => {
     const s = opsGame();
     const [a, b] = [s.ops.subcontractors[0]!, s.ops.subcontractors[2]!];
     const full = subPrice(a, 'malowanie', 80, 'standard', 10_000);
-    expect(full).toBe(Math.round((34 * 80 * 100 * (a.priceBps / 10_000)) / 1_000) * 1_000 || full);
+    expect(full).toBe(Math.round((38 * 80 * 100 * (a.priceBps / 10_000)) / 1_000) * 1_000 || full);
     expect(subPrice(a, 'malowanie', 80, 'standard', 5_000)).toBeLessThan(full);
     expect(subPrice(a, 'malowanie', 80, 'trudne', 10_000)).toBeGreaterThan(full);
     expect(subPrice(b, 'malowanie', 80, 'standard', 10_000)).toBeLessThan(full);

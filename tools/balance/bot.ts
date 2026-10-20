@@ -260,7 +260,7 @@ function staffing(ctx: Ctx): void {
     if (ctx.s.ops.teams.some((t) => t.members.some((m) => m.id === e.id))) continue;
     exec(ctx, commands.createTeam(ctx.s, `Ekipa ${e.id}`, [{ kind: 'employee', id: e.id }]), 'ekipa');
   }
-  if (policy.vehicle && ctx.s.ops.vehicles.length === 0 && ctx.day >= 60 && bizCash(ctx.s) > zl(45_000) && ctx.day - (ctx.retryAt.get('vehicle') ?? -99) >= 30 && (ctx.retryAt.set('vehicle', ctx.day), true)) exec(ctx, commands.buyVehicle(ctx.s, 'van-small'), 'pojazd');
+  if (policy.vehicle && ctx.s.ops.vehicles.length === 0 && ctx.day >= 60 && bizCash(ctx.s) > zl(90_000) && ctx.day - (ctx.retryAt.get('vehicle') ?? -99) >= 30 && (ctx.retryAt.set('vehicle', ctx.day), true)) exec(ctx, commands.buyVehicle(ctx.s, 'van-small'), 'pojazd');
 }
 
 interface Candidate { q: QuoteInput; start: string; kind: 'team' | 'owner' | 'sub' }
@@ -270,8 +270,8 @@ function candidateQuote(ctx: Ctx, e: RenoEnquiry, crew: { kind: 'owner' } | { ki
   const base = defaultQuoteInput(s, e);
   let q: QuoteInput;
   if (crew.kind === 'owner') q = { ...base, teamId: null, supervision: 'worker', vehicleId: null };
-  else if (crew.kind === 'team') q = { ...base, teamId: crew.teamId, supervision: 'supervise', vehicleId: null };
-  else q = { ...base, teamId: crewKey([{ kind: 'sub', id: crew.subId }]), supervision: 'supervise', vehicleId: null };
+  else if (crew.kind === 'team') q = { ...base, teamId: crew.teamId, supervision: 'hands-off', vehicleId: null };
+  else q = { ...base, teamId: crewKey([{ kind: 'sub', id: crew.subId }]), supervision: 'hands-off', vehicleId: null };
   const wish = e.desiredStart > addDays(s.clock.today, 2) ? e.desiredStart : addDays(s.clock.today, 2);
   q = { ...q, startDate: wish, durationDays: 60, hoursPerDay: 8 };
   const no = (why: string): null => { const k = `${crew.kind}:${why}`; ctx.why.set(k, (ctx.why.get(k) ?? 0) + 1); return null; };
@@ -327,6 +327,10 @@ function candidateQuote(ctx: Ctx, e: RenoEnquiry, crew: { kind: 'owner' } | { ki
 
 function handleEnquiries(ctx: Ctx): void {
   const { policy } = ctx;
+  // dyscyplina: nie przyjmujemy kolejnych zleceń, gdy w toku jest ich więcej niż 4 na wykonawcę (materiały i czas nie wystarczą, a gotówka utknie w zapasach)
+  const workers = (policy.ownerWorks ? 1 : 0) + ctx.s.ops.employments.filter((x) => x.status === 'active').length + (policy.subs !== 'none' ? 2 : 0);
+  const wip = ctx.s.reno.jobs.filter((j) => j.stage !== 'done' && j.stage !== 'cancelled').length + ctx.s.reno.quotes.filter((x) => x.status === 'accepted' || x.status === 'sent').length;
+  if (wip >= Math.max(4, 4 * workers)) return;
   for (const e of ctx.s.reno.enquiries.filter((x) => x.status === 'open')) {
     const cands: Candidate[] = [];
     for (const t of ctx.s.ops.teams) {
@@ -375,8 +379,12 @@ function botCrews(ctx: Ctx, p: GameState['reno']['projects'][number]): Record<st
 function handleProjects(ctx: Ctx): void {
   if (!ctx.projects) return;
   const s = ctx.s;
+  // projekty są dla firm z mocą ponad właściciela (≥ 2 zatrudnionych albo podwykonawcy zamiast właściciela); właściciel przy projekcie przeciąża swoje drobne zlecenia
+  const emps = s.ops.employments.filter((x) => x.status === 'active').length;
+  const capable = emps >= 2 || ctx.policy.subs === 'only';
   for (const p of s.reno.projects) {
     if (p.status === 'enquiry') {
+      if (!capable) continue;
       if (ctx.day - (ctx.retryAt.get(p.id) ?? -99) < 4) continue;
       ctx.retryAt.set(p.id, ctx.day);
       const crews = botCrews(ctx, p);

@@ -80,6 +80,8 @@ const GLOSSARY: [string, string][] = [
   ['Zaliczka', 'Część ceny płacona z góry. To pieniądze i zobowiązanie do wykonania usługi — nie przychód, dopóki praca nie zostanie wykonana.'],
   ['Należność i zobowiązanie', 'Należność: ktoś ma zapłacić Tobie. Zobowiązanie: Ty masz zapłacić komuś. Obie mają termin.'],
   ['JDG a spółka z o.o.', 'JDG to Ty jako osoba fizyczna z działalnością (odpowiadasz majątkiem). Spółka z o.o. to osobny podmiot z własnym majątkiem — zaawansowana opcja w grupie „Spółki i inwestycje prywatne”.'],
+  ['Płynność (zapas gotówki)', 'Pieniądze na rachunku firmy. Bez nich nie kupisz materiałów — kontrakty stają, klienci odchodzą, a płace i składki i tak trzeba zapłacić. Największe zakupy (pojazd, zatrudnienie) rób dopiero z zapasem na kilka miesięcy kosztów stałych.'],
+  ['Nadzór właściciela', 'Ile godzin dziennie osobiście pilnujesz pracy ekipy. 0 godz. (pełne delegowanie) zwalnia Twój czas, ale obniża jakość o 4 pkt i zwiększa ryzyko problemów; 1 godz. dziennie na każdy kontrakt szybko zjada dobę.'],
   ['VAT', 'Podatek przelotowy: doliczasz go klientowi i odprowadzasz do urzędu. Nie jest Twoim przychodem ani kosztem.'],
   ['Referencje', 'Dowód, że umiesz: ukończone kontrakty, ich wartość, oceny klientów i ukończone projekty. Odblokowują większe projekty.'],
   ['Pakiet robót', 'Część większego projektu (np. gładzie, malowanie) z własnym kosztorysem, terminem i odbiorem. Kolejny pakiet rusza po odbiorze poprzedniego.'],
