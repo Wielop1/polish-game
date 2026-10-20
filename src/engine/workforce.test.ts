@@ -16,6 +16,22 @@ import { employerContributions, giveNotice, minGrossFor, monthlyEmployerCost, no
 const consistent = (s: GameState) => expect(checkInvariants(s)).toEqual([]);
 
 describe('1. rekrutacja', () => {
+  it('doświadczeni kandydaci mają często drugą, sąsiednią umiejętność o poziom niższą (deterministycznie), początkujący nie', () => {
+    let s = opsGame({ seed: 'second-skill' });
+    s = ok(commands.publishListing(s, { role: 'malarz', minLevel: 3, tier: 'premium' }));
+    for (let i = 0; i < 21; i++) s = advanceDays(s, 1);
+    const people = s.ops.people.filter((p) => s.ops.candidates.some((c) => c.personId === p.id));
+    expect(people.length).toBeGreaterThanOrEqual(3);
+    const withSecond = people.filter((p) => Object.keys(p.xp).length > 1);
+    expect(withSecond.length).toBeGreaterThan(0);
+    for (const p of withSecond) {
+      const sec = Object.keys(p.xp).find((k) => k !== 'malowanie')!;
+      expect(['gladzie', 'drobne']).toContain(sec);
+      expect(personLevel(p, sec)).toBe(personLevel(p, 'malowanie') - 1);
+    }
+    for (const p of people.filter((x) => personLevel(x, 'malowanie') < 2)) expect(Object.keys(p.xp)).toEqual(['malowanie']);
+  });
+
   it('ogłoszenie: koszt jako dokument firmy, 1 godz. dziennie przez 5 dni, limity i ochrona przed duplikatem', () => {
     let s = opsGame();
     const docs0 = s.documents.length;

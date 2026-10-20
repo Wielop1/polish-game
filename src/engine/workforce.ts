@@ -128,6 +128,9 @@ export function closeListing(s: GameState, listingId: string): string {
   return 'Ogłoszenie zamknięte.';
 }
 
+/** Sąsiednie umiejętności (druga specjalizacja pracownika). */
+const RELATED_SKILLS: Record<string, string[]> = { malowanie: ['gladzie', 'drobne'], gladzie: ['malowanie'], panele: ['drobne'], drobne: ['malowanie', 'panele'] };
+
 function makeCandidate(s: GameState, l: JobListing, date: IsoDate): void {
   const rng = createRng(s.seed, `hr:cand:${l.id}:${date}`);
   // nie same ideały: ok. 35% zgłoszeń to osoby poniżej wymaganego poziomu, reszta od wymaganego w górę (z przewagą niższych)
@@ -151,6 +154,13 @@ function makeCandidate(s: GameState, l: JobListing, date: IsoDate): void {
     xp: { [l.skillId]: LEVEL_START_XP[level]! + (level < 5 ? rng.int(0, Math.max(0, xpBand - 1)) : rng.int(0, 20_000)) }, expectedGross: expected,
     availableFrom: addDays(date, rng.int(0, 45)), diligence: rng.int(35, 95), loyalty: rng.int(30, 95), morale: 60, fatigue: 10, status: 'candidate', lastWorkedOn: null,
   };
+  // doświadczony pracownik wykończeniowy zwykle ogarnia też sąsiedni zakres (malarz — gładzie, monter podłóg — drobne prace…): druga umiejętność o poziom niżej;
+  // bez tego ekipa 2–3 osób z różnych stanowisk odrzucała ok. 40% zleceń „z braku umiejętności”
+  const related = RELATED_SKILLS[l.skillId];
+  if (related && level >= 2 && rng.int(0, 99) < 65) {
+    const sec = related[rng.int(0, related.length - 1)]!;
+    person.xp[sec] = LEVEL_START_XP[level - 1]!;
+  }
   s.ops.people.push(person);
   const cn = nextCounter(s, 'hr:candidate');
   s.ops.candidates.push({

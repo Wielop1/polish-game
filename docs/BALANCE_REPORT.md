@@ -451,3 +451,21 @@ Dodatkowo (kalibracja zmierzona, nie „pod wynik”): ceny podwykonawców +20% 
 - Wszystkie strategie mają dodatni zysk operacyjny; w serii z projektami B2B nikt nie jest niewypłacalny (wcześniej 33–100%) — przyczyną „ryzyka B2B” były błędy silnika (stojące zlecenia), nie same płatności.
 - Najlepsze skalowanie: stały zespół 2 osób plus podwykonawcy na szczyty (jak w rzeczywistości); drugi najlepszy: właściciel + 1. Pensje bez zleceń nadal są głównym kosztem strategii „rosnąca”, która zatrudnia za późno lub zbyt wolno.
 - Ograniczenia: 3 seedy, 4 lata tylko dla dwóch strategii, chaos zespołów; „tylko podwykonawcy” zarabia mało (30k przy przychodzie 450k) — marża pośrednika ok. 18% jest realna.
+
+
+## 11.10 Czwarta poprawka: druga umiejętność pracowników — wyniki końcowe v0.8.1
+
+Diagnostyka dni roboczych pracowników („rosnąca”, 2 lata): ok. 62% dni przy zleceniu, reszta to głównie krótkie przerwy między zleceniami (≤ 3 dni) i brak popytu; ok. 40% prób przydzielenia ekipy kończyło się „nikt w ekipie nie ma umiejętności” (pracownik miał tylko jedną umiejętność, więc ekipa z różnych stanowisk nie pokrywała zapytań). Próbowałem wcześniejszego startu zleceń za zgodą klienta — skrócił przerwy, ale nie zwiększył liczby przepracowanych dni (praca jest ograniczona popytem, nie kalendarzem), więc **wycofałem** ten pomysł. Zostawiłem zmianę realistyczną: **doświadczeni kandydaci (poziom ≥ 2) z 65% szansą mają drugą, sąsiednią umiejętność o poziom niższą** (malarz — gładzie/drobne, gipsiarz — malowanie, monter podłóg — drobne, wykończeniowiec — malowanie/panele; `workforce.ts`, test `workforce.test.ts`). Dotyczy nowych gier (pula kandydatów generuje się w trakcie gry).
+
+**Wyniki końcowe, 2 lata, 3 seedy (mediany; zysk operacyjny / rok · wzrost majątku / rok · % niewypłacalnych):**
+
+| strategia | małe zlecenia | z projektami B2B |
+|---|---|---|
+| solo | 108k · 56k · 0% | 101k · 51k · 0% |
+| właściciel + 1 | 105k · 59k · 0% | 77k · 36k · 0% |
+| 3 pracowników (ostrożne zatrudnianie) | 36k · 4k · 0% | 43k · 9k · 0% |
+| tylko podwykonawcy | 30k · −11k · 0% | 54k · 11k · 0% |
+| 2 pracowników + podwykonawcy | 80k · 37k · 0% | 103k · 57k · 0% |
+| rosnąca (zatrudnia, gdy obłożona) | 63k · 23k · 0% | 47k · 12k · 0% |
+
+Wszystkie 12 kombinacji: dodatni zysk operacyjny i 0% niewypłacalnych (surowe dane: `docs/balance/v081f-*.json`). Ograniczenia jak wyżej: 3 seedy; 4 lata mierzone tylko dla dwóch strategii w §11.9 (przed tą poprawką); „tylko podwykonawcy” zarabia mało (marża pośrednika ok. 18%) i ma ujemny przyrost majątku, bo właściciel nie pracuje, a koszty życia to ok. 42 tys. zł rocznie.
