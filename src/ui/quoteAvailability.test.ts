@@ -61,6 +61,6 @@ describe('zajętość terminów w UI wycen', () => {
     // zaakceptowana oferta: wybór wykonawcy i wyjaśnienie, czemu podpis jest zablokowany
     expect(html2).toContain('sign-who-');
     expect(html2.replace(/<[^>]+>/g, '')).toMatch(/Nie można podpisać: Brak wolnych godzin/);
-    expect(html2).toContain('Zleć podwykonawcy');
+    expect(html2).toContain('podwykonawca,'); // podwykonawcy do zaznaczenia w kroku podpisania
   });
 });

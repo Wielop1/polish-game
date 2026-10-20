@@ -640,7 +640,7 @@ describe('7. realizacja prac', () => {
   });
 
   it('opóźnienie: kara umowna 2% za każdy rozpoczęty tydzień (max 15%) pomniejsza rozliczenie końcowe', () => {
-    let { s, job } = contract(renoGame(), { quote: { hoursPerDay: 2, durationDays: 40, priceNet: zl(3_000) }, enquiry: { units: 100, maxDays: 60 } });
+    let { s, job } = contract(renoGame(), { quote: { hoursPerDay: 2, durationDays: 40, priceNet: zl(3_000), advanceBps: 0 }, enquiry: { units: 100, maxDays: 60 } });
     // wymuszamy wąski termin: ten sam zakres, krótszy czas niż wynika z 1 godz./dzień
     const idx = s.reno.jobs.findIndex((j) => j.id === job.id);
     s.reno.jobs[idx]!.deadline = addDays(job.startDate, 5);

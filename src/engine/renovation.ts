@@ -519,7 +519,7 @@ function previewQuoteInner(s: GameState, i: QuoteInput, opts: { forSending?: boo
 export function defaultQuoteInput(s: GameState, enq: RenoEnquiry): QuoteInput {
   const base: QuoteInput = {
     serviceId: enq.serviceId, units: enq.units, complexity: enq.complexity, standard: (['eko', 'std', 'premium'] as const)[Math.min(2, enq.qualityReq - 1)]!,
-    priceNet: zl(1), startDate: addDays(s.clock.today, 2), durationDays: 1, hoursPerDay: 4, advanceBps: 0, paymentTermDays: 7, laborRate: OWN_LABOR_RATE_DEFAULT,
+    priceNet: zl(1), startDate: addDays(s.clock.today, 2), durationDays: 1, hoursPerDay: 4, advanceBps: 1_000, paymentTermDays: 7, laborRate: OWN_LABOR_RATE_DEFAULT,
   };
   const p0 = previewQuote(s, base);
   // zapas na problemy na budowie: w pomiarze praca trwa średnio ok. 17% dłużej niż plan (problemy +6–16 godz., poprawki po odbiorze), więc domyślny termin ma zapas ok. 20%

@@ -9,6 +9,7 @@ import {
 } from '../../engine/renovation.ts';
 import type { QuoteInput } from '../../engine/renovation.ts';
 import type { GameState, RenoEnquiry, RenoQuote } from '../../engine/state.ts';
+import { memberLabel } from '../../engine/teams.ts';
 import { commands } from '../../engine/commands.ts';
 import {
   COMPLEXITY_LABEL, EQUIPMENT, MATERIALS, MATERIAL_BY_ID, QUALITY_REQ_LABEL, SERVICES, SERVICE_BY_ID, SKILL_THRESHOLD_CENTI, SPECIALIZATION_COURSE, STANDARDS,
@@ -408,16 +409,24 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   const customCrew = !!q.teamId && !game.ops.teams.some((tm) => tm.id === q.teamId);
   const employees = activeEmployments(game).map((e) => ({ e, name: personName(personById(game, e.personId)!), level: personLevel(personById(game, e.personId)!, enq.serviceId) }));
   const ownerBlocked = ownerIn && p.errors.some((e) => /umiejętności|specjalizacji|sprzęt/i.test(e));
+  // godziny dziennie: gdy pracujesz Ty — 4, gdy zlecasz innym — 8 (można zmienić ręcznie)
+  const hoursFor = (list: CrewMember[]) => (list.some((m) => m.kind === 'owner') ? 4 : 8);
   const setMembers = (next: CrewMember[]) => {
     if (next.length === 0) return;
-    set(next.length === 1 && next[0]!.kind === 'owner' ? { teamId: null, supervision: 'worker' } : { teamId: crewKey(next), supervision: next.some((m) => m.kind === 'owner') ? 'worker' : 'hands-off' });
+    set(next.length === 1 && next[0]!.kind === 'owner' ? { teamId: null, supervision: 'worker', hoursPerDay: 4 } : { teamId: crewKey(next), supervision: next.some((m) => m.kind === 'owner') ? 'worker' : 'hands-off', hoursPerDay: hoursFor(next) });
+  };
+  const pickTeam = (teamId: string) => {
+    const tm = game.ops.teams.find((x) => x.id === teamId);
+    if (!tm) { set({ teamId: null, supervision: 'worker', hoursPerDay: 4 }); return; }
+    const withOwner = tm.members.some((m) => m.kind === 'owner');
+    set({ teamId: tm.id, supervision: withOwner ? 'worker' : 'hands-off', hoursPerDay: hoursFor(tm.members) });
   };
   const toggle = (kind: CrewMember['kind'], id: string) => setMembers(has(kind, id) ? members.filter((m) => !(m.kind === kind && m.id === id)) : [...members, { kind, id }]);
   /** Zlecenie pracy wskazanym wykonawcom (bez właściciela) jednym kliknięciem; jeśli cena nie pokrywa kosztów, ustawia ją z narzutem 25%. */
   const delegate = (to: CrewMember[]) => {
     const next: QuoteInput = { ...q, teamId: crewKey(to), supervision: 'hands-off', priceNet: price ?? 0 };
-    set({ teamId: next.teamId, supervision: 'hands-off' });
-    const np = previewQuote(game, next);
+    set({ teamId: next.teamId, supervision: 'hands-off', hoursPerDay: 8 });
+    const np = previewQuote(game, { ...next, hoursPerDay: 8 });
     if (price === null || np.planned.total > next.priceNet) setPriceText(String(Math.round((np.planned.total * 12_500) / 10_000 / 1_000) * 10));
   };
   return (
@@ -440,6 +449,11 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
           </div>
           <fieldset className="space-y-2 rounded-xl border border-ink-700 p-3" data-testid="quote-crew">
             <legend className="px-1 text-xs text-slate-400">Kto wykona pracę</legend>
+            {game.ops.teams.length > 0 && (
+              <div className="flex flex-wrap gap-2" data-testid="quote-ready-teams">
+                {game.ops.teams.map((tm) => <button key={tm.id} type="button" aria-pressed={q.teamId === tm.id} onClick={() => pickTeam(tm.id)} className={cx('rounded-lg px-3 py-1.5 text-xs', q.teamId === tm.id ? 'bg-sky/20 text-sky' : 'bg-ink-800 text-slate-300')} data-testid={`quote-team-${tm.id}`}>{tm.name}: {tm.members.map((m) => memberLabel(game, m)).join(' + ')}</button>)}
+              </div>
+            )}
             <div className="grid gap-1 sm:grid-cols-2">
               <label className="flex items-center gap-2 text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={ownerIn} onChange={() => toggle('owner', 'owner')} data-testid="crew-owner" />Ja (właściciel) <span className="text-xs text-slate-500">· poziom {p.level}/{p.difficulty}</span></label>
               {employees.map(({ e, name, level }) => (
@@ -449,9 +463,10 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
                 <label key={sub.id} className="flex items-center gap-2 text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('sub', sub.id)} onChange={() => toggle('sub', sub.id)} data-testid={`crew-sub-${sub.id}`} />{sub.name.replace(' (fikcyjna)', '')} <span className={cx('text-xs', fits ? 'text-slate-500' : 'text-gold')}>· podwykonawca, {formatPLN(sp, { round: true })} za całość{fits ? '' : ' (słabsze kompetencje)'}</span>{busyUntil && <span className="text-xs text-loss"> · zajęty do {formatDatePL(busyUntil)}</span>}</label>
               ))}
             </div>
+            <p className="text-xs text-slate-400" data-testid="quote-crew-summary">Wybrani wykonawcy: <strong className="text-slate-200">{members.map((m) => memberLabel(game, m)).join(' + ')}</strong>{members.length > 1 ? ' — pracują razem przy tym zleceniu.' : '.'}</p>
             {employees.length === 0 && <p className="text-xs text-slate-500">Zatrudnieni pracownicy pojawią się tu automatycznie (od dnia rozpoczęcia pracy) — nie trzeba tworzyć ekipy.</p>}
             <div className="grid grid-cols-2 gap-3">
-              {game.ops.teams.length > 0 && <div><label htmlFor="q-team" className="mb-1 block text-xs text-slate-400">Albo gotowa ekipa</label><select id="q-team" className={field} value={customCrew ? '__custom' : q.teamId ?? ''} onChange={(e) => e.target.value !== '__custom' && set({ teamId: e.target.value || null, supervision: 'hands-off' })}><option value="">— skład wybrany wyżej —</option>{customCrew && <option value="__custom" hidden>własny skład</option>}{game.ops.teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name}</option>)}</select></div>}
+              {game.ops.teams.length > 0 && <div><label htmlFor="q-team" className="mb-1 block text-xs text-slate-400">Albo gotowa ekipa (z ekranu „Ekipy”)</label><select id="q-team" className={field} value={customCrew ? '__custom' : q.teamId ?? ''} onChange={(e) => e.target.value !== '__custom' && pickTeam(e.target.value)}><option value="">— skład wybrany wyżej —</option>{customCrew && <option value="__custom" hidden>własny skład</option>}{game.ops.teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name} — {tm.members.map((m) => memberLabel(game, m)).join(' + ')}</option>)}</select></div>}
             <div><label htmlFor="q-veh" className="mb-1 block text-xs text-slate-400">Pojazd</label><select id="q-veh" className={field} value={q.vehicleId ?? ''} onChange={(e) => set({ vehicleId: e.target.value || null })}><option value="">bez pojazdu</option>{game.ops.vehicles.map((v) => <option key={v.id} value={v.id}>{vehicleDef(v).label}</option>)}</select></div>
               {!ownerIn && (
                 <div className="col-span-2"><label htmlFor="q-sup" className="mb-1 block text-xs text-slate-400">Nadzór właściciela</label><select id="q-sup" className={field} value={q.supervision === 'supervise' ? 'supervise' : 'hands-off'} onChange={(e) => set({ supervision: e.target.value as 'supervise' | 'hands-off' })}><option value="hands-off">pełne delegowanie (0 godz., większe ryzyko)</option><option value="supervise">nadzoruje (1 godz. dziennie)</option></select></div>
@@ -517,31 +532,43 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
 /** Podpisanie umowy z możliwością wskazania wykonawcy (np. podwykonawcy, gdy brakuje własnego sprzętu lub godzin). Podpowiada, czemu podpisanie jest zablokowane. */
 function SignContract({ game, q }: { game: GameState; q: RenoQuote }) {
   const sign = useGameStore((s) => s.signContract);
-  const [choice, setChoice] = useState('');
+  const quoted: CrewMember[] = !q.teamId ? [{ kind: 'owner', id: 'owner' }] : parseCrewKey(q.teamId) ?? game.ops.teams.find((t) => t.id === q.teamId)?.members ?? [{ kind: 'owner', id: 'owner' }];
+  const [members, setMembers] = useState<CrewMember[]>(quoted);
+  const same = (a: CrewMember[], b: CrewMember[]) => a.length === b.length && a.every((m) => b.some((x) => x.kind === m.kind && x.id === m.id));
+  const crew: CrewMember[] | undefined = same(members, quoted) ? undefined : members;
+  const has = (kind: CrewMember['kind'], id: string) => members.some((m) => m.kind === kind && m.id === id);
+  const toggle = (kind: CrewMember['kind'], id: string) => {
+    const next = has(kind, id) ? members.filter((m) => !(m.kind === kind && m.id === id)) : [...members, { kind, id }];
+    if (next.length > 0) setMembers(next);
+  };
   const subs = game.ops.subcontractors.filter((x) => x.services.includes(q.serviceId)).map((x) => ({ sub: x, price: subPrice(x, q.serviceId, q.units, q.complexity, 10_000) }));
   const staff = activeEmployments(game).map((e) => ({ e, name: personName(personById(game, e.personId)!), level: personLevel(personById(game, e.personId)!, q.serviceId) }));
-  const crew: CrewMember[] | undefined = choice === '' ? undefined : choice === 'owner' ? [{ kind: 'owner', id: 'owner' }] : [{ kind: choice.startsWith('sub:') ? 'sub' : 'employee', id: choice.slice(choice.indexOf(':') + 1) }];
-  const asQuoted = q.teamId ? game.ops.teams.find((t) => t.id === q.teamId)?.name ?? 'ekipa z oferty' : 'Ty (właściciel)';
+  const who = members.map((m) => memberLabel(game, m)).join(' + ');
   // próba na kopii stanu: dokładnie te same reguły co przy prawdziwym podpisaniu, bez zmian w grze
-  const probe = useMemo(() => commands.signContract(game, q.id, crew), [game, q.id, choice]); // eslint-disable-line react-hooks/exhaustive-deps
-  const chosenSub = choice.startsWith('sub:') ? subs.find((x) => x.sub.id === choice.slice(4)) : undefined;
-  const profit = chosenSub ? q.priceNet - chosenSub.price - q.planned.materials - q.planned.other : null;
-  const select = 'rounded-xl border border-ink-600 bg-ink-900/80 px-3 py-1.5 text-sm text-slate-100 focus:border-sky focus:outline-none';
+  const probe = useMemo(() => commands.signContract(game, q.id, crew), [game, q.id, members]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onlySub = members.length === 1 && members[0]!.kind === 'sub' ? subs.find((x) => x.sub.id === members[0]!.id) : undefined;
+  const profit = onlySub ? q.priceNet - onlySub.price - q.planned.materials - q.planned.other : null;
   return (
     <div className="mt-2 space-y-2" data-testid={`sign-box-${q.id}`}>
+      <fieldset className="rounded-xl border border-ink-700 p-3" data-testid={`sign-who-${q.id}`}>
+        <legend className="px-1 text-xs text-slate-400">Kto wykona pracę (można zaznaczyć kilka osób — pracują razem)</legend>
+        <div className="grid gap-1 sm:grid-cols-2">
+          <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('owner', 'owner')} onChange={() => toggle('owner', 'owner')} data-testid={`sign-owner-${q.id}`} />Ja (właściciel)</label>
+          {staff.map(({ e, name, level }) => (
+            <label key={e.id} className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('employee', e.id)} onChange={() => toggle('employee', e.id)} data-testid={`sign-emp-${q.id}-${e.id}`} />{name} <span className="text-xs text-slate-500">— pracownik, poziom {level}</span></label>
+          ))}
+          {subs.map(({ sub, price }) => (
+            <label key={sub.id} className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('sub', sub.id)} onChange={() => toggle('sub', sub.id)} data-testid={`sign-sub-${q.id}-${sub.id}`} />{sub.name.replace(' (fikcyjna)', '')} <span className="text-xs text-slate-500">— podwykonawca, {formatPLN(price, { round: true })} netto za całość</span></label>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-slate-400">Wybrani wykonawcy: <strong className="text-slate-200">{who}</strong>{crew === undefined ? ' (jak w ofercie)' : ' (zmieniono względem oferty)'}.</p>
+      </fieldset>
       <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor={`who-${q.id}`} className="text-xs text-slate-400">Kto wykona pracę</label>
-        <select id={`who-${q.id}`} className={select} value={choice} onChange={(e) => setChoice(e.target.value)} data-testid={`sign-who-${q.id}`}>
-          <option value="">Jak w ofercie: {asQuoted}</option>
-          {q.teamId && <option value="owner">Wykonam sam (właściciel)</option>}
-          {staff.length > 0 && <optgroup label="Mój pracownik">{staff.map(({ e, name, level }) => <option key={e.id} value={`emp:${e.id}`}>{name} — {e.role.toLowerCase()}, poziom {level}</option>)}</optgroup>}
-          {subs.length > 0 && <optgroup label="Zleć podwykonawcy">{subs.map(({ sub, price }) => <option key={sub.id} value={`sub:${sub.id}`}>{sub.name.replace(' (fikcyjna)', '')} — {formatPLN(price, { round: true })} netto za całość</option>)}</optgroup>}
-        </select>
-        <Button variant="primary" onClick={() => sign(q.id, crew)} disabled={!probe.ok} data-testid={`sign-${q.id}`}>{choice.startsWith('sub:') ? 'Zleć i podpisz umowę' : 'Podpisz umowę'}</Button>
+        <Button variant="primary" onClick={() => sign(q.id, crew)} disabled={!probe.ok} data-testid={`sign-${q.id}`}>{members.some((m) => m.kind === 'sub') ? 'Zleć i podpisz umowę' : 'Podpisz umowę'}</Button>
         <span className="text-xs text-gold">Podpisz do {formatDatePL(q.signBy!)}.</span>
       </div>
-      {!probe.ok && <p className="text-xs text-loss" role="alert" data-testid={`sign-blocked-${q.id}`}>Nie można podpisać: {probe.error}{choice === '' && subs.length > 0 ? ' — wybierz powyżej wykonawcę (np. podwykonawcę, który ma własny sprzęt), żeby nie stracić zlecenia.' : ''}</p>}
-      {chosenSub && probe.ok && profit !== null && <p className={cx('text-xs', profit < 0 ? 'text-loss' : 'text-slate-400')}>Podwykonawca <Money value={chosenSub.price} round /> netto + materiały i drobne <Money value={q.planned.materials + q.planned.other} round /> przy cenie umowy <Money value={q.priceNet} round /> daje ok. <strong className={profit < 0 ? 'text-loss' : 'text-gain'}><Money value={profit} round signed /></strong> {profit < 0 ? '— to zlecenie przyniesie stratę' : 'zarobku (bez Twojego nadzoru i dojazdów)'}. Po podpisaniu przyjdzie jego oferta do zaakceptowania w „Podwykonawcy”.</p>}
+      {!probe.ok && <p className="text-xs text-loss" role="alert" data-testid={`sign-blocked-${q.id}`}>Nie można podpisać: {probe.error}{crew === undefined && subs.length > 0 ? ' — zmień wykonawców powyżej (np. zaznacz podwykonawcę, który ma własny sprzęt), żeby nie stracić zlecenia.' : ''}</p>}
+      {onlySub && probe.ok && profit !== null && <p className={cx('text-xs', profit < 0 ? 'text-loss' : 'text-slate-400')}>Podwykonawca <Money value={onlySub.price} round /> netto + materiały i drobne <Money value={q.planned.materials + q.planned.other} round /> przy cenie umowy <Money value={q.priceNet} round /> → zostaje <Money value={profit} round signed />.</p>}
     </div>
   );
 }
