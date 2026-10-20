@@ -478,7 +478,7 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
           {(ownerBlocked || !ownerIn) && (
             <div className="rounded-xl border border-gold/40 bg-gold/5 p-3 text-xs" data-testid="outsource-box">
               {!ownerIn ? (
-                <p className="text-slate-300">Pracę wykonają wybrani wykonawcy, a Ty tylko ją nadzorujesz.{members.some((m) => m.kind === 'sub') && ' Po podpisaniu umowy podwykonawcy przyślą oferty do zaakceptowania w „Podwykonawcy” (ważne 5 dni; zaliczka, jeśli ją stosują, to przedpłata, nie koszt).'}{members.some((m) => m.kind === 'employee') && ' Pracownicy muszą mieć aktywną umowę w dniu startu i nie mogą pracować przy dwóch kontraktach naraz.'}</p>
+                <p className="text-slate-300">Pracę wykonają wybrani wykonawcy, a Ty tylko ją nadzorujesz.{members.some((m) => m.kind === 'sub') && ' Umowa z podwykonawcą zawiera się sama przy podpisaniu kontraktu (zaliczka, jeśli ją stosuje, to przedpłata, nie koszt).'}{members.some((m) => m.kind === 'employee') && ' Pracownicy muszą mieć aktywną umowę w dniu startu i nie mogą pracować przy dwóch kontraktach naraz.'}</p>
               ) : (
                 <>
                   <p className="mb-2 font-semibold text-gold">Nie możesz wykonać tego sam — przekaż zlecenie, żeby go nie stracić:</p>

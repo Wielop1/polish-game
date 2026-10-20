@@ -48,6 +48,7 @@ test('wycena: można zlecić całość podwykonawcy jednym wyborem, bez zakłada
   for (let i = 0; i < 60 && (await groupDot.count()) === 0; i++) await page.getByTestId('advance-day').click();
   await nav(page, 'Zapytania klientów');
   await page.getByRole('button', { name: 'Wyceń' }).first().click();
+  await page.getByTestId('quote-subs').locator('summary').click();
   await page.locator('[data-testid^="crew-sub-"]').first().check();
   await page.getByTestId('crew-owner').uncheck();
   await expect(page.getByTestId('outsource-box')).toContainText('wykonają wybrani wykonawcy');
