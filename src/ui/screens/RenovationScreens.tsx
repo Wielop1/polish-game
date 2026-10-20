@@ -385,7 +385,7 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   const send = useGameStore((s) => s.sendQuote);
   const select = useGameStore((s) => s.selectEnquiry);
   const enq = game.reno.enquiries.find((e) => e.id === enquiryId);
-  const base = useMemo(() => (enq ? defaultQuoteInput(game, enq) : null), [enquiryId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const base = useMemo(() => (enq ? defaultQuoteInput(game, enq, 8) : null), [enquiryId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [q, setQ] = useState<QuoteInput | null>(base);
   const [priceText, setPriceText] = useState(base ? String(base.priceNet / 100) : '');
   if (!enq || !q || !base || enq.status !== 'open') return <Card><Empty>To zapytanie nie jest już otwarte.</Empty></Card>;
@@ -411,15 +411,15 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   const ownerBlocked = ownerIn && p.errors.some((e) => /umiejętności|specjalizacji|sprzęt/i.test(e));
   // ekipy założone przez gracza (te tworzone automatycznie przy wysyłaniu wycen mają nazwy „Zlecenie: …” i „Ekipa: …” i zaśmiecałyby listę)
   const ownTeams = game.ops.teams.filter((tm) => !/^(Zlecenie|Ekipa): /.test(tm.name));
-  // godziny dziennie: gdy pracujesz Ty — 4, gdy zlecasz innym — 8 (można zmienić ręcznie)
-  const hoursFor = (list: CrewMember[]) => (list.some((m) => m.kind === 'owner') ? 4 : 8);
+  // godziny dziennie: domyślnie zawsze 8 (można zmienić ręcznie)
+  const hoursFor = (_list: CrewMember[]) => 8;
   const setMembers = (next: CrewMember[]) => {
     if (next.length === 0) return;
-    set(next.length === 1 && next[0]!.kind === 'owner' ? { teamId: null, supervision: 'worker', hoursPerDay: 4 } : { teamId: crewKey(next), supervision: next.some((m) => m.kind === 'owner') ? 'worker' : 'hands-off', hoursPerDay: hoursFor(next) });
+    set(next.length === 1 && next[0]!.kind === 'owner' ? { teamId: null, supervision: 'worker', hoursPerDay: 8 } : { teamId: crewKey(next), supervision: next.some((m) => m.kind === 'owner') ? 'worker' : 'hands-off', hoursPerDay: hoursFor(next) });
   };
   const pickTeam = (teamId: string) => {
     const tm = game.ops.teams.find((x) => x.id === teamId);
-    if (!tm) { set({ teamId: null, supervision: 'worker', hoursPerDay: 4 }); return; }
+    if (!tm) { set({ teamId: null, supervision: 'worker', hoursPerDay: 8 }); return; }
     const withOwner = tm.members.some((m) => m.kind === 'owner');
     set({ teamId: tm.id, supervision: withOwner ? 'worker' : 'hands-off', hoursPerDay: hoursFor(tm.members) });
   };
