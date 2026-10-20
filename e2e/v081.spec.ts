@@ -45,7 +45,7 @@ test('v0.8.1: wycena pokazuje osobno koszty rzeczywiste, nadwyżkę, kalkulacyjn
   await page.getByRole('button', { name: 'Wyceń' }).first().click();
   const econ = page.getByTestId('quote-economics');
   await expect(econ).toBeVisible();
-  for (const t of ['Koszty rzeczywiste — pieniądze wydane przez firmę', 'Nadwyżka przed obciążeniami właściciela', 'Kalkulacyjna wartość Twojej pracy', 'Zysk ekonomiczny', 'Wpływ na płynność firmy', 'nie wypłata i nie koszt podatkowy JDG']) await expect(econ).toContainText(t);
+  for (const t of ['Koszty rzeczywiste — pieniądze wydane przez firmę', 'Nadwyżka przed obciążeniami właściciela', 'Kalkulacyjna wartość Twojej pracy', 'Zysk ekonomiczny', 'Wpływ na płynność firmy', 'nie wypłata i nie koszt podatkowy JDG', 'Ile zostaje po wszystkim', 'Zostaje do kieszeni']) await expect(econ).toContainText(t);
 });
 
 test('nowy gracz: pulpit podpowiada założenie firmy, menu ukrywa ekrany firmowe, przewodnik tłumaczy grę; po rejestracji menu się rozszerza, a marketing ma szybki start', async ({ page }) => {

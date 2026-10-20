@@ -263,6 +263,9 @@ function staffing(ctx: Ctx): void {
   if (policy.vehicle && ctx.s.ops.vehicles.length === 0 && ctx.day >= 60 && bizCash(ctx.s) > zl(90_000) && ctx.day - (ctx.retryAt.get('vehicle') ?? -99) >= 30 && (ctx.retryAt.set('vehicle', ctx.day), true)) exec(ctx, commands.buyVehicle(ctx.s, 'van-small'), 'pojazd');
 }
 
+/** Zapas terminu ponad minimum (dni kalendarzowe). Pomiar na grow/bal-1: +3 → 17 spóźnień na 202 zlecenia, ale tylko 202 wykonane (rezerwacja ekipy blokuje kalendarz); +2 → 50/323 spóźnionych, kary 1% przychodu; +1 → 99/274 spóźnionych i kary ok. 4% przychodu. */
+const SCHEDULE_BUFFER_DAYS = 2;
+
 interface Candidate { q: QuoteInput; start: string; kind: 'team' | 'owner' | 'sub' }
 
 function candidateQuote(ctx: Ctx, e: RenoEnquiry, crew: { kind: 'owner' } | { kind: 'team'; empId: string; teamId: string } | { kind: 'sub'; subId: string }): Candidate | null {
@@ -277,7 +280,7 @@ function candidateQuote(ctx: Ctx, e: RenoEnquiry, crew: { kind: 'owner' } | { ki
   const no = (why: string): null => { const k = `${crew.kind}:${why}`; ctx.why.set(k, (ctx.why.get(k) ?? 0) + 1); return null; };
   const p0 = previewQuote(s, q);
   if (p0.errors.length) return no(`błąd: ${p0.errors[0]!.slice(0, 40)}`);
-  let dur = Math.max(2, p0.minDays + 3);
+  let dur = Math.max(2, p0.minDays + SCHEDULE_BUFFER_DAYS);
   q = { ...q, durationDays: dur };
   // najbliższy termin, w którym wszyscy wskazani wykonawcy są wolni
   const sch = quoteSchedule(s, q);
@@ -299,7 +302,7 @@ function candidateQuote(ctx: Ctx, e: RenoEnquiry, crew: { kind: 'owner' } | { ki
   q = { ...q, startDate: start, vehicleId: vehicle?.id ?? null };
   const p1 = previewQuote(s, q);
   if (p1.errors.length) return no(`błąd2: ${p1.errors[0]!.slice(0, 40)}`);
-  dur = Math.max(dur, p1.minDays + 3);
+  dur = Math.max(dur, p1.minDays + SCHEDULE_BUFFER_DAYS);
   q = { ...q, durationDays: dur };
   const pv = previewQuote(s, q);
   if (pv.errors.length) return no(`błąd3: ${pv.errors[0]!.slice(0, 40)}`);
@@ -328,7 +331,7 @@ function candidateQuote(ctx: Ctx, e: RenoEnquiry, crew: { kind: 'owner' } | { ki
 function handleEnquiries(ctx: Ctx): void {
   const { policy } = ctx;
   // dyscyplina: nie przyjmujemy kolejnych zleceń, gdy w toku jest ich więcej niż 4 na wykonawcę (materiały i czas nie wystarczą, a gotówka utknie w zapasach)
-  const workers = (policy.ownerWorks ? 1 : 0) + ctx.s.ops.employments.filter((x) => x.status === 'active').length + (policy.subs !== 'none' ? 2 : 0);
+  const workers = (policy.ownerWorks ? 1 : 0) + ctx.s.ops.employments.filter((x) => x.status === 'active').length + (policy.subs === 'only' ? 6 : policy.subs === 'mix' ? 2 : 0);
   const wip = ctx.s.reno.jobs.filter((j) => j.stage !== 'done' && j.stage !== 'cancelled').length + ctx.s.reno.quotes.filter((x) => x.status === 'accepted' || x.status === 'sent').length;
   if (wip >= Math.max(4, 4 * workers)) return;
   for (const e of ctx.s.reno.enquiries.filter((x) => x.status === 'open')) {

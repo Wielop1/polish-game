@@ -32,6 +32,7 @@ import { ProgressBar } from '../components/charts.tsx';
 import { Badge, Button, Card, Empty, Money, ScreenHeader, StatCard, cx, moneyTone } from '../components/ui.tsx';
 import { parseZloty } from '../format.ts';
 import { LegalBadge } from './BusinessScreens.tsx';
+import { estimatePocket } from '../../engine/pocket.ts';
 import { JobEconomicsRows, QuoteEconomicsPanel } from './EconomicsPanel.tsx';
 
 const stars = (rating10: number) => `${(rating10 / 10).toFixed(1).replace('.', ',')}★`;
@@ -487,8 +488,8 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
           <div className="flex flex-wrap gap-2 text-xs"><span className="self-center text-slate-400">Cena = koszt (razem z Twoją pracą) + narzut:</span>{[1_500, 2_500, 3_500].map((m) => <Button key={m} variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => setMarkup(m)}>{m / 100}%</Button>)}</div>
         </div>
         <div className="space-y-3 text-sm" data-testid="quote-preview">
-          <p className="rounded-xl border border-sky/25 bg-sky/5 p-3 text-xs text-slate-300">Tu widzisz, <strong>ile faktycznie zostaje</strong>: koszty rzeczywiste to pieniądze, które wydasz; wartość Twojej pracy to tylko miara porównawcza (nie wypłata). Dopiero zysk ekonomiczny mówi, czy zlecenie się opłaca.</p>
-          <QuoteEconomicsPanel e={p.economics} laborRate={input.laborRate} priceGross={p.priceGross} vatRateBps={p.vatRateBps} />
+          <p className="rounded-xl border border-sky/25 bg-sky/5 p-3 text-xs text-slate-300">Tu widzisz, <strong>ile faktycznie zostaje</strong>: koszty rzeczywiste to pieniądze, które wydasz, a „Zostaje do kieszeni” uwzględnia jeszcze koszty stałe firmy i podatek. Wartość Twojej pracy w zysku ekonomicznym to tylko miara porównawcza (nie wypłata) — nie traktuj jej jak kosztu.</p>
+          <QuoteEconomicsPanel e={p.economics} laborRate={input.laborRate} priceGross={p.priceGross} vatRateBps={p.vatRateBps} pocket={estimatePocket(game, p.economics.surplusBeforeOwner, p.economics.revenueNet, p.plannedCenti / 800)} />
           {p.errors.length > 0 && <ul className="space-y-1 text-xs text-loss" role="alert">{p.errors.map((e) => <li key={e}>✖ {e}</li>)}</ul>}
           {p.warnings.length > 0 && <ul className="space-y-1 text-xs text-gold">{p.warnings.map((w) => <li key={w}>⚠ {w}</li>)}</ul>}
           {Object.keys(p.stockShortage).length > 0 && <p className="text-xs text-slate-400">Materiały do zakupu po podpisaniu umowy: {Object.entries(p.stockShortage).map(([k, n]) => `${MATERIAL_BY_ID.get(splitKey(k).materialId)!.label} × ${n}`).join(', ')}.</p>}

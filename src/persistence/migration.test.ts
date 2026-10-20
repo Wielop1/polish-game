@@ -479,7 +479,7 @@ describe('migracja zapisu v5 → v6 (prawdziwy zapis wygenerowany przez v0.5: fi
     expect(migrated.reno.jobs.every((j) => j.actual.labor === 0 && j.actual.subcontract === 0 && j.actual.vehicle === 0 && j.qualityHoursCenti === 0)).toBe(true);
     expect(migrated.reno.quotes.every((q) => q.teamId === null && q.supervision === 'worker' && q.vehicleId === null)).toBe(true);
     expect(migrated.ops).toMatchObject({ people: [], employments: [], payslips: [], listings: [], candidates: [], subcontracts: [], teams: [], assignments: [], vehicles: [], laborAllocated: {}, vehicleRunning: {} });
-    expect(migrated.ops.subcontractors).toHaveLength(5);
+    expect(migrated.ops.subcontractors).toHaveLength(10);
     expect(migrated.ops.subcontractors).toEqual(parseSave(rawV5).ok ? migrated.ops.subcontractors : []);
   });
 
@@ -538,7 +538,7 @@ describe('migracja zapisu v5 → v6 (prawdziwy zapis wygenerowany przez v0.5: fi
       expect(p.ok).toBe(true);
       if (p.ok) {
         expect(p.state.ops.employments).toEqual([]);
-        expect(p.state.ops.subcontractors).toHaveLength(5);
+        expect(p.state.ops.subcontractors).toHaveLength(10);
         expect(checkInvariants(advanceDays(p.state, 90))).toEqual([]);
       }
     }

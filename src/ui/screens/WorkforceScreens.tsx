@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { addDays, formatDatePL, monthKey } from '../../engine/date.ts';
 import { formatPLN, zl } from '../../engine/money.ts';
+import { businessBalance } from '../../engine/selectors.ts';
 import { crewProfitability, fixedCosts, liquidityForecast, teamLoad } from '../../engine/profitability.ts';
 import { jobFinancials, jobForecast } from '../../engine/renovation.ts';
 import { LISTING_TIERS, MARKET_GROSS_BY_LEVEL, ROLES, ROLE_BY_ID, SERVICE_BY_ID, VEHICLES } from '../../engine/renovationCatalog.ts';
@@ -55,6 +56,9 @@ const Param = () => (
 );
 
 /* ---------- Pracownicy ---------- */
+
+/** Orientacyjna nadwyżka na godzinę pracy przy zleceniu (przed kosztami stałymi) — audyt usług, poziom 1–3: ok. 80–100 zł/godz. przy wycenie rynkowej minus materiały. */
+const TYPICAL_SURPLUS_PER_HOUR = zl(70);
 
 export function HrEmployeesScreen() {
   const { game, biz } = useBiz();
@@ -232,6 +236,17 @@ export function HrRecruitmentScreen() {
                     <Button variant="ghost" onClick={() => reject(c.id)}>Odrzuć</Button>
                   </div>
                   <p className="mt-2 text-xs text-slate-500">Koszt pracodawcy przy {formatPLN(Math.round((expected * h) / 160), { round: true })} brutto: {formatPLN(monthlyEmployerCost(Math.round((expected * h) / 160)), { round: true })} miesięcznie.</p>
+                  {(() => {
+                    const cost = monthlyEmployerCost(Math.round((expected * h) / 160));
+                    const perHour = cost / Math.max(1, h);
+                    const share = Math.round((perHour / TYPICAL_SURPLUS_PER_HOUR) * 100);
+                    const months = cost > 0 ? businessBalance(game) / cost : 0;
+                    return (
+                      <p className="mt-1 text-xs text-slate-500" data-testid={`hire-hint-${c.id}`}>
+                        Pensję płacisz co miesiąc, także bez zleceń. Praca pracownika przy zleceniu daje firmie orientacyjnie ok. {Math.round(TYPICAL_SURPLUS_PER_HOUR / 100)} zł nadwyżki na godzinę (przed kosztami stałymi), więc zaczyna się opłacać od obłożenia ok. {share}% czasu; realnie planuj 65–75%, bo między zleceniami są terminy startu i przestoje. Gotówka firmy wystarczy na ok. {months.toFixed(1).replace('.', ',')} mies. pensji tej jednej osoby.
+                      </p>
+                    );
+                  })()}
                 </li>
               );
             })}

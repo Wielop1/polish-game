@@ -88,7 +88,7 @@ test('ekrany pracowników, podwykonawców, ekip, pojazdów, harmonogramu i rento
     await expect(page.getByRole('heading', { level: 1, name: heading, exact: true })).toBeVisible();
   }
   await nav(page, 'Podwykonawcy');
-  await expect(page.getByTestId('sub-pool').locator('[data-testid^="sub-sub:"]')).toHaveCount(5);
+  await expect(page.getByTestId('sub-pool').locator('[data-testid^="sub-sub:"]')).toHaveCount(10);
   await expect(page.getByTestId('sub-pool')).toContainText('robocizna');
   await nav(page, 'Pojazdy');
   await page.getByTestId('buy-veh-kombi').click();

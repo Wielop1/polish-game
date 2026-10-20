@@ -247,6 +247,12 @@ export const SUBCONTRACTOR_SEEDS: { name: string; services: string[]; priceBps: 
   { name: 'Ekipa Remontowa Kormoran (fikcyjna)', services: ['malowanie', 'gladzie', 'panele', 'drobne'], priceBps: 3_400, quality: 62, reliabilityBps: 7_400 },
   { name: 'Wykończenia Dajtki (fikcyjna)', services: ['gladzie', 'malowanie'], priceBps: 4_800, quality: 88, reliabilityBps: 9_400 },
   { name: 'Montaż-Szybko Jaroty (fikcyjna)', services: ['panele', 'drobne', 'malowanie'], priceBps: 3_100, quality: 55, reliabilityBps: 6_800 },
+  // v0.8.1: pula podwykonawców jest szersza — jedna ekipa realizuje naraz jeden kontrakt, więc pięciu wykonawców ograniczało skalę modelu „generalny wykonawca” do ok. 40 kontraktów rocznie
+  { name: 'Malarz-Plus Zatorze (fikcyjna)', services: ['malowanie', 'drobne'], priceBps: 3_600, quality: 70, reliabilityBps: 8_400 },
+  { name: 'Gładź-Mistrz Pieczewo (fikcyjna)', services: ['gladzie', 'malowanie'], priceBps: 4_400, quality: 79, reliabilityBps: 8_900 },
+  { name: 'Panele-Ekspres Nagórki (fikcyjna)', services: ['panele', 'drobne'], priceBps: 3_300, quality: 68, reliabilityBps: 8_100 },
+  { name: 'Ekipa Wykończeniowa Likusy (fikcyjna)', services: ['malowanie', 'gladzie', 'panele'], priceBps: 3_900, quality: 76, reliabilityBps: 8_600 },
+  { name: 'Złota Rączka Kortowo (fikcyjna)', services: ['drobne', 'panele', 'malowanie'], priceBps: 3_500, quality: 66, reliabilityBps: 7_900 },
 ];
 
 /** Norma pracy w setnych godziny (bez uwzględnienia wydajności wykonawcy) dla zakresu usługi. */

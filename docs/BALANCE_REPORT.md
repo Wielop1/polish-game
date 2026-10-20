@@ -386,3 +386,38 @@ Bot v2 = ten sam bot co v1 + (a) domyślny nadzór (pełne delegowanie), (b) poj
 ## 11.6 Ograniczenia
 
 3 seedy na wariant, 2 i 4 lata; wyniki zespołów są chaotyczne (jeden seed potrafi przejść ze zysku do spirali); bot v2 jest nadal prostszy niż dobry gracz. Surowe dane: `docs/balance/v081-{before,private,projects}-{2y,4y}.json`.
+
+
+## 11.7 Druga korekta: bot v3, więcej podwykonawców, „zostaje do kieszeni” (uwaga właściciela: zlecenie 7 dni za 5–7 tys. zł przy dużych kosztach nie ma sensu)
+
+**Co zmierzyłem.** Typowe zlecenie na 7 dni pracy za 5–7 tys. zł to (audyt usług): koszty rzeczywiste 1–2 tys. zł (materiały, transport, drobne), nadwyżka ok. 4–5 tys. zł, czyli 70–90 zł za godzinę pracy. Wyceny nie pokazywały jednak, ile z tego zostaje po kosztach stałych (ZUS, zdrowotna, księgowość, reklama) i podatku, a panel „zysk ekonomiczny” odejmował od nadwyżki kalkulacyjną wartość pracy właściciela (60 zł/godz.) — przy takim zleceniu wychodziło ok. 0–1 tys. zł „zysku” za tydzień pracy, co wyglądało na kosztowną nieopłacalność. To była wada prezentacji, nie kosztów: prawdziwy koszt pracy właściciela to jego czas, nie wydatek.
+- Wycena pokazuje teraz blok **„Ile zostaje po wszystkim”**: nadwyżka − udział w stałych kosztach firmy (z dwóch ostatnich pełnych miesięcy; nowa firma: 2 500 zł/mies.) − orientacyjny podatek (skala 12% / liniowy 19% / ryczałt / CIT 9%) = **zostaje do kieszeni**, z przeliczeniem na pełny 8-godzinny dzień pracy i miesiąc przy pełnym kalendarzu (`src/engine/pocket.ts`, testy `pocket.test.ts`). Przykład: zlecenie 3 730 zł / 30 godz. → koszty 1 184 zł → nadwyżka 2 546 zł → po podatku zostaje 2 240 zł (ok. 560 zł za 8-godzinny dzień); zlecenie 6 000 zł / 7 dni → ok. 3 tys. zł (ok. 420 zł za dzień, ok. 9 tys. zł miesięcznie przy pełnym kalendarzu, zanim opłacisz życie ok. 3,5 tys. zł).
+- Przy zatrudnianiu pracownika oferta pokazuje, od jakiego obłożenia zaczyna się opłacać (koszt godziny / ok. 70 zł nadwyżki na godzinę ≈ 50–70%), że pensja płynie także bez zleceń oraz na ile miesięcy wystarczy gotówki firmy na pensję tej osoby.
+
+**Przyczyny niskiej rentowności zespołów (pomiar na silniku, bot v2 → v3):**
+1. **Utrata dni roboczych pracowników.** Śledzenie dni roboczych pracowników (grow/team3, 2 lata): 57–64% dni przy zleceniu, ok. 30% dni „kontrakt jeszcze nie ruszył” (ekipa zarezerwowana, ale pierwszy dzień zlecenia jest dopiero za kilka dni), reszta: brak materiałów, przerwy. Bot rezerwował ekipę na minDays + 3 dni kalendarzowych; zapas +2 daje wykorzystanie 77% (zamiast 57%) przy 50/323 spóźnionych zleceń i karach ok. 1% przychodu (+3: 17/202 spóźnień, ale tylko 202 wykonane zlecenia; +1: 99/274 spóźnień, kary ok. 4%). Zapas terminu w bocie: +2.
+2. **Pula podwykonawców** (5 firm, każda na jednym zleceniu naraz) ograniczała „generalnego wykonawcę” do ok. 40 zleceń rocznie: pula zwiększona do 10 firm (nowe gry i migracje zapisów).
+3. **Limit zleceń w toku** w strategii „tylko podwykonawcy” liczył wykonawców jako 2 (odrzucał lub pozostawiał bez odpowiedzi 47% zapytań) — teraz 6.
+4. **Marża pracownika jest realistycznie cienka**: godzina pracy przy zleceniu to ok. 70–75 zł nadwyżki, koszt pracodawcy pracownika poziomu 2–3 to 36–48 zł/godz.; po odjęciu bezczynności, marketingu, pojazdu i księgowości firma z 2–3 osobami zarabia kilkadziesiąt tysięcy rocznie (10–12% przychodu) — typowy poziom małych firm remontowych. Nie zmieniałem cen ani płac, bo pomiar nie wskazał błędu kalibracji (ceny zgodne z danymi rynkowymi z §11.2).
+
+**Wyniki (bot v3; 3 seedy, mediany; zysk operacyjny / rok · wzrost majątku / rok · % niewypłacalnych):**
+
+| strategia | 2 lata, tylko małe zlecenia | 2 lata, z projektami B2B |
+|---|---|---|
+| solo | 107k · 57k · 0% | 101k · 50k · 0% |
+| właściciel + 1 | 100k · 54k · 0% | 88k · 45k · 33% |
+| 3 pracowników od startu | −153k · −197k · 67% | −168k · −218k · 100% |
+| tylko podwykonawcy | −16k · −98k · 100% | −21k · −101k · 100% |
+| 2 pracowników + podwykonawcy | 86k · −4k · 0% | −113k · −190k · 100% |
+| rosnąca (zatrudnia, gdy obłożona) | 58k · 18k · 0% | 12k · −35k · 33% |
+
+4 lata (3 seedy, bez projektów): solo 110k · 58k · 0%; właściciel + 1 99k · 54k · 0%; rosnąca 30k · 0,2k · 33% (wcześniej: 100% niewypłacalnych).
+
+Rosnąca firma, **8 seedów** (osobna seria, 2 lata): bez projektów zysk operacyjny 43k, wzrost majątku +3,9k, 0% niewypłacalnych (p10 −12k…p90 +21k); z projektami 42k, +1,3k, 25% niewypłacalnych (p10 −40k…p90 +12k). Marża nadwyżki z projektów jest taka sama jak z małych zleceń (42% | 42%).
+
+## 11.8 Wnioski po drugiej korekcie (uczciwie)
+1. Solo i „właściciel + 1” zarabiają dobrze (ok. 100k zysku, 50–58k rocznie przyrostu majątku po podatkach i kosztach życia ok. 3,5 tys. zł miesięcznie).
+2. Zespół opłaca się dopiero przy obłożeniu powyżej ok. 65–75% i stopniowym zatrudnianiu; zatrudnienie 3 osób „od startu” (przed pojawieniem się popytu: marketing działa z opóźnieniem 1–5 mies.) kończy się niewypłacalnością w większości przebiegów — pensje 15–24 tys. zł miesięcznie wyprzedzają przychód. To nie błąd silnika, ale gra ostrzega o tym dopiero teraz (podpowiedź przy ofercie pracy).
+3. Projekty B2B nie poprawiają **średniego** wyniku (marża jak w małych zleceniach), a **zwiększają ryzyko** (zamrożona gotówka: płatność do 54–60 dni, zaliczki etapów 10–30%). Ich wartość to skala, referencje i stały front robót, nie wyższa marża. Mediana zysku jest bez zmian, ale ogon (25–33% niewypłacalnych) jest wyraźnie gorszy; wymaga finansowania (kredyt obrotowy / faktoring — v0.9).
+4. „Tylko podwykonawcy” pozostaje stratna na małej skali: marża pośrednika ok. 24% przychodu 140k zł rocznie < koszty stałe (ZUS + księgowość + reklama ≈ 46k), a dochód nie rośnie, bo właściciel nie pracuje i zlecenia ograniczają dostępni wykonawcy. To zgodne z rzeczywistością (pośrednik potrzebuje skali), nie jest błędem do naprawy bez rozszerzenia rynku podwykonawców i kredytu.
+5. Ograniczenia: 3 (8) seedów, wyniki zespołów chaotyczne (drobna różnica potrafi przesądzić o spirali), bot prostszy niż dobry gracz; surowe dane: `docs/balance/v081c-*.json`.

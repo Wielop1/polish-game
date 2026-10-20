@@ -48,7 +48,7 @@ describe('5. podwykonawcy (B2B)', () => {
     expect(subPrice(a, 'malowanie', 80, 'standard', 5_000)).toBeLessThan(full);
     expect(subPrice(a, 'malowanie', 80, 'trudne', 10_000)).toBeGreaterThan(full);
     expect(subPrice(b, 'malowanie', 80, 'standard', 10_000)).toBeLessThan(full);
-    expect(s.ops.subcontractors.length).toBe(5);
+    expect(s.ops.subcontractors.length).toBe(10);
     expect(new Set(s.ops.subcontractors.map((x) => x.quality)).size).toBeGreaterThan(2);
   });
 

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { formatDatePL } from '../../engine/date.ts';
+import type { PocketEstimate } from '../../engine/pocket.ts';
 import type { JobFinancials, QuoteEconomics } from '../../engine/renovation.ts';
 import { Money, cx, moneyTone } from '../components/ui.tsx';
 
@@ -19,7 +20,7 @@ export const Head = ({ children }: { children: ReactNode }) => <div className="p
 const hours = (centi: number) => `${(centi / 100).toFixed(1).replace('.', ',')} godz.`;
 
 /** Zarobek przedsiębiorcy z jednego zlecenia: przychód → koszty rzeczywiste → nadwyżka → (kalkulacyjna) praca właściciela → zysk ekonomiczny → płynność. */
-export function QuoteEconomicsPanel({ e, laborRate, priceGross, vatRateBps }: { e: QuoteEconomics; laborRate: number; priceGross: number; vatRateBps: number }) {
+export function QuoteEconomicsPanel({ e, laborRate, priceGross, vatRateBps, pocket }: { e: QuoteEconomics; laborRate: number; priceGross: number; vatRateBps: number; pocket?: PocketEstimate | null }) {
   const x = e.external;
   return (
     <dl className="divide-y divide-ink-700/60 rounded-xl border border-ink-700 px-3" data-testid="quote-economics">
@@ -36,6 +37,16 @@ export function QuoteEconomicsPanel({ e, laborRate, priceGross, vatRateBps }: { 
       <Head>Co zostaje i ile to jest za Twoją pracę</Head>
       <Row k="Nadwyżka przed obciążeniami właściciela" v={<strong><Money value={e.surplusBeforeOwner} signed /></strong>} tone={moneyTone(e.surplusBeforeOwner)}
         hint="Z tego firma płaci składki ZUS, podatek i księgowość — reszta zostaje Tobie. To nie jest jeszcze wypłata." />
+      {pocket && (
+        <>
+          <Head>Ile zostaje po wszystkim (szacunek)</Head>
+          <Row k={`Udział w stałych kosztach firmy (${pocket.workDays} z 21 dni roboczych miesiąca, dzień = 8 godz.)`} v={pocket.fixedShare > 0 ? <Money value={-pocket.fixedShare} signed /> : '—'}
+            hint={pocket.fixedKnown ? `ZUS i zdrowotna, księgowość, reklama, pojazdy: ok. ${Math.round(pocket.fixedMonthly / 100).toLocaleString('pl-PL')} zł miesięcznie, płacisz je także bez zleceń.` : 'Firma nie ma jeszcze pełnego miesiąca kosztów stałych — przyjęto orientacyjnie 2 500 zł miesięcznie (składki, księgowość, drobne).'} />
+          <Row k={`Podatek dochodowy (orientacyjnie, ${pocket.taxLabel})`} v={pocket.taxEstimate > 0 ? <Money value={-pocket.taxEstimate} signed /> : '—'} />
+          <Row k="Zostaje do kieszeni" v={<strong><Money value={pocket.pocket} signed /></strong>} tone={moneyTone(pocket.pocket)}
+            hint={pocket.pocket > 0 ? `To ok. ${Math.round(pocket.perDay / 100).toLocaleString('pl-PL')} zł za pełny 8-godzinny dzień pracy przy tym zleceniu (ok. ${Math.round(pocket.perMonthFull / 100).toLocaleString('pl-PL')} zł miesięcznie przy pełnym kalendarzu takich zleceń). Z tego opłacasz jeszcze życie.` : 'Przy takiej cenie zlecenie nie pokrywa nawet swojego udziału w kosztach stałych.'} />
+        </>
+      )}
       <Row k={`Szacowany zarobek za własną pracę${e.ownerCenti > 0 ? ` (${hours(e.ownerCenti)})` : ''}`} v={e.ownerHourly === null ? '— (delegujesz)' : <span><Money value={e.ownerHourly} signed /> / godz.</span>} tone={e.ownerHourly === null ? undefined : moneyTone(e.ownerHourly - laborRate)}
         hint={e.ownerHourly === null ? 'Nie poświęcasz godzin — cała nadwyżka jest zwrotem z kapitału i organizacji pracy.' : `Nadwyżka podzielona przez Twoje godziny. Przyjęta stawka kalkulacyjna: ${(laborRate / 100).toFixed(0)} zł/godz.`} />
       <Row k="Kalkulacyjna wartość Twojej pracy" v={<Money value={e.ownerLabor} />}
