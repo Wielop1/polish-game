@@ -409,6 +409,8 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   const customCrew = !!q.teamId && !game.ops.teams.some((tm) => tm.id === q.teamId);
   const employees = activeEmployments(game).map((e) => ({ e, name: personName(personById(game, e.personId)!), level: personLevel(personById(game, e.personId)!, enq.serviceId) }));
   const ownerBlocked = ownerIn && p.errors.some((e) => /umiejętności|specjalizacji|sprzęt/i.test(e));
+  // ekipy założone przez gracza (te tworzone automatycznie przy wysyłaniu wycen mają nazwy „Zlecenie: …” i „Ekipa: …” i zaśmiecałyby listę)
+  const ownTeams = game.ops.teams.filter((tm) => !/^(Zlecenie|Ekipa): /.test(tm.name));
   // godziny dziennie: gdy pracujesz Ty — 4, gdy zlecasz innym — 8 (można zmienić ręcznie)
   const hoursFor = (list: CrewMember[]) => (list.some((m) => m.kind === 'owner') ? 4 : 8);
   const setMembers = (next: CrewMember[]) => {
@@ -449,24 +451,24 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
           </div>
           <fieldset className="space-y-2 rounded-xl border border-ink-700 p-3" data-testid="quote-crew">
             <legend className="px-1 text-xs text-slate-400">Kto wykona pracę</legend>
-            {game.ops.teams.length > 0 && (
-              <div className="flex flex-wrap gap-2" data-testid="quote-ready-teams">
-                {game.ops.teams.map((tm) => <button key={tm.id} type="button" aria-pressed={q.teamId === tm.id} onClick={() => pickTeam(tm.id)} className={cx('rounded-lg px-3 py-1.5 text-xs', q.teamId === tm.id ? 'bg-sky/20 text-sky' : 'bg-ink-800 text-slate-300')} data-testid={`quote-team-${tm.id}`}>{tm.name}: {tm.members.map((m) => memberLabel(game, m)).join(' + ')}</button>)}
-              </div>
-            )}
             <div className="grid gap-1 sm:grid-cols-2">
               <label className="flex items-center gap-2 text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={ownerIn} onChange={() => toggle('owner', 'owner')} data-testid="crew-owner" />Ja (właściciel) <span className="text-xs text-slate-500">· poziom {p.level}/{p.difficulty}</span></label>
               {employees.map(({ e, name, level }) => (
                 <label key={e.id} className="flex items-center gap-2 text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('employee', e.id)} onChange={() => toggle('employee', e.id)} data-testid={`crew-employee-${e.id}`} />{name} <span className={cx('text-xs', level >= p.difficulty ? 'text-slate-500' : 'text-gold')}>· {e.role.toLowerCase()}, poziom {level}/{p.difficulty}</span></label>
               ))}
+            </div>
+            <details className="text-xs" open={members.some((m) => m.kind === 'sub')} data-testid="quote-subs">
+              <summary className="cursor-pointer text-slate-400 hover:text-slate-200">Podwykonawcy ({subOptions.length}) — zleć komuś z zewnątrz</summary>
+              <div className="mt-2 grid gap-1 sm:grid-cols-2">
               {subOptions.map(({ sub, price: sp, fits, busyUntil }) => (
                 <label key={sub.id} className="flex items-center gap-2 text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('sub', sub.id)} onChange={() => toggle('sub', sub.id)} data-testid={`crew-sub-${sub.id}`} />{sub.name.replace(' (fikcyjna)', '')} <span className={cx('text-xs', fits ? 'text-slate-500' : 'text-gold')}>· podwykonawca, {formatPLN(sp, { round: true })} za całość{fits ? '' : ' (słabsze kompetencje)'}</span>{busyUntil && <span className="text-xs text-loss"> · zajęty do {formatDatePL(busyUntil)}</span>}</label>
               ))}
-            </div>
+              </div>
+            </details>
             <p className="text-xs text-slate-400" data-testid="quote-crew-summary">Wybrani wykonawcy: <strong className="text-slate-200">{members.map((m) => memberLabel(game, m)).join(' + ')}</strong>{members.length > 1 ? ' — pracują razem przy tym zleceniu.' : '.'}</p>
             {employees.length === 0 && <p className="text-xs text-slate-500">Zatrudnieni pracownicy pojawią się tu automatycznie (od dnia rozpoczęcia pracy) — nie trzeba tworzyć ekipy.</p>}
             <div className="grid grid-cols-2 gap-3">
-              {game.ops.teams.length > 0 && <div><label htmlFor="q-team" className="mb-1 block text-xs text-slate-400">Albo gotowa ekipa (z ekranu „Ekipy”)</label><select id="q-team" className={field} value={customCrew ? '__custom' : q.teamId ?? ''} onChange={(e) => e.target.value !== '__custom' && pickTeam(e.target.value)}><option value="">— skład wybrany wyżej —</option>{customCrew && <option value="__custom" hidden>własny skład</option>}{game.ops.teams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name} — {tm.members.map((m) => memberLabel(game, m)).join(' + ')}</option>)}</select></div>}
+              {ownTeams.length > 0 && <div><label htmlFor="q-team" className="mb-1 block text-xs text-slate-400">Albo gotowa ekipa (z ekranu „Ekipy”)</label><select id="q-team" className={field} value={customCrew ? '__custom' : q.teamId ?? ''} onChange={(e) => e.target.value !== '__custom' && pickTeam(e.target.value)}><option value="">— skład wybrany wyżej —</option>{customCrew && <option value="__custom" hidden>własny skład</option>}{ownTeams.map((tm) => <option key={tm.id} value={tm.id}>{tm.name} — {tm.members.map((m) => memberLabel(game, m)).join(' + ')}</option>)}</select></div>}
             <div><label htmlFor="q-veh" className="mb-1 block text-xs text-slate-400">Pojazd</label><select id="q-veh" className={field} value={q.vehicleId ?? ''} onChange={(e) => set({ vehicleId: e.target.value || null })}><option value="">bez pojazdu</option>{game.ops.vehicles.map((v) => <option key={v.id} value={v.id}>{vehicleDef(v).label}</option>)}</select></div>
               {!ownerIn && (
                 <div className="col-span-2"><label htmlFor="q-sup" className="mb-1 block text-xs text-slate-400">Nadzór właściciela</label><select id="q-sup" className={field} value={q.supervision === 'supervise' ? 'supervise' : 'hands-off'} onChange={(e) => set({ supervision: e.target.value as 'supervise' | 'hands-off' })}><option value="hands-off">pełne delegowanie (0 godz., większe ryzyko)</option><option value="supervise">nadzoruje (1 godz. dziennie)</option></select></div>
@@ -557,10 +559,15 @@ function SignContract({ game, q }: { game: GameState; q: RenoQuote }) {
           {staff.map(({ e, name, level }) => (
             <label key={e.id} className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('employee', e.id)} onChange={() => toggle('employee', e.id)} data-testid={`sign-emp-${q.id}-${e.id}`} />{name} <span className="text-xs text-slate-500">— pracownik, poziom {level}</span></label>
           ))}
+        </div>
+        <details className="mt-2 text-xs" open={members.some((m) => m.kind === 'sub')} data-testid={`sign-subs-${q.id}`}>
+          <summary className="cursor-pointer text-slate-400 hover:text-slate-200">Podwykonawcy ({subs.length}) — zleć komuś z zewnątrz</summary>
+          <div className="mt-2 grid gap-1 sm:grid-cols-2">
           {subs.map(({ sub, price }) => (
             <label key={sub.id} className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="size-4 accent-sky" checked={has('sub', sub.id)} onChange={() => toggle('sub', sub.id)} data-testid={`sign-sub-${q.id}-${sub.id}`} />{sub.name.replace(' (fikcyjna)', '')} <span className="text-xs text-slate-500">— podwykonawca, {formatPLN(price, { round: true })} netto za całość</span></label>
           ))}
-        </div>
+          </div>
+        </details>
         <p className="mt-2 text-xs text-slate-400">Wybrani wykonawcy: <strong className="text-slate-200">{who}</strong>{crew === undefined ? ' (jak w ofercie)' : ' (zmieniono względem oferty)'}.</p>
       </fieldset>
       <div className="flex flex-wrap items-center gap-2">
