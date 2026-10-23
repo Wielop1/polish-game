@@ -5,7 +5,7 @@ import { addDays } from './date.ts';
 import { budgetFor } from './time.ts';
 import { checkInvariants } from './invariants.ts';
 import { zl } from './money.ts';
-import { playerMarketView } from './renovation.ts';
+import { ownerFitHours, playerMarketView } from './renovation.ts';
 import { MATERIAL_BY_ID, SERVICE_BY_ID, referencePrice } from './renovationCatalog.ts';
 import { crewDay, complaintBps, defaultQuoteInput, jobFinancials, jobQuality, previewQuote, quoteSchedule, renoDashboard } from './renovation.ts';
 import { deferredAdvances, netWorth } from './selectors.ts';
@@ -484,7 +484,7 @@ describe('9a. opłacalność usług i widoczność zatrudnionych fachowców', ()
       const units = def.unit === 'm²' ? 40 : 16;
       const materials = def.materialsPer100.reduce((a, m) => a + Math.round((MATERIAL_BY_ID.get(m.materialId)!.priceNet * m.qty * units) / 100), 0);
       const net = referencePrice(def.id, units, 'standard', 2) / 1.23;
-      expect(materials / net, def.id).toBeLessThanOrEqual(0.7);
+      expect(materials / net, def.id).toBeLessThanOrEqual(def.id === 'panele' ? 0.55 : 0.7); // panele to głównie materiały — potrzebują zapasu na targowanie
     }
   });
 
@@ -514,6 +514,22 @@ describe('9b. domyślna wycena dobiera wykonawcę i termin', () => {
     expect(q.supervision).toBe('hands-off');
     expect(q.startDate).toBe(enq.desiredStart);
     expect(previewQuote(s, q).errors).toEqual([]);
+  });
+
+  it('właściciel samodzielnie: godziny dziennie dopasowane do jego wolnej doby — domyślna wycena nie ma kolizji czasu, a termin klienta zostaje', () => {
+    const s0 = opsGame();
+    const busy = contract(s0, { enquiry: { units: 120 }, quote: { supervision: 'worker', hoursPerDay: 2, durationDays: 25, startDate: addDays(s0.clock.today, 3) } });
+    const s = busy.s;
+    const enq = craftEnquiry(s, { serviceId: 'malowanie', units: 40, desiredStart: addDays(s.clock.today, 8), maxDays: 30 });
+    const q = defaultQuoteInput(s, enq, 8);
+    expect(q.hoursPerDay).toBeLessThan(8);
+    expect(q.hoursPerDay).toBeGreaterThanOrEqual(1);
+    expect(q.startDate).toBe(enq.desiredStart);
+    const p = previewQuote(s, q);
+    expect(p.errors).toEqual([]);
+    expect(p.warnings.some((w) => /Kolizja czasu/.test(w))).toBe(false);
+    expect(ownerFitHours(s, q.startDate, q.durationDays, 8)).toBeGreaterThanOrEqual(q.hoursPerDay);
+    expect(ownerFitHours(s, q.startDate, q.durationDays, 8)).toBeLessThan(8);
   });
 
   it('zajęty pracownik nie jest proponowany; bez zatrudnionych domyślna wycena dla właściciela się nie zmienia', () => {

@@ -524,14 +524,20 @@ export function defaultQuoteInput(s: GameState, enq: RenoEnquiry, hoursPerDay = 
   const wish = enq.desiredStart > base.startDate ? enq.desiredStart : base.startDate;
   // zapas na problemy na budowie: w pomiarze praca trwa średnio ok. 17% dłużej niż plan (problemy +6–16 godz., poprawki po odbiorze), więc domyślny termin ma zapas ok. 20%
   const durationFor = (b: QuoteInput) => { const p0 = previewQuote(s, b); return { p0, durationDays: Math.max(p0.minDays + Math.max(2, Math.ceil(p0.minDays * 0.2)), 3) }; };
-  // właściciel: najwcześniejszy start nie wcześniej niż życzenie klienta, w którym zmieści się cały kontrakt (bez przekroczenia doby)
-  const own = durationFor(base);
-  let ownStart = wish;
-  for (let i = 0; i < 120; i++) {
-    if (!firstOverload(s, ownStart, addDays(ownStart, own.durationDays - 1), { extraHoursPerDay: base.hoursPerDay })) break;
-    ownStart = addDays(ownStart, 1);
+  // właściciel: dla każdej liczby godzin dziennie (od żądanej w dół) najwcześniejszy start nie wcześniej niż życzenie klienta, w którym zmieści się cały kontrakt
+  // (bez przekroczenia doby); wygrywa wariant kończący się najwcześniej, przy remisie z większą liczbą godzin — wolne godziny właściciela nie muszą wystarczać na 8 godz. dziennie
+  let best: { input: QuoteInput; durationDays: number; start: IsoDate } | null = null;
+  for (let h = Math.max(1, Math.round(base.hoursPerDay)); h >= 1; h--) {
+    const input = { ...base, hoursPerDay: h };
+    const { durationDays } = durationFor(input);
+    let start = wish;
+    for (let i = 0; i < 120; i++) {
+      if (!firstOverload(s, start, addDays(start, durationDays - 1), { extraHoursPerDay: h })) break;
+      start = addDays(start, 1);
+    }
+    if (!best || addDays(start, durationDays) < addDays(best.start, best.durationDays)) best = { input, durationDays, start };
   }
-  let best: { input: QuoteInput; durationDays: number; start: IsoDate } = { input: base, durationDays: own.durationDays, start: ownStart };
+  best = best!;
   // zatrudniony pracownik z odpowiednią umiejętnością, wolny wcześniej niż właściciel, przejmuje zlecenie (właściciel zostaje bez nadzoru — jak przy ręcznym wyborze samego pracownika)
   for (const e of s.ops.employments) {
     if (e.status !== 'active' || e.endDate !== null) continue;
@@ -544,6 +550,13 @@ export function defaultQuoteInput(s: GameState, enq: RenoEnquiry, hoursPerDay = 
   }
   const p1 = previewQuote(s, { ...best.input, durationDays: best.durationDays, startDate: best.start });
   return { ...best.input, startDate: best.start, durationDays: best.durationDays, priceNet: roundTo(mulBps(p1.planned.total, 13_000), zl(10)) };
+}
+
+/** Największa liczba godzin dziennie (do `maxHpd`), przy której praca właściciela w tym terminie nie przekracza doby (inne kontrakty, etat, sen). */
+export function ownerFitHours(s: GameState, startDate: IsoDate, durationDays: number, maxHpd = 8): number {
+  const days = Number.isInteger(durationDays) && durationDays >= 1 ? durationDays : 1;
+  for (let h = Math.max(1, Math.round(maxHpd)); h > 1; h--) if (!firstOverload(s, startDate, addDays(startDate, days - 1), { extraHoursPerDay: h })) return h;
+  return 1;
 }
 
 /* ---------- Zajęte terminy przy wycenie ---------- */

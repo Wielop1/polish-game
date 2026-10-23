@@ -4,7 +4,7 @@ import { businessState, profileOf } from '../../engine/business.ts';
 import { addDays, formatDatePL, weekdayIndex } from '../../engine/date.ts';
 import { formatPLN, mulBps, zl } from '../../engine/money.ts';
 import {
-  defaultQuoteInput, equipmentStatus, referencePrice, jobFinancials, jobForecast, materialAvailable, materialPrice, ownedEquipment, previewQuote, renoDashboard, reputation, skillLevel,
+  defaultQuoteInput, equipmentStatus, ownerFitHours, referencePrice, jobFinancials, jobForecast, materialAvailable, materialPrice, ownedEquipment, previewQuote, renoDashboard, reputation, skillLevel,
   skillProgress, speedBps, splitKey, stockKey, stockQty, grossOfNet, equipmentBookValue,
 } from '../../engine/renovation.ts';
 import type { QuoteInput } from '../../engine/renovation.ts';
@@ -187,7 +187,7 @@ export function RenoDashboardScreen() {
 /** Werdykt „czy zdążę?” na karcie zapytania: czy oczekiwany termin klienta jest wolny, kto go zajmuje i kiedy najwcześniej mogę zacząć. */
 function EnquiryAvailability({ game, enq }: { game: GameState; enq: RenoEnquiry }) {
   const v = useMemo(() => {
-    const base = defaultQuoteInput(game, enq);
+    const base = defaultQuoteInput(game, enq, 8); // te same domyślne co w formularzu wyceny — karta i formularz nie mogą się różnić
     const tomorrow = addDays(game.clock.today, 1);
     const wish = enq.desiredStart > tomorrow ? enq.desiredStart : tomorrow;
     const q: QuoteInput = { ...base, startDate: wish };
@@ -419,17 +419,24 @@ function QuoteBuilder({ enquiryId }: { enquiryId: string }) {
   const ownerBlocked = ownerIn && p.errors.some((e) => /umiejętności|specjalizacji|sprzęt/i.test(e));
   // ekipy założone przez gracza (te tworzone automatycznie przy wysyłaniu wycen mają nazwy „Zlecenie: …” i „Ekipa: …” i zaśmiecałyby listę)
   const ownTeams = game.ops.teams.filter((tm) => !/^(Zlecenie|Ekipa): /.test(tm.name));
-  // godziny dziennie: domyślnie zawsze 8 (można zmienić ręcznie)
-  const hoursFor = (_list: CrewMember[]) => 8;
+  // godziny dziennie: 8 (można zmienić ręcznie); gdy w składzie jest właściciel, dopasowane do jego wolnej doby w tym terminie, żeby nie było kolizji czasu,
+  // a przy mniejszej liczbie godzin czas realizacji wydłuża się do minimum, w którym praca się mieści
+  const hoursFor = (list: CrewMember[]) => (list.some((m) => m.kind === 'owner') ? ownerFitHours(game, q.startDate, q.durationDays, 8) : 8);
+  const applyCrew = (patch: Partial<QuoteInput>, list: CrewMember[]) => {
+    const h = hoursFor(list);
+    const pv = previewQuote(game, { ...q, ...patch, hoursPerDay: h, priceNet: price ?? 0 });
+    const need = pv.minDays + Math.max(2, Math.ceil(pv.minDays * 0.2));
+    set({ ...patch, hoursPerDay: h, ...(Number.isNaN(q.durationDays) || q.durationDays < pv.minDays ? { durationDays: need } : {}) });
+  };
   const setMembers = (next: CrewMember[]) => {
     if (next.length === 0) return;
-    set(next.length === 1 && next[0]!.kind === 'owner' ? { teamId: null, supervision: 'worker', hoursPerDay: 8 } : { teamId: crewKey(next), supervision: next.some((m) => m.kind === 'owner') ? 'worker' : 'hands-off', hoursPerDay: hoursFor(next) });
+    applyCrew(next.length === 1 && next[0]!.kind === 'owner' ? { teamId: null, supervision: 'worker' } : { teamId: crewKey(next), supervision: next.some((m) => m.kind === 'owner') ? 'worker' : 'hands-off' }, next);
   };
   const pickTeam = (teamId: string) => {
     const tm = game.ops.teams.find((x) => x.id === teamId);
-    if (!tm) { set({ teamId: null, supervision: 'worker', hoursPerDay: 8 }); return; }
+    if (!tm) { applyCrew({ teamId: null, supervision: 'worker' }, [{ kind: 'owner', id: 'owner' }]); return; }
     const withOwner = tm.members.some((m) => m.kind === 'owner');
-    set({ teamId: tm.id, supervision: withOwner ? 'worker' : 'hands-off', hoursPerDay: hoursFor(tm.members) });
+    applyCrew({ teamId: tm.id, supervision: withOwner ? 'worker' : 'hands-off' }, tm.members);
   };
   const toggle = (kind: CrewMember['kind'], id: string) => setMembers(has(kind, id) ? members.filter((m) => !(m.kind === kind && m.id === id)) : [...members, { kind, id }]);
   /** Zlecenie pracy wskazanym wykonawcom (bez właściciela) jednym kliknięciem; jeśli cena nie pokrywa kosztów, ustawia ją z narzutem 25%. */
