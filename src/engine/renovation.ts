@@ -26,7 +26,7 @@ import type { MaterialStandard as Std, ServiceDef } from './renovationCatalog.ts
 import { inventoryValue, equipmentValue } from './selectors.ts';
 import { budgetFor, clampFatigue, fatigueDelta, firstOverload, performanceBps } from './time.ts';
 import { vehicleDef, useVehicle } from './fleet.ts';
-import { describeConflict, ensureCrewTeam, releaseJob, reserve, resourceBusy } from './teams.ts';
+import { describeConflict, ensureCrewTeam, firstFree, releaseJob, reserve, resourceBusy } from './teams.ts';
 import { ACTIVE_SUB, acceptSubOffer, extendSubScope, processSubcontracts, requestSubOffer, settleJobSubcontracts, subById, subPrice, subSpeedBps, subcontractsOfJob } from './subcontractors.ts';
 import { employmentActiveOn, employmentById, hoursPerWorkday, personById, personLevel, personName, personPerformanceBps } from './workforce.ts';
 import type {
@@ -521,17 +521,29 @@ export function defaultQuoteInput(s: GameState, enq: RenoEnquiry, hoursPerDay = 
     serviceId: enq.serviceId, units: enq.units, complexity: enq.complexity, standard: (['eko', 'std', 'premium'] as const)[Math.min(2, enq.qualityReq - 1)]!,
     priceNet: zl(1), startDate: addDays(s.clock.today, 2), durationDays: 1, hoursPerDay, advanceBps: 1_000, paymentTermDays: 7, laborRate: OWN_LABOR_RATE_DEFAULT,
   };
-  const p0 = previewQuote(s, base);
+  const wish = enq.desiredStart > base.startDate ? enq.desiredStart : base.startDate;
   // zapas na problemy na budowie: w pomiarze praca trwa średnio ok. 17% dłużej niż plan (problemy +6–16 godz., poprawki po odbiorze), więc domyślny termin ma zapas ok. 20%
-  const durationDays = Math.max(p0.minDays + Math.max(2, Math.ceil(p0.minDays * 0.2)), 3);
-  // najwcześniejszy start nie wcześniej niż życzenie klienta, w którym zmieści się cały kontrakt (bez przekroczenia doby)
-  let start = enq.desiredStart > base.startDate ? enq.desiredStart : base.startDate;
+  const durationFor = (b: QuoteInput) => { const p0 = previewQuote(s, b); return { p0, durationDays: Math.max(p0.minDays + Math.max(2, Math.ceil(p0.minDays * 0.2)), 3) }; };
+  // właściciel: najwcześniejszy start nie wcześniej niż życzenie klienta, w którym zmieści się cały kontrakt (bez przekroczenia doby)
+  const own = durationFor(base);
+  let ownStart = wish;
   for (let i = 0; i < 120; i++) {
-    if (!firstOverload(s, start, addDays(start, durationDays - 1), { extraHoursPerDay: base.hoursPerDay })) break;
-    start = addDays(start, 1);
+    if (!firstOverload(s, ownStart, addDays(ownStart, own.durationDays - 1), { extraHoursPerDay: base.hoursPerDay })) break;
+    ownStart = addDays(ownStart, 1);
   }
-  const p1 = previewQuote(s, { ...base, durationDays, startDate: start });
-  return { ...base, startDate: start, durationDays, priceNet: roundTo(mulBps(p1.planned.total, 13_000), zl(10)) };
+  let best: { input: QuoteInput; durationDays: number; start: IsoDate } = { input: base, durationDays: own.durationDays, start: ownStart };
+  // zatrudniony pracownik z odpowiednią umiejętnością, wolny wcześniej niż właściciel, przejmuje zlecenie (właściciel zostaje bez nadzoru — jak przy ręcznym wyborze samego pracownika)
+  for (const e of s.ops.employments) {
+    if (e.status !== 'active' || e.endDate !== null) continue;
+    const crewInput: QuoteInput = { ...base, teamId: crewKey([{ kind: 'employee', id: e.id }]), supervision: 'hands-off' };
+    const plan = durationFor(crewInput);
+    const start = firstFree(s, 'employee', e.id, wish > e.startDate ? wish : e.startDate, plan.durationDays);
+    if (start >= best.start) continue;
+    if (previewQuote(s, { ...crewInput, durationDays: plan.durationDays, startDate: start }).errors.length > 0) continue; // brak umiejętności/sprzętu do tej usługi
+    best = { input: crewInput, durationDays: plan.durationDays, start };
+  }
+  const p1 = previewQuote(s, { ...best.input, durationDays: best.durationDays, startDate: best.start });
+  return { ...best.input, startDate: best.start, durationDays: best.durationDays, priceNet: roundTo(mulBps(p1.planned.total, 13_000), zl(10)) };
 }
 
 /* ---------- Zajęte terminy przy wycenie ---------- */

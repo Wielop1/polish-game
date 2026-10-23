@@ -500,6 +500,36 @@ describe('9a. opłacalność usług i widoczność zatrudnionych fachowców', ()
   });
 });
 
+describe('9b. domyślna wycena dobiera wykonawcę i termin', () => {
+  it('gdy właściciel jest zajęty w terminie klienta, a pracownik z umiejętnością wolny — wycena proponuje pracownika i termin klienta zamiast późniejszej daty właściciela', () => {
+    const { s: s0 } = hireEmployee(opsGame(), { level: 2, start: '2026-02-02' });
+    const busy = contract(s0, { enquiry: { units: 120 }, quote: { supervision: 'worker', hoursPerDay: 4, durationDays: 25, startDate: addDays(s0.clock.today, 3) } });
+    const s = busy.s;
+    const enq = craftEnquiry(s, { serviceId: 'malowanie', units: 40, desiredStart: addDays(s.clock.today, 8), maxDays: 20 });
+    const q = defaultQuoteInput(s, enq, 8);
+    const ownerOnly = defaultQuoteInput({ ...s, ops: { ...s.ops, employments: [] } }, enq, 8);
+    expect(ownerOnly.teamId ?? null).toBeNull();
+    expect(ownerOnly.startDate > enq.desiredStart).toBe(true); // sam właściciel zdążyłby dopiero później
+    expect(q.teamId).toBe(crewKey([{ kind: 'employee', id: s.ops.employments[0]!.id }]));
+    expect(q.supervision).toBe('hands-off');
+    expect(q.startDate).toBe(enq.desiredStart);
+    expect(previewQuote(s, q).errors).toEqual([]);
+  });
+
+  it('zajęty pracownik nie jest proponowany; bez zatrudnionych domyślna wycena dla właściciela się nie zmienia', () => {
+    const { s: s0 } = hireEmployee(opsGame(), { level: 2, start: '2026-02-02' });
+    const empId = s0.ops.employments[0]!.id;
+    const withEmp = contract(s0, { enquiry: { units: 120 }, quote: { teamId: crewKey([{ kind: 'employee', id: empId }]), supervision: 'hands-off', hoursPerDay: 8, durationDays: 25, startDate: addDays(s0.clock.today, 3) } });
+    const enq = craftEnquiry(withEmp.s, { serviceId: 'malowanie', units: 40, desiredStart: addDays(withEmp.s.clock.today, 8), maxDays: 20 });
+    const q = defaultQuoteInput(withEmp.s, enq, 4);
+    expect(q.startDate).toBe(enq.desiredStart);
+    expect(q.teamId ?? null).toBeNull(); // pracownik zajęty przy innym kontrakcie, właściciel wolny — zostaje właściciel
+    const solo = opsGame();
+    const e2 = craftEnquiry(solo, { serviceId: 'malowanie', units: 40 });
+    expect(defaultQuoteInput(solo, e2, 8).teamId ?? null).toBeNull();
+  });
+});
+
 describe('9. koszty, marże i rentowność', () => {
   it('rozliczenie pracownika w miesiącu: koszt z listy płac, godziny i przychód z jego pracy zgadzają się z kontraktem, a bezczynność = koszt − koszt godzin na kontraktach', () => {
     const { s: s0, teams } = crewGame(1);
