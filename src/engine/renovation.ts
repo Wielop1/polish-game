@@ -19,7 +19,7 @@ import { RENOVATION_MARKET } from './renovationMarket.ts';
 import { B2B_RULES } from './projectsCatalog.ts';
 import {
   CANCEL_AFTER_DEADLINE_DAYS, COMPLAINT_WINDOW_DAYS, DELAY_PENALTY_BPS_PER_WEEK,
-  DELAY_PENALTY_CAP_BPS, EQUIPMENT, EQUIPMENT_BY_ID, MATERIAL_BY_ID, OTHER_COSTS_BPS, OWN_LABOR_RATE_DEFAULT, QUALITY_REQ_LABEL,
+  DELAY_PENALTY_CAP_BPS, EQUIPMENT, EQUIPMENT_BY_ID, MATERIAL_BY_ID, OTHER_COSTS_BPS, OWN_LABOR_RATE_DEFAULT, QUALITY_REQ_LABEL, ROLE_BY_ID,
   QUALITY_THRESHOLD, loadPoints, normCentiOf, referencePrice, SERVICE_BY_ID, SKILL_QUALITY, SKILL_SPEED_BPS, SKILL_START_CENTI, SKILL_THRESHOLD_CENTI, SPECIALIZATION_COURSE, STANDARDS,
 } from './renovationCatalog.ts';
 import type { MaterialStandard as Std, ServiceDef } from './renovationCatalog.ts';
@@ -707,8 +707,10 @@ export function playerMarketView(s: GameState, date: IsoDate): PlayerView {
   const slots = 1 + s.ops.employments.filter((e) => e.status === 'active').length;
   const queued = Math.max(0, jobsActive - slots - 1);
   const since = addDays(date, -365);
+  // zatrudniony fachowiec to też „specjalizacja” w oczach rynku: klienci widzą ekipę, która umie daną robotę (bez tego pracownik od drobnych prac czy podłóg stał bez zleceń)
+  const staffed = s.ops.employments.filter((e) => e.status === 'active' && employmentActiveOn(e, date)).map((e) => ROLE_BY_ID.get(e.role)?.skillId).filter((x): x is string => !!x && SERVICE_BY_ID.has(x));
   return {
-    active, specializations: reno(s).specializations,
+    active, specializations: [...new Set([...reno(s).specializations, ...staffed])],
     reputation: reputation(s, date).score, quality: playerQuality(s),
     completed12m: reno(s).jobs.filter((j) => j.stage === 'done' && j.finishedOn !== null && j.finishedOn >= since).length,
     queueGateBps: Math.max(6_000, 10_000 - 1_000 * queued),

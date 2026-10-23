@@ -5,6 +5,8 @@ import { addDays } from './date.ts';
 import { budgetFor } from './time.ts';
 import { checkInvariants } from './invariants.ts';
 import { zl } from './money.ts';
+import { playerMarketView } from './renovation.ts';
+import { MATERIAL_BY_ID, SERVICE_BY_ID, referencePrice } from './renovationCatalog.ts';
 import { crewDay, complaintBps, defaultQuoteInput, jobFinancials, jobQuality, previewQuote, quoteSchedule, renoDashboard } from './renovation.ts';
 import { deferredAdvances, netWorth } from './selectors.ts';
 import { advanceDays } from './simulate.ts';
@@ -473,6 +475,28 @@ describe('8. pojazdy firmowe', () => {
     expect(bus.transport).toBe(10_000);
     expect(bus.raw).toBeGreaterThan(none.raw);
     expect(bus.raw).toBeGreaterThan(kombi.raw);
+  });
+});
+
+describe('9a. opłacalność usług i widoczność zatrudnionych fachowców', () => {
+  it('cena rynkowa każdej usługi pokrywa materiały z zapasem na pracę (materiały ≤ 70% ceny netto) — montaż paneli nie jest stratny', () => {
+    for (const def of SERVICE_BY_ID.values()) {
+      const units = def.unit === 'm²' ? 40 : 16;
+      const materials = def.materialsPer100.reduce((a, m) => a + Math.round((MATERIAL_BY_ID.get(m.materialId)!.priceNet * m.qty * units) / 100), 0);
+      const net = referencePrice(def.id, units, 'standard', 2) / 1.23;
+      expect(materials / net, def.id).toBeLessThanOrEqual(0.7);
+    }
+  });
+
+  it('zatrudniony fachowiec liczy się rynkowi jak specjalizacja (pracownik wykończeniowy → drobne prace), a po zwolnieniu przestaje', () => {
+    const { s: s0, emp } = hireEmployee(opsGame(), { level: 2, start: '2026-02-02' });
+    let s = structuredClone(s0);
+    s.ops.employments.find((e) => e.id === emp.id)!.role = 'wykonczeniowiec';
+    s = toDate(s, '2026-02-05');
+    expect(s.reno.specializations).not.toContain('drobne');
+    expect(playerMarketView(s, s.clock.today).specializations).toContain('drobne');
+    s.ops.employments.find((e) => e.id === emp.id)!.status = 'ended';
+    expect(playerMarketView(s, s.clock.today).specializations).not.toContain('drobne');
   });
 });
 

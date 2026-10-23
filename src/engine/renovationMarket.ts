@@ -25,7 +25,7 @@ const SERVICE_SEASON: Record<string, readonly number[]> = {
 const SHARES: Record<string, { shareBps: number; materialShareBps: number }> = {
   malowanie: { shareBps: 4_000, materialShareBps: 2_600 },
   gladzie: { shareBps: 2_500, materialShareBps: 1_400 },
-  panele: { shareBps: 2_000, materialShareBps: 3_900 },
+  panele: { shareBps: 2_000, materialShareBps: 5_600 },
   drobne: { shareBps: 1_500, materialShareBps: 500 },
 };
 

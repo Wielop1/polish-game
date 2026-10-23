@@ -118,7 +118,7 @@ export const SERVICES: readonly ServiceDef[] = [
     id: 'panele', label: 'Montaż paneli podłogowych', description: 'Rozłożenie podkładu, montaż paneli i listew przypodłogowych.',
     unit: 'm²', normCentiPerUnit: 40, difficulty: 2,
     materialsPer100: [{ materialId: 'panele', qty: 108 }, { materialId: 'podklad', qty: 105 }, { materialId: 'listwy', qty: 60 }],
-    requiredEquipment: ['panel-kit'], referencePerUnit: zl(118), qtyRange: [15, 80], transportPerDay: zl(45),
+    requiredEquipment: ['panel-kit'], referencePerUnit: zl(142), qtyRange: [15, 80], transportPerDay: zl(45),
     risks: ['nierówna wylewka', 'błędy cięcia i większy odpad', 'opóźniona dostawa paneli'],
   },
   {
