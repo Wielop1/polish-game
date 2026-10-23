@@ -11,7 +11,7 @@ import { subHistory, subPrice, subcontractsOfJob } from '../../engine/subcontrac
 import { memberLabel } from '../../engine/teams.ts';
 import { vehicleBookValue, vehicleDef } from '../../engine/fleet.ts';
 import {
-  activeEmployments, candidateView, employerContributions, minGrossFor, monthlyEmployerCost, noticePeriod, personById, personLevel, personName, wageOn,
+  activeEmployments, candidateView, employerContributions, minGrossFor, monthlyEmployerCost, noticePeriod, personById, personLevel, personName, wageOn, workerMonthSummary,
 } from '../../engine/workforce.ts';
 import { useGameStore } from '../../store/gameStore.ts';
 import { useOpGame } from '../useOperator.ts';
@@ -65,11 +65,14 @@ export function HrEmployeesScreen() {
   const notice = useGameStore((s) => s.giveNotice);
   const setWage = useGameStore((s) => s.setWage);
   const [wageText, setWageText] = useState<Record<string, string>>({});
+  const [monthSel, setMonthSel] = useState<'current' | 'prev'>('current');
   if (!biz) return <NoBiz title="Pracownicy" />;
   const today = game.clock.today;
   const active = activeEmployments(game);
   const ended = game.ops.employments.filter((e) => e.status === 'ended');
   const monthly = active.reduce((a, e) => a + monthlyEmployerCost(wageOn(e, today)), 0);
+  const thisMonth = monthKey(today);
+  const settlement = workerMonthSummary(game, monthSel === 'current' ? thisMonth : monthKey(addDays(`${thisMonth}-01`, -1)));
   return (
     <div className="space-y-5">
       <ScreenHeader title="Pracownicy" subtitle="Zatrudnieni na umowę o pracę: umiejętności, morale, koszt pracodawcy i historia wynagrodzeń. Osoba i umowa to osobne dane — historia osoby zostaje po zakończeniu zatrudnienia." />
@@ -87,6 +90,27 @@ export function HrEmployeesScreen() {
           </ul>
         </Card>
       )}
+      <Card title="Ile pracownicy kosztują, a ile zarobili dla Ciebie" action={<div className="flex gap-1">{(['current', 'prev'] as const).map((k) => <button key={k} type="button" aria-pressed={monthSel === k} onClick={() => setMonthSel(k)} className={cx('rounded-lg px-3 py-1 text-xs', monthSel === k ? 'bg-ink-600 text-white' : 'bg-ink-800 text-slate-400')} data-testid={`worker-month-${k}`}>{k === 'current' ? 'Ten miesiąc' : 'Poprzedni miesiąc'}</button>)}</div>}>
+        {settlement.length === 0 ? <Empty>Brak danych — pracownicy pojawią się tu, gdy zaczną pracować przy kontraktach.</Empty> : (
+          <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-sm" data-testid="worker-settlement">
+            <thead className="text-left text-xs tracking-wide text-slate-500 uppercase"><tr><th className="pb-2 font-medium">Pracownik</th><th className="pb-2 text-right font-medium">Godz. na kontraktach</th><th className="pb-2 text-right font-medium">Koszt z wypłatą</th><th className="pb-2 text-right font-medium">Wypracowany przychód</th><th className="pb-2 text-right font-medium">Przed płacą</th><th className="pb-2 text-right font-medium">Wynik dla Ciebie</th></tr></thead>
+            <tbody className="divide-y divide-ink-700/60">
+              {settlement.map((r) => (
+                <tr key={r.employmentId} data-testid={`worker-settlement-${r.employmentId}`}>
+                  <td className="py-2 text-slate-200">{personName(personById(game, r.personId)!)}{r.idleCost > 0 && <div className="text-xs text-slate-500">w tym bez zlecenia: <Money value={r.idleCost} round /></div>}</td>
+                  <td className="py-2 text-right">{r.hours.toLocaleString('pl-PL', { maximumFractionDigits: 1 })}</td>
+                  <td className="py-2 text-right text-slate-400"><Money value={r.cost} round />{!r.costIsPayslip && <div className="text-[10px] text-slate-500">naliczenie do dziś</div>}</td>
+                  <td className="py-2 text-right"><Money value={r.revenue} round /></td>
+                  <td className="py-2 text-right text-slate-400"><Money value={r.margin} round signed /></td>
+                  <td className={cx('py-2 text-right font-semibold', moneyTone(r.net))}><Money value={r.net} round signed /></td>
+                </tr>
+              ))}
+              <tr className="font-semibold"><td className="py-2 text-slate-300">Razem</td><td className="py-2 text-right">{settlement.reduce((a, r) => a + r.hours, 0).toLocaleString('pl-PL', { maximumFractionDigits: 1 })}</td><td className="py-2 text-right"><Money value={settlement.reduce((a, r) => a + r.cost, 0)} round /></td><td className="py-2 text-right"><Money value={settlement.reduce((a, r) => a + r.revenue, 0)} round /></td><td className="py-2 text-right"><Money value={settlement.reduce((a, r) => a + r.margin, 0)} round signed /></td><td className={cx('py-2 text-right', moneyTone(settlement.reduce((a, r) => a + r.net, 0)))}><Money value={settlement.reduce((a, r) => a + r.net, 0)} round signed /></td></tr>
+            </tbody>
+          </table></div>
+        )}
+        <p className="mt-2 text-xs text-slate-500">Wypracowany przychód = udział pracownika w cenie kontraktów, liczony wg jego udziału w postępie prac. „Przed płacą” odejmuje planowane materiały, transport i inne koszty tej pracy. „Wynik dla Ciebie” odejmuje jeszcze pełny koszt jego zatrudnienia (brutto + składki), także za godziny bez zlecenia. To rozliczenie zarządcze — niczego nie księguje; przychód ze zleceń trafia na konto dopiero przy rozliczeniu kontraktu.</p>
+      </Card>
       <Card title="Zatrudnieni teraz" action={<LegalBadge id="EMP-CONTRIB-2026" />}>
         {active.length === 0 ? <Empty>Nikogo nie zatrudniasz. Opublikuj ogłoszenie w „Rekrutacji”.</Empty> : (
           <ul className="divide-y divide-ink-700/60" data-testid="employees-list">
@@ -278,7 +302,7 @@ export function SubcontractorsScreen() {
   if (!biz) return <NoBiz title="Podwykonawcy" />;
   const jobs = game.reno.jobs.filter((j) => j.stage !== 'done' && j.stage !== 'cancelled');
   const contracts = [...game.ops.subcontracts].reverse().filter((c) => c.status !== 'declined' && c.status !== 'expired').slice(0, 12);
-  const STATUS = { offered: ['oferta czeka na decyzję', 'gold'], accepted: ['umowa zawarta', 'sky'], in_progress: ['w trakcie prac', 'sky'], delivered: ['gotowe do odbioru', 'gain'], settled: ['rozliczona', 'neutral'], cancelled: ['anulowana', 'neutral'], declined: ['odrzucona', 'neutral'], expired: ['wygasła', 'neutral'] } as const;
+  const STATUS = { offered: ['oferta czeka na decyzję', 'gold'], accepted: ['umowa zawarta', 'sky'], in_progress: ['w trakcie prac', 'sky'], delivered: ['gotowe — rozliczy się automatycznie', 'gain'], settled: ['rozliczona', 'neutral'], cancelled: ['anulowana', 'neutral'], declined: ['odrzucona', 'neutral'], expired: ['wygasła', 'neutral'] } as const;
   return (
     <div className="space-y-5">
       <ScreenHeader title="Podwykonawcy" subtitle="Współpraca B2B: firma wykonuje część kontraktu za umówioną cenę. Nie jest pracownikiem — brak ZUS i płacy etatowej; zaliczka to przedpłata, a koszt powstaje przy odbiorze pracy." />
@@ -324,7 +348,7 @@ export function SubcontractorsScreen() {
                   <div className="mt-2 flex flex-wrap gap-2">
                     {c.status === 'offered' && <><Button variant="primary" onClick={() => accept(c.id)} data-testid={`accept-sub-${c.id}`}>Zaakceptuj i zapłać zaliczkę</Button><Button variant="ghost" onClick={() => decline(c.id)}>Odrzuć</Button></>}
                     {c.status === 'accepted' && <Button variant="ghost" onClick={() => cancel(c.id)}>Odstąp od umowy</Button>}
-                    {c.status === 'delivered' && <Button variant="primary" onClick={() => acceptWork(c.id)} data-testid={`accept-work-${c.id}`}>Odbierz pracę i rozlicz</Button>}
+                    {c.status === 'delivered' && <Button variant="primary" onClick={() => acceptWork(c.id)} data-testid={`accept-work-${c.id}`}>Odbierz i rozlicz teraz</Button>}
                     {c.status === 'settled' && <span className="text-xs text-slate-500">Rozliczono {formatPLN(c.settledNet)} netto · jakość {c.qualityScore}/100{c.defects ? ' · wady' : ''}</span>}
                   </div>
                 </li>

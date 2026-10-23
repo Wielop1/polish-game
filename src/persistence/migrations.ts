@@ -274,3 +274,15 @@ export function migrateV8ToV9(raw: unknown): unknown {
   }
   return s;
 }
+
+/**
+ * v9 → v10 (v0.8.2): rozliczenie pracowników w miesiącu (`ops.workerMonthly`). Historii nie odtwarzamy wstecz — brak danych o udziale w postępie
+ * dla wcześniejszych dni, więc rejestr startuje pusty i wypełnia się od pierwszego przetworzonego dnia pracy.
+ */
+export function migrateV9ToV10(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) throw new Error('Zapis v9 ma nieprawidłową strukturę stanu.');
+  const s = structuredClone(raw) as Json;
+  const ops = s.ops as Json | undefined;
+  if (ops) ops.workerMonthly = ops.workerMonthly ?? {};
+  return s;
+}

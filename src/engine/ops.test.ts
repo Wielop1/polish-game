@@ -16,7 +16,7 @@ import { extendSubScope, subHistory, subPrice } from './subcontractors.ts';
 import { crewKey } from './renovation.ts';
 import { vehicleBookValue } from './fleet.ts';
 import { yearReport } from './report.ts';
-import { personById } from './workforce.ts';
+import { personById, workerMonthSummary } from './workforce.ts';
 
 const consistent = (s: GameState) => expect(checkInvariants(s)).toEqual([]);
 const crewQuote = (teamId: string, o: Record<string, unknown> = {}) => ({ teamId, supervision: 'supervise' as const, hoursPerDay: 1, durationDays: 14, startDate: '2026-03-10', priceNet: zl(4_000), ...o });
@@ -128,6 +128,27 @@ describe('5. podwykonawcy (B2B)', () => {
     expect(pay[0]?.amount ?? 0).toBe(c.priceNet - c.advanceNet);
     expect(jobOf(s, job.id).actual.subcontract).toBe(c.priceNet);
     expect(fail(commands.acceptSubWork(s, c.id))).toMatch(/nie została jeszcze zgłoszona/);
+    consistent(s);
+  });
+
+  it('gotowa praca podwykonawcy jest odbierana i rozliczana automatycznie dzień po zgłoszeniu — bez klikania; kwota jak przy ręcznym odbiorze', () => {
+    let { s, job } = withJob();
+    const sub = s.ops.subcontractors.find((x) => x.services.includes('malowanie') && x.reliabilityBps >= 8_500) ?? s.ops.subcontractors[3]!;
+    s = ok(commands.requestSubOffer(s, sub.id, job.id, 10_000));
+    s = ok(commands.acceptSubOffer(s, s.ops.subcontracts.at(-1)!.id));
+    s = ok(commands.createTeam(s, 'Podwykonawca', [{ kind: 'sub', id: sub.id }]));
+    s = ok(commands.assignCrew(s, job.id, s.ops.teams.at(-1)!.id, 'hands-off', null));
+    s = buyAll(s, job.id);
+    s = runUntil(s, (x) => x.ops.subcontracts.at(-1)!.status === 'delivered', 120);
+    expect(s.ops.subcontracts.at(-1)!.status).toBe('delivered');
+    s = advanceDays(s, 1);
+    const c = s.ops.subcontracts.at(-1)!;
+    expect(c.status).toBe('settled');
+    expect(c.settledOn).toBe(s.clock.today);
+    expect(c.prepaid).toBe(0);
+    expect(c.settledNet).toBe(c.priceNet);
+    expect(jobOf(s, job.id).actual.subcontract).toBe(c.priceNet);
+    expect(s.events.some((e) => e.id === `sub.contract:${c.id}:settled` && /Automatyczny odbiór/.test(e.title))).toBe(true);
     consistent(s);
   });
 
@@ -456,6 +477,33 @@ describe('8. pojazdy firmowe', () => {
 });
 
 describe('9. koszty, marże i rentowność', () => {
+  it('rozliczenie pracownika w miesiącu: koszt z listy płac, godziny i przychód z jego pracy zgadzają się z kontraktem, a bezczynność = koszt − koszt godzin na kontraktach', () => {
+    const { s: s0, teams } = crewGame(1);
+    const a = contract(s0, { quote: crewQuote(teams[0]!, { supervision: 'hands-off', startDate: '2026-03-03', durationDays: 6 }) });
+    let s = toDate(buyAll(a.s, a.job.id), '2026-04-02');
+    const job = jobOf(s, a.job.id);
+    expect(job.stage).toBe('done');
+    const rows = workerMonthSummary(s, '2026-03');
+    expect(rows).toHaveLength(1);
+    const r = rows[0]!;
+    const slip = s.ops.payslips.find((p) => p.month === '2026-03')!;
+    expect(r.costIsPayslip).toBe(true);
+    expect(r.cost).toBe(slip.totalCost);
+    expect(r.allocatedCost).toBe(job.actual.labor);
+    expect(r.idleCost).toBe(r.cost - job.actual.labor);
+    expect(r.hours).toBeGreaterThan(0);
+    // jedyny wykonawca kontraktu → cały przychód (z dokładnością do zaokrągleń dziennych udziałów)
+    expect(Math.abs(r.revenue - job.priceNet)).toBeLessThanOrEqual(job.workedDays + 1);
+    expect(r.margin).toBeLessThan(r.revenue);
+    expect(r.net).toBe(r.margin - r.cost);
+    // bieżący miesiąc bez listy płac: naliczenie proporcjonalne
+    const cur = workerMonthSummary(s, '2026-04')[0]!;
+    expect(cur.costIsPayslip).toBe(false);
+    expect(cur.cost).toBeGreaterThan(0);
+    expect(cur.cost).toBeLessThan(r.cost);
+    consistent(s);
+  });
+
   it('koszt pracy pracownika dzieli się między kontrakty według godzin; godziny bez zlecenia to koszt stały (bezczynność), nic nie ginie', () => {
     const { s: s0, teams } = crewGame(1);
     const a = contract(s0, { quote: crewQuote(teams[0]!, { supervision: 'hands-off', startDate: '2026-03-03', durationDays: 6 }) });

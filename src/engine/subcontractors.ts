@@ -213,14 +213,29 @@ export function extendSubScope(s: GameState, job: RenoJob, addedCenti: number): 
   }
 }
 
-/** Dzień: wygasanie ofert, start pracy (z ewentualnym opóźnieniem). */
-export function processSubcontracts(s: GameState, date: IsoDate): void {
+/**
+ * Czy po rozliczeniu podwykonawcy kontrakt nadal ma kto dokończyć (praca ponad normę z problemów na budowie wraca do wykonawców).
+ * Rozliczony podwykonawca już nie pracuje, więc pełny zakres „tylko podwykonawcy” nie może być zamknięty przed końcem prac.
+ */
+function jobCoveredWithoutSub(s: GameState, job: RenoJob, c: Subcontract): boolean {
+  if (job.progressCenti >= job.normCenti + job.extraCenti) return true;
+  const team = job.crew.teamId ? s.ops.teams.find((t) => t.id === job.crew.teamId) : undefined;
+  if (!team) return true; // właściciel pracuje sam
+  return team.members.some((m) => m.kind !== 'sub') || s.ops.subcontracts.some((x) => x.jobId === job.id && x.id !== c.id && ['accepted', 'in_progress'].includes(x.status));
+}
+
+/** Dzień: wygasanie ofert, start pracy (z ewentualnym opóźnieniem) i automatyczny odbiór gotowej pracy (dzień po zgłoszeniu) — gracz nie musi klikać przy każdym zleceniu. */
+export function processSubcontracts(s: GameState, b: Operator, date: IsoDate): void {
   for (const c of s.ops.subcontracts) {
     if (c.status === 'offered' && date > c.expiresOn) c.status = 'expired';
     if (c.status === 'accepted' && date >= addDays(c.startDate, c.delayDays)) {
       c.status = 'in_progress';
       const sub = subById(s, c.subId)!;
       if (c.delayDays > 0) logEvent(s, { id: `sub.contract:${c.id}:delay`, date, type: 'sub.contract', tone: 'warning', title: `Opóźnienie podwykonawcy: ${sub.name}`, detail: `Rozpoczął pracę ${c.delayDays} dn. po terminie — to ryzyko współpracy z mniej niezawodnymi firmami.`, amount: null, category: null });
+    }
+    if (c.status === 'delivered' && c.deliveredOn !== null && date > c.deliveredOn) {
+      const job = s.reno.jobs.find((j) => j.id === c.jobId);
+      if (job && job.businessId === b.id && jobCoveredWithoutSub(s, job, c)) settleSubcontract(s, b, c, job, date, true);
     }
   }
 }

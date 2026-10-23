@@ -1232,6 +1232,12 @@ export const OpsSchema = z.object({
   vehicles: z.array(VehicleSchema),
   /** Koszt pracy pracowników przypisany do kontraktów w miesiącu (YYYY-MM) — reszta listy płac to koszt stały (bezczynność). */
   laborAllocated: z.record(z.string(), z.number().int().min(0)),
+  /**
+   * v0.8.2: rozliczenie pracownika w miesiącu, klucz `YYYY-MM:<id zatrudnienia>`. `hoursCenti` — setne godziny przepracowane na kontraktach,
+   * `labor` — koszt tych godzin (jak w `laborAllocated`), `revenue` — udział w cenie kontraktów wg udziału w postępie prac,
+   * `direct` — przypadający na tę pracę plan materiałów, transportu i innych kosztów kontraktu. Dane do ekranu „Pracownicy”; nie księgują niczego.
+   */
+  workerMonthly: z.record(z.string(), z.object({ hoursCenti: z.number().int().min(0), labor: z.number().int().min(0), revenue: z.number().int().min(0), direct: z.number().int().min(0) })).default({}),
   /** Zmienne koszty eksploatacji pojazdów naliczone w miesiącu (rozliczane dokumentem na koniec miesiąca). */
   vehicleRunning: z.record(z.string(), z.number().int().min(0)),
 });

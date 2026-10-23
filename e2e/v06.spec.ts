@@ -69,6 +69,11 @@ test('rekrutacja i zatrudnienie: ogłoszenie, zgłoszenia, oferta, pracownik z k
   await nav(page, 'Pracownicy');
   await expect(page.getByTestId('payslips')).toBeVisible();
   await expect(page.getByTestId('payslips')).toContainText('2026-');
+  // rozliczenie pracownika: koszt z wypłatą vs wypracowany przychód (poprzedni miesiąc ma już listę płac)
+  await page.getByTestId('worker-month-prev').click();
+  await expect(page.getByTestId('worker-settlement')).toBeVisible();
+  await expect(page.getByTestId('worker-settlement')).toContainText('Razem');
+  await page.getByTestId('worker-settlement').screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/worker-settlement.png` : 'test-results/worker-settlement.png' });
   // ekipa z zatrudnionym pracownikiem (regresja: id z dwukropkiem było ucinane i pracownik był odrzucany)
   await nav(page, 'Ekipy');
   await page.getByLabel('Nazwa ekipy').fill('Malarze');

@@ -24,7 +24,7 @@ import expectV6 from './fixtures/save-v6.expect.json';
 import rawV6 from './fixtures/save-v6.json?raw';
 import { contract, hireEmployee, jobOf as jobOfKit, runUntil as runUntilKit, buyAll as buyAllKit } from '../engine/testkit.ts';
 import { SAVE_VERSION, parseSave, serializeSave } from './save.ts';
-import { migrateV8ToV9 } from './migrations.ts';
+import { migrateV8ToV9, migrateV9ToV10 } from './migrations.ts';
 import expectV8 from './fixtures/save-v8.expect.json';
 import rawV8 from './fixtures/save-v8.json?raw';
 
@@ -42,9 +42,9 @@ describe('migracja zapisu v1 → v2 (prawdziwy zapis wygenerowany przez v0.1)', 
   if (!result.ok) throw new Error(`fixture v1 nie wczytał się: ${result.error}`);
   const migrated = result.state;
 
-  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 9', () => {
+  it('fixture jest zapisem w wersji 1, a obecna wersja formatu to 10', () => {
     expect(JSON.parse(rawV1).version).toBe(1);
-    expect(SAVE_VERSION).toBe(9);
+    expect(SAVE_VERSION).toBe(10);
   });
 
   it('historia finansowa zostaje nietknięta: salda, majątek netto, rejestr, zobowiązania, zdarzenia', () => {
@@ -566,7 +566,7 @@ describe('migracja zapisu v6 → v7 (prawdziwy zapis wygenerowany przez v0.6: fi
     expect(migrated.reno.jobs).toEqual((withV9(old.reno) as { jobs: unknown }).jobs);
     expect(migrated.reno.quotes).toEqual((withV9(old.reno) as { quotes: unknown }).quotes);
     expect(migrated.reno.reviews).toEqual(old.reno.reviews);
-    expect(migrated.ops).toEqual(old.ops);
+    expect(migrated.ops).toEqual({ ...old.ops, workerMonthly: {} }); // jedyna różnica: rejestr rozliczeń pracowników z v10
     expect(migrated.reno.jobs).toHaveLength(expectV6.jobs);
     expect(migrated.reno.enquiries).toHaveLength(expectV6.enquiries);
     expect(migrated.ledger.at(-1)!.id).toBe(expectV6.lastTxId);
@@ -645,7 +645,7 @@ describe('migracja zapisu v7 → v8 (prawdziwy zapis wygenerowany przez v0.7: JD
     expect(migrated.documents).toEqual(old.documents);
     expect(migrated.events).toEqual(old.events);
     expect(migrated.reno).toEqual(withV9(old.reno));
-    expect(migrated.ops).toEqual(old.ops);
+    expect(migrated.ops).toEqual({ ...old.ops, workerMonthly: {} }); // jedyna różnica: rejestr rozliczeń pracowników z v10
     expect(migrated.market).toEqual(old.market);
     expect(migrated.documents).toHaveLength(expectV7.documents);
     expect(migrated.reno.jobs).toHaveLength(expectV7.jobs);
@@ -687,7 +687,7 @@ describe('migracja zapisu v7 → v8 (prawdziwy zapis wygenerowany przez v0.7: JD
     s = ok(commands.signAgreement(s, { companyId: 'co:1', board: [{ personId: s.person.id, role: 'president' }], file: true }));
     s = advanceDays(s, 40);
     const json = serializeSave(s, NOW);
-    expect(JSON.parse(json).version).toBe(9);
+    expect(JSON.parse(json).version).toBe(SAVE_VERSION);
     const again = parseSave(json);
     expect(again.ok && again.state).toEqual(s);
     if (!again.ok) return;
@@ -722,7 +722,7 @@ describe('migracja zapisu v8 → v9 (prawdziwy zapis wygenerowany przez v0.8: JD
     expect(migrated.documents).toEqual(old.documents);
     expect(migrated.events).toEqual(old.events);
     expect(migrated.market).toEqual(old.market);
-    expect(migrated.ops).toEqual(old.ops);
+    expect(migrated.ops).toEqual({ ...old.ops, workerMonthly: {} }); // jedyna różnica: rejestr rozliczeń pracowników z v10
     expect(migrated.ledger.at(-1)!.id).toBe(expectV8.lastTxId);
     // jedyna różnica w stanie remontowym: pola v0.8.1 (puste projekty i klienci, pakiety bez powiązań, plany z zerową pracą właściciela)
     expect(migrated.reno).toEqual(withV9(old.reno));
@@ -754,11 +754,22 @@ describe('migracja zapisu v8 → v9 (prawdziwy zapis wygenerowany przez v0.8: JD
     expect(b.ledger).toEqual(a.ledger);
   }, 120_000);
 
-  it('zapis v9: round-trip identyczny, wersja formatu 9', () => {
+  it('zapis v9: round-trip identyczny, wersja formatu bieżąca', () => {
     const json = serializeSave(migrated, NOW);
-    expect(JSON.parse(json).version).toBe(9);
+    expect(JSON.parse(json).version).toBe(SAVE_VERSION);
     const again = parseSave(json);
     expect(again.ok).toBe(true);
     if (again.ok) expect(again.state).toEqual(migrated);
+  });
+});
+
+describe('migracja v9 → v10 (rozliczenie pracowników)', () => {
+  it('dodaje pusty rejestr workerMonthly i nie rusza reszty stanu ops; istniejący rejestr zostaje', () => {
+    const out = migrateV9ToV10({ ops: { people: [1], laborAllocated: { '2026-03': 5 } }, other: 1 }) as { ops: Record<string, unknown>; other: number };
+    expect(out.ops).toEqual({ people: [1], laborAllocated: { '2026-03': 5 }, workerMonthly: {} });
+    expect(out.other).toBe(1);
+    const kept = migrateV9ToV10({ ops: { workerMonthly: { 'x': { hoursCenti: 1, labor: 1, revenue: 1, direct: 1 } } } }) as { ops: { workerMonthly: Record<string, unknown> } };
+    expect(Object.keys(kept.ops.workerMonthly)).toEqual(['x']);
+    expect(() => migrateV9ToV10(null)).toThrow();
   });
 });

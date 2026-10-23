@@ -1470,12 +1470,21 @@ function workJob(s: GameState, b: Operator, job: RenoJob, date: IsoDate, used: S
       const cost = roundDiv(emp.hourlyCost * h, 100);
       job.actual.labor += cost;
       s.ops.laborAllocated[month] = (s.ops.laborAllocated[month] ?? 0) + cost;
+      // rozliczenie pracownika: jego udział w postępie dnia → udział w cenie i w planowanych kosztach bezpośrednich kontraktu
+      const allC = cd.workers.reduce((a, x) => a + Math.max(0, x.c), 0); // wkłady są sprzed ograniczeń zespołu — normalizujemy do sumy, by udziały dawały cały postęp dnia
+      const paidP = Math.max(0, Math.min(p, job.normCenti - (job.progressCenti - p))); // cena obejmuje tylko zakres z normy; praca ponad nią (poprawki, dodatki) nie dolicza przychodu
+      const paidShare = roundDiv(w.c * paidP, allC);
+      const row = (s.ops.workerMonthly[`${month}:${emp.id}`] ??= { hoursCenti: 0, labor: 0, revenue: 0, direct: 0 });
+      row.hoursCenti += h;
+      row.labor += cost;
+      row.revenue += roundDiv(job.priceNet * paidShare, job.normCenti);
+      row.direct += roundDiv((job.planned.materials + job.planned.transport + job.planned.other) * paidShare, job.normCenti);
       used.add(w.key);
     }
     if (w.kind === 'sub') {
       const sc = s.ops.subcontracts.find((x) => x.id === w.subcontractId)!;
       sc.performedCenti = Math.min(sc.requiredCenti, sc.performedCenti + roundDiv(w.c * p, cd.raw));
-      if (sc.performedCenti >= sc.requiredCenti && sc.status !== 'delivered') { sc.status = 'delivered'; sc.deliveredOn = date; logEvent(s, { id: `sub.contract:${sc.id}:delivered:${sc.requiredCenti}`, date, type: 'sub.contract', tone: 'neutral', title: `Podwykonawca zgłasza zakończenie prac: ${w.label}`, detail: 'Odbierz pracę w ekranie „Podwykonawcy” (bez odbioru zostanie rozliczona automatycznie przy zakończeniu kontraktu).', amount: null, category: null }); }
+      if (sc.performedCenti >= sc.requiredCenti && sc.status !== 'delivered') { sc.status = 'delivered'; sc.deliveredOn = date; logEvent(s, { id: `sub.contract:${sc.id}:delivered:${sc.requiredCenti}`, date, type: 'sub.contract', tone: 'neutral', title: `Podwykonawca zgłasza zakończenie prac: ${w.label}`, detail: 'Praca zostanie odebrana i rozliczona automatycznie następnego dnia (można też odebrać ją od razu w ekranie „Podwykonawcy”).', amount: null, category: null }); }
       used.add(w.key);
     }
     if (w.tools.length) { wearItems(w.tools, h / 100); for (const t of w.tools) used.add(`eq:${t.id}`); }
@@ -1709,7 +1718,7 @@ export function processRenovation(s: GameState, b: Operator, date: IsoDate): voi
   const key = `reno:day:${b.id}:${date}`;
   if (s.processed[key]) return;
   s.processed[key] = true;
-  processSubcontracts(s, date);
+  processSubcontracts(s, b, date);
   // zasoby (pracownicy, podwykonawcy, sprzęt, pojazdy) nie mogą pracować przy dwóch kontraktach tego samego dnia; wcześniejszy kontrakt ma pierwszeństwo
   const used = new Set<string>();
   const jobs = reno(s).jobs.filter((j) => j.businessId === b.id).sort((a, c) => a.startDate.localeCompare(c.startDate) || a.id.localeCompare(c.id));

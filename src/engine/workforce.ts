@@ -1,6 +1,6 @@
 import { computePayroll } from './payroll.ts';
 import { CommandError, createObligation, ensureParty, logEvent, nextCounter } from './core.ts';
-import { addDays, addMonths, dateInMonth, daysInMonth, firstOfNextMonth, formatDatePL, monthKey, parseIso, weekdayIndex } from './date.ts';
+import { addDays, addMonths, dateInMonth, daysInMonth, diffDays, firstOfNextMonth, formatDatePL, monthKey, monthKeyToYm, parseIso, weekdayIndex } from './date.ts';
 import type { IsoDate } from './date.ts';
 import { RULES_2026 as R } from './legal.ts';
 import { formatPLN, mulBps, roundDiv, zl } from './money.ts';
@@ -352,6 +352,49 @@ export function payrollMonth(s: GameState, month: string): { total: Grosze; allo
   const total = s.ops.payslips.filter((p) => p.month === month).reduce((a, p) => a + p.totalCost, 0);
   const allocated = Math.min(total, s.ops.laborAllocated[month] ?? 0);
   return { total, allocated, idle: total - allocated };
+}
+
+export interface WorkerMonthRow {
+  employmentId: string;
+  personId: string;
+  /** Koszt pracodawcy w miesiącu: z listy płac, a w miesiącu bieżącym — naliczenie proporcjonalne do dni zatrudnienia do dziś. */
+  cost: Grosze;
+  costIsPayslip: boolean;
+  hours: number;
+  /** Koszt godzin przypisanych do kontraktów; reszta kosztu to bezczynność (godziny bez zlecenia). */
+  allocatedCost: Grosze;
+  idleCost: Grosze;
+  revenue: Grosze;
+  /** Przychód z jego pracy minus planowane materiały/transport/inne przypadające na tę pracę (przed płacą). */
+  margin: Grosze;
+  /** Co zostało firmie z jego pracy po jego pełnym koszcie zatrudnienia (także godzinach bez zlecenia). */
+  net: Grosze;
+}
+
+/** Rozliczenie pracowników w miesiącu (YYYY-MM): ile kosztują z wypłatą i ile wypracowali dla firmy. Nie księguje niczego. */
+export function workerMonthSummary(s: GameState, month: string): WorkerMonthRow[] {
+  const { year, month: m } = monthKeyToYm(month);
+  const first = dateInMonth(year, m, 1);
+  const last = dateInMonth(year, m, 'last');
+  const today = s.clock.today;
+  const rows: WorkerMonthRow[] = [];
+  for (const e of s.ops.employments) {
+    const w = s.ops.workerMonthly[`${month}:${e.id}`];
+    const slip = s.ops.payslips.find((p) => p.employmentId === e.id && p.month === month);
+    const activeFrom = e.startDate > first ? e.startDate : first;
+    const activeTo = [last, today, e.endDate ?? last].reduce((a, b) => (b < a ? b : a));
+    if (!slip && !w && activeTo < activeFrom) continue;
+    let cost = slip?.totalCost ?? 0;
+    if (!slip && activeTo >= activeFrom) {
+      const days = diffDays(activeTo, activeFrom) + 1;
+      cost = roundDiv(monthlyEmployerCost(wageOn(e, activeTo)) * days, daysInMonth(year, m));
+    }
+    const allocated = Math.min(cost, w?.labor ?? 0);
+    const revenue = w?.revenue ?? 0;
+    const margin = revenue - (w?.direct ?? 0);
+    rows.push({ employmentId: e.id, personId: e.personId, cost, costIsPayslip: !!slip, hours: (w?.hoursCenti ?? 0) / 100, allocatedCost: allocated, idleCost: cost - allocated, revenue, margin, net: margin - cost });
+  }
+  return rows;
 }
 
 /* ---------- Przetwarzanie dnia ---------- */

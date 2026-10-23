@@ -27,6 +27,6 @@ export function buildSubcontractors(seed: string): Subcontractor[] {
 export function emptyOps(seed = ''): Ops {
   return {
     people: [], employments: [], payslips: [], listings: [], candidates: [], subcontractors: buildSubcontractors(seed), subcontracts: [], teams: [], assignments: [], vehicles: [],
-    laborAllocated: {}, vehicleRunning: {},
+    laborAllocated: {}, workerMonthly: {}, vehicleRunning: {},
   };
 }

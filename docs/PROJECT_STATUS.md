@@ -4,7 +4,7 @@
 
 ## Wersja
 
-**v0.8.1 — Ekonomia, rentowność i większe kontrakty** (zakończona; v0.9 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 9` (migracje v1 → … → v9). Wcześniej: v0.8.0 (spółki z o.o., commit 249a876), v0.7 (rynek lokalny, symulator balansu; 1e58217), v0.6, v0.5, v0.4, v0.3, v0.2.1, v0.2, v0.1.
+**v0.8.1 — Ekonomia, rentowność i większe kontrakty** (zakończona; v0.9 czeka na zatwierdzenie). Zapisy: `SAVE_VERSION = 10` (migracje v1 → … → v10; v10 = rozliczenie pracowników w miesiącu, ADR-083). Wcześniej: v0.8.0 (spółki z o.o., commit 249a876), v0.7 (rynek lokalny, symulator balansu; 1e58217), v0.6, v0.5, v0.4, v0.3, v0.2.1, v0.2, v0.1.
 Rejestr rozwoju mechanik: [`FEATURE_EVOLUTION.md`](FEATURE_EVOLUTION.md) · rejestr reguł prawnych: [`LEGAL_SOURCES.md`](LEGAL_SOURCES.md) · analiza balansu: [`BALANCE_REPORT.md`](BALANCE_REPORT.md).
 
 ## Co działa (v0.8.1, zweryfikowane testami)
