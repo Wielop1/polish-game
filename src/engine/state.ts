@@ -868,8 +868,8 @@ export const RenoComplaintSchema = z.object({
 
 /* ---------- Większe projekty, klienci B2B i referencje (v0.8.1) ---------- */
 
-export const B2BKindSchema = z.enum(['property_manager', 'private_investor', 'builder', 'general_contractor', 'developer']);
-export const ProjectTemplateIdSchema = z.enum(['flat_finish', 'local_remont', 'finish_package', 'serial_flats', 'subcontract']);
+export const B2BKindSchema = z.enum(['property_manager', 'private_investor', 'builder', 'general_contractor', 'developer', 'housing_coop', 'retail_chain']);
+export const ProjectTemplateIdSchema = z.enum(['flat_finish', 'local_remont', 'finish_package', 'serial_flats', 'subcontract', 'common_areas', 'flat_turnover', 'floor_series', 'shop_fitout', 'warranty_fixes']);
 export const PackageStageSchema = z.enum(['przygotowanie', 'roboty', 'wykonczenie', 'prace_koncowe']);
 
 export const B2BClientSchema = z.object({

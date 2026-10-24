@@ -15,7 +15,7 @@ import {
 import type { CrewMember, QuoteInput, QuotePreview } from './renovation.ts';
 import { requireBusiness } from './opsCommon.ts';
 import { activeEmployments, personById, personLevel } from './workforce.ts';
-import { B2B_CLIENT_POOL, B2B_KINDS, B2B_RULES, PROJECT_TEMPLATES, STAGE_LABEL, TIER_REQUIREMENTS, tierOfValue } from './projectsCatalog.ts';
+import { B2B_CLIENT_POOL, B2B_KINDS, B2B_LEGACY_POOL, B2B_RULES, PROJECT_TEMPLATES, STAGE_LABEL, TIER_REQUIREMENTS, tierOfValue } from './projectsCatalog.ts';
 import type { ProjectTemplateId } from './projectsCatalog.ts';
 import type { B2BClient, GameState, Operator, RenoEnquiry, RenoPackage, RenoProject, RenoQuote, RenovationState } from './state.ts';
 
@@ -42,12 +42,15 @@ export const PROJECT_STATUS_LABEL: Record<RenoProject['status'], string> = {
 
 export function ensureB2BPool(s: GameState): B2BClient[] {
   const st = reno(s);
-  if (st.b2bClients.length === 0) {
-    const rng = createRng(s.seed, 'b2b:pool');
-    st.b2bClients = B2B_CLIENT_POOL.map((c, i) => {
+  // pula rośnie z wersji na wersję: brakujących klientów dopisujemy na końcu, istniejących (z ich relacją i historią) nie ruszamy
+  if (st.b2bClients.length < B2B_CLIENT_POOL.length) {
+    const sequential = createRng(s.seed, 'b2b:pool');
+    for (let i = st.b2bClients.length; i < B2B_CLIENT_POOL.length; i++) {
+      const c = B2B_CLIENT_POOL[i]!;
       const k = B2B_KINDS[c.kind];
-      return { id: `b2b:${i + 1}`, name: c.name, kind: c.kind, size: c.size, termDays: rng.int(k.termDays[0], k.termDays[1]), reliability: rng.int(k.reliability[0], k.reliability[1]), relationship: 40, projectsDone: 0, lastEnquiryOn: null };
-    });
+      const rng = i < B2B_LEGACY_POOL ? sequential : createRng(s.seed, `b2b:pool:${i}`);
+      st.b2bClients.push({ id: `b2b:${i + 1}`, name: c.name, kind: c.kind, size: c.size, termDays: rng.int(k.termDays[0], k.termDays[1]), reliability: rng.int(k.reliability[0], k.reliability[1]), relationship: 40, projectsDone: 0, lastEnquiryOn: null });
+    }
   }
   for (const c of st.b2bClients) ensureParty(s, { id: `party:${c.id}`, name: c.name, role: 'service' });
   return st.b2bClients;
@@ -70,6 +73,8 @@ export interface CompanyReferences {
   largestProjectNet: Grosze;
   /** Wykonawcy: właściciel (jeśli może pracować) + aktywni pracownicy + podwykonawcy z zakończoną współpracą (najwyżej 2). */
   workers: number;
+  /** Skład `workers`: właściciel (0/1), aktywni pracownicy i podwykonawcy z zakończoną współpracą (liczeni najwyżej po 2). */
+  workersBreakdown: { owner: number; employees: number; subcontractors: number };
   tier: 0 | 1 | 2 | 3;
 }
 
@@ -87,8 +92,9 @@ export function companyReferences(s: GameState): CompanyReferences {
     completedJobs: done.length, completedValueNet: value, avgRating10: ratings.length ? Math.round(ratings.reduce((a, x) => a + x, 0) / ratings.length) : null,
     onTimePct: done.length ? Math.round((done.filter((j) => j.lateDays === 0).length * 100) / done.length) : null,
     workedHours: Math.round(done.reduce((a, j) => a + j.workedDays * j.hoursPerDay, 0)), projectsDone, largestProjectNet: largest,
-    workers: (ownerAvailable(s) ? 1 : 0) + activeEmployments(s).length + Math.min(2, subsWithHistory), tier: 0,
+    workers: 0, workersBreakdown: { owner: ownerAvailable(s) ? 1 : 0, employees: activeEmployments(s).length, subcontractors: Math.min(2, subsWithHistory) }, tier: 0,
   };
+  refs.workers = refs.workersBreakdown.owner + refs.workersBreakdown.employees + refs.workersBreakdown.subcontractors;
   refs.tier = ([3, 2, 1] as const).find((t) => unmetRequirements(refs, TIER_REQUIREMENTS[t]).length === 0) ?? 0;
   return refs;
 }
@@ -148,12 +154,12 @@ export function buildProject(s: GameState, b: Operator, client: B2BClient, templ
   const roundTen = (x: Grosze) => Math.max(zl(10), roundDiv(x, zl(10)) * zl(10));
   const budgetNet = roundTen(roundDiv(mulBps(refTotal, kind.priceFactorBps) * rng.int(95, 110), 100));
   const walkAwayNet = roundTen(roundDiv(budgetNet * rng.int(104, 114), 100));
-  // okno klienta: ścieżka krytyczna przy ekipie założonej przez klienta (poziom 1 — jeden wykonawca, 2 — dwóch, 3 — trzech; 8 godz. dziennie), dni kalendarzowe z zapasem
-  const dayOf = (p: RenoPackage) => Math.ceil(normCenti(p.serviceId, p.units, p.complexity) / (800 * tier)) + 1;
+  // okno klienta: ścieżka krytyczna przy ekipie założonej przez klienta (poziom 1 — jeden wykonawca, 2 — dwóch, 3 — trzech; 8 godz. dziennie) z realną wydajnością ekipy (dni robocze, koordynacja, tempo), w dniach kalendarzowych z zapasem
+  const dayOf = (p: RenoPackage) => Math.ceil(normCenti(p.serviceId, p.units, p.complexity) / mulBps(800 * tier, B2B_RULES.windowCapacityBps[tier as 1 | 2 | 3])) + 1;
   const chain = packages.reduce((a, p) => a + dayOf(p), 0);
   const maxDays = Math.ceil(chain * 1.5) + 7;
   return {
-    id, businessId: b.id, b2bId: client.id, clientId: `party:${client.id}`, clientName: client.name, templateId, title: `${tpl.label}: ${area} m²${flats > 1 ? ` × ${flats} lokali` : ''}`,
+    id, businessId: b.id, b2bId: client.id, clientId: `party:${client.id}`, clientName: client.name, templateId, title: tpl.title ? tpl.title(area, flats) : `${tpl.label}: ${area} m²${flats > 1 ? ` × ${flats} lokali` : ''}`,
     location: DISTRICTS[rng.int(0, DISTRICTS.length - 1)]!, tier: tier as 1 | 2 | 3, areaM2: area, flats, status: 'enquiry', receivedOn: date,
     respondBy: addDays(date, rng.int(B2B_RULES.respondDays[0], B2B_RULES.respondDays[1])), desiredStart: addDays(date, rng.int(10, 28)), maxDays, budgetNet, walkAwayNet,
     paymentTermDays: client.termDays, maxTermDays: Math.min(90, client.termDays + 15), advanceMaxBps: kind.advanceMaxBps, penaltyBpsPerWeek: kind.penaltyBpsPerWeek,
@@ -179,19 +185,27 @@ function rollB2BEnquiry(s: GameState, b: Operator, date: IsoDate): void {
   if (rng.int(0, 9_999) >= p) return;
   const stretch = refs.tier === 0 || (refs.tier < 3 && rng.int(0, 9_999) < B2B_RULES.stretchChanceBps);
   if (stretch && open.some((x) => x.tier > refs.tier)) return; // najwyżej jedno zapytanie „na wyrost” naraz
-  const wanted = Math.min(3, Math.max(1, stretch ? refs.tier + 1 : refs.tier));
-  // klient: ważony zaufaniem (relacja) i niedawnością ostatniego zapytania
-  const cands = clients.filter((c) => (!c.lastEnquiryOn || diffDays(date, c.lastEnquiryOn) >= 21) && !open.some((x) => x.b2bId === c.id));
-  const pool = cands.length ? cands : [];
-  if (!pool.length) return;
-  const weights = pool.map((c) => 20 + c.relationship);
-  let roll = rng.int(0, weights.reduce((a, x) => a + x, 0) - 1);
-  let client = pool[0]!;
-  for (let i = 0; i < pool.length; i++) { if (roll < weights[i]!) { client = pool[i]!; break; } roll -= weights[i]!; }
-  const templates = B2B_KINDS[client.kind].templates;
-  const tpl = templates[rng.int(0, templates.length - 1)]!;
-  const project = buildProject(s, b, client, tpl, wanted, date);
-  if (!project) return;
+  // poziom zapytania: „na wyrost” (o jeden wyżej), w sam raz albo niższy — firma z dużymi referencjami dostaje też drobniejsze kontrakty
+  const lower = !stretch && refs.tier >= 2 && rng.int(0, 9_999) < B2B_RULES.lowerTierChanceBps;
+  const wanted = Math.min(3, Math.max(1, stretch ? refs.tier + 1 : lower ? refs.tier - 1 : refs.tier));
+  // klient: ważony zaufaniem (relacja); gdy jego szablony nie dają projektu żądanego poziomu, losujemy kolejnego klienta
+  const pool = clients.filter((c) => (!c.lastEnquiryOn || diffDays(date, c.lastEnquiryOn) >= B2B_RULES.clientCooldownDays) && !open.some((x) => x.b2bId === c.id));
+  let project: RenoProject | null = null;
+  let client: B2BClient | null = null;
+  while (!project && pool.length) {
+    const weights = pool.map((c) => 20 + c.relationship);
+    let roll = rng.int(0, weights.reduce((a, x) => a + x, 0) - 1);
+    let idx = 0;
+    for (let i = 0; i < pool.length; i++) { if (roll < weights[i]!) { idx = i; break; } roll -= weights[i]!; }
+    const candidate = pool.splice(idx, 1)[0]!;
+    const templates = [...B2B_KINDS[candidate.kind].templates];
+    while (!project && templates.length) {
+      const tpl = templates.splice(rng.int(0, templates.length - 1), 1)[0]!;
+      project = buildProject(s, b, candidate, tpl, wanted, date);
+    }
+    if (project) client = candidate;
+  }
+  if (!project || !client) return;
   client.lastEnquiryOn = date;
   st.projects.push(project);
   logEvent(s, {
@@ -320,8 +334,10 @@ export function planProject(s: GameState, p: RenoProject, input: ProjectPlanInpu
   });
   const endDate = plans.reduce((a, x) => (x.endDate > a ? x.endDate : a), input.startDate);
   const chainDays = diffDays(endDate, input.startDate) + 1;
-  if (chainDays > p.maxDays * 1.5) blockers.push(`Harmonogram (${chainDays} dni) jest nierealny wobec okna klienta (${p.maxDays} dni) — wzmocnij ekipy.`);
-  else if (chainDays > p.maxDays) risks.push(`Harmonogram (${chainDays} dni) przekracza okno klienta (${p.maxDays} dni): ryzyko kar umownych i niższej oceny.`);
+  const longest = plans.length ? plans.reduce((a, x) => (x.durationDays > a.durationDays ? x : a)) : null;
+  const longestHint = longest && chainDays > p.maxDays ? ` Najdłuższy pakiet: „${longest.pkg.label}” (${longest.durationDays} dni) — przydziel mu więcej osób albo kilku podwykonawców.` : '';
+  if (chainDays > p.maxDays * 1.5) blockers.push(`Harmonogram (${chainDays} dni) jest nierealny wobec okna klienta (${p.maxDays} dni) — wzmocnij ekipy.${longestHint}`);
+  else if (chainDays > p.maxDays) risks.push(`Harmonogram (${chainDays} dni) przekracza okno klienta (${p.maxDays} dni): ryzyko kar umownych i niższej oceny.${longestHint}`);
   const sum = (f: (x: PackagePlan) => number) => plans.reduce((a, x) => a + f(x), 0);
   const revenue = sum((x) => x.priceNet);
   const external = sum((x) => x.preview.economics.external.total);

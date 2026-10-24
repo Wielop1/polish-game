@@ -8,7 +8,7 @@ import type { B2BClient } from './state.ts';
  * to PARAMETRY KALIBRACYJNE — nie dane rynkowe ani GUS. Klienci i firmy są fikcyjni. Opis i uzasadnienie: docs/BALANCE_REPORT.md §10.
  */
 export type B2BKind = B2BClient['kind'];
-export type ProjectTemplateId = 'flat_finish' | 'local_remont' | 'finish_package' | 'serial_flats' | 'subcontract';
+export type ProjectTemplateId = 'flat_finish' | 'local_remont' | 'finish_package' | 'serial_flats' | 'subcontract' | 'common_areas' | 'flat_turnover' | 'floor_series' | 'shop_fitout' | 'warranty_fixes';
 export type PackageStage = 'przygotowanie' | 'roboty' | 'wykonczenie' | 'prace_koncowe';
 
 export const STAGE_LABEL: Record<PackageStage, string> = { przygotowanie: 'Przygotowanie', roboty: 'Roboty wykończeniowe mokre', wykonczenie: 'Wykończenie', prace_koncowe: 'Prace końcowe i odbiór' };
@@ -31,11 +31,13 @@ export interface B2BKindDef {
 }
 
 export const B2B_KINDS: Record<B2BKind, B2BKindDef> = {
-  property_manager: { id: 'property_manager', label: 'Zarządca nieruchomości', description: 'Remonty lokali i części wspólnych; płaci regularnie, ceni terminowość.', priceFactorBps: 9_800, termDays: [21, 30], reliability: [65, 90], penaltyBpsPerWeek: 250, advanceMaxBps: 2_500, qualityReq: [2, 2], templates: ['finish_package', 'local_remont'] },
-  private_investor: { id: 'private_investor', label: 'Inwestor prywatny', description: 'Kupuje mieszkania pod wynajem lub sprzedaż; płaci szybko, ale liczy każdą złotówkę.', priceFactorBps: 10_000, termDays: [7, 21], reliability: [55, 90], penaltyBpsPerWeek: 200, advanceMaxBps: 3_000, qualityReq: [2, 3], templates: ['flat_finish', 'finish_package'] },
-  builder: { id: 'builder', label: 'Firma budowlana', description: 'Zleca wykończenia części inwestycji; długie terminy płatności, kary za opóźnienia.', priceFactorBps: 9_600, termDays: [30, 45], reliability: [50, 80], penaltyBpsPerWeek: 300, advanceMaxBps: 2_000, qualityReq: [1, 2], templates: ['local_remont', 'finish_package', 'subcontract'] },
-  general_contractor: { id: 'general_contractor', label: 'Generalny wykonawca', description: 'Podzleca roboty wykończeniowe; wymaga referencji, płaci po odbiorze z opóźnieniem.', priceFactorBps: 9_500, termDays: [30, 60], reliability: [45, 75], penaltyBpsPerWeek: 400, advanceMaxBps: 1_500, qualityReq: [1, 2], templates: ['subcontract', 'serial_flats', 'local_remont'] },
-  developer: { id: 'developer', label: 'Deweloper', description: 'Seryjne wykończenia lokali; największe kontrakty, najniższe ceny, najdłuższe terminy płatności.', priceFactorBps: 9_400, termDays: [45, 60], reliability: [60, 90], penaltyBpsPerWeek: 500, advanceMaxBps: 1_000, qualityReq: [2, 2], templates: ['serial_flats', 'flat_finish'] },
+  property_manager: { id: 'property_manager', label: 'Zarządca nieruchomości', description: 'Remonty lokali i części wspólnych; płaci regularnie, ceni terminowość.', priceFactorBps: 9_800, termDays: [21, 30], reliability: [65, 90], penaltyBpsPerWeek: 250, advanceMaxBps: 2_500, qualityReq: [2, 2], templates: ['finish_package', 'local_remont', 'common_areas', 'flat_turnover'] },
+  private_investor: { id: 'private_investor', label: 'Inwestor prywatny', description: 'Kupuje mieszkania pod wynajem lub sprzedaż; płaci szybko, ale liczy każdą złotówkę.', priceFactorBps: 10_000, termDays: [7, 21], reliability: [55, 90], penaltyBpsPerWeek: 200, advanceMaxBps: 3_000, qualityReq: [2, 3], templates: ['flat_finish', 'finish_package', 'flat_turnover', 'floor_series'] },
+  builder: { id: 'builder', label: 'Firma budowlana', description: 'Zleca wykończenia części inwestycji; długie terminy płatności, kary za opóźnienia.', priceFactorBps: 9_600, termDays: [30, 45], reliability: [50, 80], penaltyBpsPerWeek: 300, advanceMaxBps: 2_000, qualityReq: [1, 2], templates: ['local_remont', 'finish_package', 'subcontract', 'common_areas', 'floor_series'] },
+  general_contractor: { id: 'general_contractor', label: 'Generalny wykonawca', description: 'Podzleca roboty wykończeniowe; wymaga referencji, płaci po odbiorze z opóźnieniem.', priceFactorBps: 9_500, termDays: [30, 60], reliability: [45, 75], penaltyBpsPerWeek: 400, advanceMaxBps: 1_500, qualityReq: [1, 2], templates: ['subcontract', 'serial_flats', 'local_remont', 'floor_series', 'warranty_fixes'] },
+  developer: { id: 'developer', label: 'Deweloper', description: 'Seryjne wykończenia lokali; największe kontrakty, najniższe ceny, najdłuższe terminy płatności.', priceFactorBps: 9_400, termDays: [45, 60], reliability: [60, 90], penaltyBpsPerWeek: 500, advanceMaxBps: 1_000, qualityReq: [2, 2], templates: ['serial_flats', 'flat_finish', 'floor_series', 'warranty_fixes'] },
+  housing_coop: { id: 'housing_coop', label: 'Spółdzielnia mieszkaniowa', description: 'Remonty klatek, korytarzy i lokali z zasobu; ceni rzetelność i niskie ceny, płaci po odbiorze przez zarząd.', priceFactorBps: 9_700, termDays: [30, 45], reliability: [60, 85], penaltyBpsPerWeek: 250, advanceMaxBps: 2_000, qualityReq: [1, 2], templates: ['common_areas', 'flat_turnover', 'warranty_fixes', 'finish_package'] },
+  retail_chain: { id: 'retail_chain', label: 'Sieć handlowa / franczyza', description: 'Wykończenia lokali usługowych pod termin otwarcia; płaci szybciej i lepiej, ale wymaga jakości i karze za opóźnienia.', priceFactorBps: 10_200, termDays: [14, 30], reliability: [60, 90], penaltyBpsPerWeek: 450, advanceMaxBps: 2_500, qualityReq: [2, 3], templates: ['shop_fitout', 'local_remont'] },
 };
 
 export const B2B_CLIENT_POOL: readonly { name: string; kind: B2BKind; size: B2BClient['size'] }[] = [
@@ -49,7 +51,17 @@ export const B2B_CLIENT_POOL: readonly { name: string; kind: B2BKind; size: B2BC
   { name: 'Konsorcjum Budowlane Pojezierze (fikcyjne)', kind: 'general_contractor', size: 'large' },
   { name: 'Deweloper Nowe Jaroty (fikcyjny)', kind: 'developer', size: 'medium' },
   { name: 'Osiedla Olsztyn Park (fikcyjne)', kind: 'developer', size: 'large' },
+  { name: 'Spółdzielnia Mieszkaniowa Podzamcze (fikcyjna)', kind: 'housing_coop', size: 'medium' },
+  { name: 'Spółdzielnia Mieszkaniowa Zatorze (fikcyjna)', kind: 'housing_coop', size: 'small' },
+  { name: 'Spółdzielnia Mieszkaniowa Nagórki (fikcyjna)', kind: 'housing_coop', size: 'large' },
+  { name: 'Delikatesy Pod Zamkiem — sieć (fikcyjna)', kind: 'retail_chain', size: 'medium' },
+  { name: 'Drogerie Lawenda — franczyza (fikcyjna)', kind: 'retail_chain', size: 'small' },
+  { name: 'Warmia Fit — sieć klubów (fikcyjna)', kind: 'retail_chain', size: 'large' },
+  { name: 'Warmia Dom Development (fikcyjny)', kind: 'developer', size: 'small' },
+  { name: 'Remont-Serwis Mazury — generalny wykonawca (fikcyjny)', kind: 'general_contractor', size: 'small' },
 ];
+/** Liczba klientów z pierwszej wersji puli (v0.8.1): ich parametry losuje wspólny strumień, kolejni — osobne strumienie (stare zapisy dostają resztę puli bez zmiany istniejących klientów). */
+export const B2B_LEGACY_POOL = 10;
 
 export interface PackageSpec { key: string; label: string; stage: PackageStage; serviceId: string; units: number; deps: string[] }
 
@@ -64,6 +76,8 @@ export interface TemplateDef {
   areaRange: readonly [number, number];
   flatsRange: readonly [number, number];
   spec: (area: number, flats: number) => PackageSpec[];
+  /** Tytuł projektu; domyślnie „etykieta: m² × lokali”. */
+  title?: (area: number, flats: number) => string;
 }
 
 export const PROJECT_TEMPLATES: Record<ProjectTemplateId, TemplateDef> = {
@@ -117,6 +131,54 @@ export const PROJECT_TEMPLATES: Record<ProjectTemplateId, TemplateDef> = {
       { key: 'b', label: 'Malowanie (podzlecenie)', stage: 'wykonczenie', serviceId: 'malowanie', units: r5(W), deps: ['a'] },
     ],
   },
+  common_areas: {
+    id: 'common_areas', label: 'Malowanie części wspólnych', description: 'Klatki schodowe i korytarze budynku: przygotowanie, malowanie ścian i sufitów, poprawki.',
+    areaRange: [250, 900], flatsRange: [1, 1],
+    spec: (W) => [
+      { key: 'a', label: 'Zabezpieczenie i drobne naprawy', stage: 'przygotowanie', serviceId: 'drobne', units: hrs(0.05 * W), deps: [] },
+      { key: 'b', label: 'Malowanie ścian i sufitów', stage: 'wykonczenie', serviceId: 'malowanie', units: r5(W), deps: ['a'] },
+      { key: 'c', label: 'Poprawki i odbiór', stage: 'prace_koncowe', serviceId: 'drobne', units: hrs(0.03 * W), deps: ['b'] },
+    ],
+  },
+  flat_turnover: {
+    id: 'flat_turnover', label: 'Odświeżenie lokali po najemcach', description: 'Kilka lokali pod wynajem: naprawa ścian, malowanie i drobne prace — krótko i po kolei.',
+    areaRange: [30, 60], flatsRange: [3, 8],
+    spec: (A, K) => [
+      { key: 'a', label: 'Przegląd i naprawy lokali', stage: 'przygotowanie', serviceId: 'drobne', units: hrs(0.1 * A * K), deps: [] },
+      { key: 'b', label: 'Poprawki gładzi', stage: 'roboty', serviceId: 'gladzie', units: r5(0.9 * A * K), deps: ['a'] },
+      { key: 'c', label: 'Malowanie lokali', stage: 'wykonczenie', serviceId: 'malowanie', units: r5(2.8 * A * K), deps: ['b'] },
+      { key: 'd', label: 'Sprzątanie i odbiór lokali', stage: 'prace_koncowe', serviceId: 'drobne', units: hrs(0.08 * A * K), deps: ['c'] },
+    ],
+  },
+  floor_series: {
+    id: 'floor_series', label: 'Podłogi w serii lokali', description: 'Montaż paneli w kilku lub kilkunastu mieszkaniach jednej inwestycji; sama podłoga, bez robót mokrych.',
+    areaRange: [35, 65], flatsRange: [3, 14],
+    spec: (A, K) => [
+      { key: 'a', label: 'Podłogi — panele (seria)', stage: 'wykonczenie', serviceId: 'panele', units: r5(0.85 * A * K), deps: [] },
+      { key: 'b', label: 'Listwy, poprawki i odbiory', stage: 'prace_koncowe', serviceId: 'drobne', units: hrs(0.1 * A * K), deps: ['a'] },
+    ],
+  },
+  shop_fitout: {
+    id: 'shop_fitout', label: 'Wykończenie lokalu usługowego', description: 'Sklep, drogeria lub salon sieci: gładzie, malowanie i podłoga pod konkretny termin otwarcia.',
+    areaRange: [40, 140], flatsRange: [1, 1],
+    spec: (A) => [
+      { key: 'a', label: 'Przygotowanie lokalu', stage: 'przygotowanie', serviceId: 'drobne', units: hrs(0.15 * A), deps: [] },
+      { key: 'b', label: 'Gładzie ścian', stage: 'roboty', serviceId: 'gladzie', units: r5(1.6 * A), deps: ['a'] },
+      { key: 'c', label: 'Malowanie', stage: 'wykonczenie', serviceId: 'malowanie', units: r5(2.2 * A), deps: ['b'] },
+      { key: 'd', label: 'Podłoga — panele', stage: 'wykonczenie', serviceId: 'panele', units: r5(0.9 * A), deps: ['c'] },
+      { key: 'e', label: 'Prace końcowe i odbiór', stage: 'prace_koncowe', serviceId: 'drobne', units: hrs(0.1 * A), deps: ['d'] },
+    ],
+  },
+  warranty_fixes: {
+    id: 'warranty_fixes', label: 'Usterki i poprawki odbiorowe', description: 'Lista usterek z odbiorów lokali: drobne naprawy i retusze malarskie — mały, szybki kontrakt na dobry początek współpracy.',
+    areaRange: [35, 55], flatsRange: [6, 20],
+    title: (_A, K) => `Usterki i poprawki odbiorowe: ${K} lokali`,
+    spec: (_A, K) => [
+      { key: 'a', label: 'Naprawy usterek', stage: 'roboty', serviceId: 'drobne', units: hrs(2.5 * K), deps: [] },
+      { key: 'b', label: 'Retusze malarskie', stage: 'wykonczenie', serviceId: 'malowanie', units: r5(18 * K), deps: ['a'] },
+      { key: 'c', label: 'Odbiór poprawek', stage: 'prace_koncowe', serviceId: 'drobne', units: hrs(0.5 * K), deps: ['b'] },
+    ],
+  },
 };
 
 /** Granice wartości (netto) poziomów projektów: poziom 1 < 25 tys., poziom 2 < 90 tys., poziom 3 — powyżej. */
@@ -136,17 +198,26 @@ export const TIER_REQUIREMENTS: Record<1 | 2 | 3, { minCompleted: number; minVal
 
 export const B2B_RULES = {
   /** Zapytania B2B nie są nieograniczone: jedno losowanie tygodniowo (poniedziałek), limity otwartych i aktywnych projektów. */
-  weeklyBaseBps: 1_100,
-  weeklyMaxBps: 3_000,
-  maxOpen: 2,
+  weeklyBaseBps: 2_500,
+  weeklyMaxBps: 5_500,
+  maxOpen: 4,
   maxActive: 3,
   /** Szansa, że zapytanie dotyczy projektu o poziom wyższego niż aktualnie dostępny (widać wymagania, ale nie można go wycenić). */
   stretchChanceBps: 1_500,
+  /** Szansa, że firma z poziomem ≥ 2 dostaje zapytanie o poziom niższy (drobniejsze kontrakty obok dużych). */
+  lowerTierChanceBps: 4_000,
+  /** Minimalny odstęp między zapytaniami od tego samego klienta (dni). */
+  clientCooldownDays: 14,
   respondDays: [10, 18] as const,
   decideDays: [3, 6] as const,
   signDays: 7,
   /** Zwłoka płatnika: do (100 − rzetelność) × 0,4 dni ponad umowny termin. */
   delayPerReliabilityPt: 0.4,
+  /**
+   * Jaką część „idealnej” mocy (wykonawcy × 8 godz. × każdy dzień kalendarzowy) klient uwzględnia w oknie realizacji: właściciel pracuje we wszystkie dni, zatrudnieni tylko w dni robocze,
+   * a większa ekipa traci na koordynacji i tempie (pkt bazowe wg poziomu projektu). Wcześniej okno zakładało 100% i przy poziomie 3 było nie do spełnienia nawet z 4 wykonawcami.
+   */
+  windowCapacityBps: { 1: 10_000, 2: 7_500, 3: 5_500 } as const,
   /** Zapas czasu w planie względem minimalnego czasu pracy: ekipa z właścicielem / bez właściciela. */
   slackOwner: 1.4,
   slackCrew: 1.6,

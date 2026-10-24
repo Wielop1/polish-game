@@ -4,11 +4,11 @@ import { addDays, diffDays, formatDatePL } from '../../engine/date.ts';
 import { formatPLN, zl } from '../../engine/money.ts';
 import { commands } from '../../engine/commands.ts';
 import { ownerAvailable } from '../../engine/operator.ts';
-import { B2B_KINDS, PROJECT_TEMPLATES, STAGE_LABEL, STAGE_ORDER, TIER_LABEL, TIER_REQUIREMENTS } from '../../engine/projectsCatalog.ts';
+import { B2B_KINDS, B2B_RULES, PROJECT_TEMPLATES, STAGE_LABEL, STAGE_ORDER, TIER_LABEL, TIER_REQUIREMENTS } from '../../engine/projectsCatalog.ts';
 import { PROJECT_STATUS_LABEL, SEGMENT_LABEL, companyReferences, defaultPlanInput, planProject, projectAcceptance, requirementChecks, segmentComparison } from '../../engine/projects.ts';
 import type { ProjectPlan, ProjectPlanInput } from '../../engine/projects.ts';
 import { SERVICE_BY_ID } from '../../engine/renovationCatalog.ts';
-import { crewKey, jobFinancials, jobForecast } from '../../engine/renovation.ts';
+import { crewKey, jobFinancials, jobForecast, parseCrewKey } from '../../engine/renovation.ts';
 import type { RenoProject } from '../../engine/state.ts';
 import { activeEmployments, personById, personName } from '../../engine/workforce.ts';
 import { currentOperator } from '../../engine/operator.ts';
@@ -67,11 +67,11 @@ export function B2BClientsScreen() {
       <ScreenHeader title="Klienci B2B" subtitle="Zarządcy, inwestorzy, firmy budowlane, generalni wykonawcy i deweloperzy — większe kontrakty z dłuższymi terminami płatności." />
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard icon="user" label="Twój poziom dostępu" value={refs.tier === 0 ? 'brak' : `poziom ${refs.tier}`} hint={TIER_LABEL[refs.tier]} accent={refs.tier > 0 ? 'gain' : 'gold'} testId="b2b-tier" />
-        <StatCard icon="user" label="Otwarte zapytania" value={`${open.length}`} hint="najwyżej 2 naraz — zapytania B2B są rzadkie" accent="sky" />
+        <StatCard icon="user" label="Otwarte zapytania" value={`${open.length}`} hint={`najwyżej ${B2B_RULES.maxOpen} naraz — wygasają, jeśli ich nie wycenisz`} accent="sky" />
         <StatCard icon="briefcase" label="Ukończone projekty" value={`${refs.projectsDone.reduce((a, x) => a + x, 0)}`} hint="budują referencje i zaufanie klientów" accent="gain" />
       </div>
       <Card title="Klienci">
-        {clients.length === 0 ? <Empty>Lista klientów powstaje wraz z pierwszym tygodniem działalności. Zapytania B2B pojawiają się rzadko — po kilku ukończonych kontraktach i dobrych opiniach.</Empty> : (
+        {clients.length === 0 ? <Empty>Lista klientów powstaje wraz z pierwszym tygodniem działalności. Zapytania B2B zaczynają się sensownie pojawiać po kilku ukończonych kontraktach; im lepsze opinie i więcej ukończonych projektów, tym częściej.</Empty> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-sm" data-testid="b2b-clients">
               <thead className="text-left text-xs tracking-wide text-slate-500 uppercase"><tr><th className="pb-2 font-medium">Klient</th><th className="pb-2 font-medium">Typ</th><th className="pb-2 text-right font-medium">Płatność</th><th className="pb-2 text-right font-medium">Rzetelność płatnika</th><th className="pb-2 text-right font-medium">Zaufanie do Ciebie</th><th className="pb-2 text-right font-medium">Projekty</th></tr></thead>
@@ -105,14 +105,34 @@ export function B2BClientsScreen() {
 
 /* ---------- 2. Większe projekty ---------- */
 
-function crewOptions(game: ReturnType<typeof useOpGame>): { value: string; label: string }[] {
+const subLabel = (name: string) => name.replace(' (fikcyjna)', '').replace(' (fikcyjny)', '');
+
+/** Nazwa ekipy z klucza (`crew:…` / `sub:…`) — także dla składów spoza listy wyboru, np. zaproponowanych domyślnie. */
+function crewLabel(game: ReturnType<typeof useOpGame>, key: string | null): string {
+  const members = parseCrewKey(key);
+  if (!members) return 'Właściciel samodzielnie';
+  return members.map((m) => {
+    if (m.kind === 'owner') return 'Właściciel';
+    if (m.kind === 'sub') { const sub = game.ops.subcontractors.find((x) => x.id === m.id); return `podwykonawca ${sub ? subLabel(sub.name) : '?'}`; }
+    const e = activeEmployments(game).find((x) => x.id === m.id);
+    const p = e ? personById(game, e.personId) : undefined;
+    return p ? personName(p) : 'pracownik';
+  }).join(' + ');
+}
+
+function crewOptions(game: ReturnType<typeof useOpGame>, serviceId?: string): { value: string; label: string }[] {
   const out: { value: string; label: string }[] = [];
   const emps = activeEmployments(game);
+  const empMembers = emps.map((e) => ({ kind: 'employee' as const, id: e.id }));
+  const subs = game.ops.subcontractors.filter((x) => !serviceId || x.services.includes(serviceId));
   if (ownerAvailable(game)) out.push({ value: '', label: 'Właściciel samodzielnie' });
   for (const e of emps) { const p = personById(game, e.personId); if (p) out.push({ value: crewKey([{ kind: 'employee', id: e.id }]), label: `Pracownik: ${personName(p)}` }); }
   if (ownerAvailable(game)) for (const e of emps) { const p = personById(game, e.personId); if (p) out.push({ value: crewKey([{ kind: 'owner', id: 'owner' }, { kind: 'employee', id: e.id }]), label: `Właściciel + ${personName(p)}` }); }
-  if (emps.length > 1) out.push({ value: crewKey(emps.map((e) => ({ kind: 'employee' as const, id: e.id }))), label: `Wszyscy pracownicy (${emps.length})` });
-  for (const sub of game.ops.subcontractors) out.push({ value: `sub:${sub.id}`, label: `Podwykonawca: ${sub.name.replace(' (fikcyjna)', '').replace(' (fikcyjny)', '')}` });
+  if (emps.length > 1) out.push({ value: crewKey(empMembers), label: `Wszyscy pracownicy (${emps.length})` });
+  if (emps.length > 1 && ownerAvailable(game)) out.push({ value: crewKey([{ kind: 'owner', id: 'owner' }, ...empMembers]), label: `Właściciel + wszyscy pracownicy (${emps.length})` });
+  for (const sub of subs) out.push({ value: `sub:${sub.id}`, label: `Podwykonawca: ${subLabel(sub.name)}` });
+  if (subs.length > 1) out.push({ value: crewKey(subs.map((x) => ({ kind: 'sub' as const, id: x.id }))), label: `Wszyscy podwykonawcy tej usługi (${subs.length})` });
+  if (emps.length > 0) for (const sub of subs) out.push({ value: crewKey([...empMembers, { kind: 'sub', id: sub.id }]), label: `Wszyscy pracownicy + podwykonawca ${subLabel(sub.name)}` });
   return out;
 }
 
@@ -143,7 +163,6 @@ function QuoteBuilder({ project }: { project: RenoProject }) {
   // po przesunięciu czasu zapamiętany start mógłby wypaść w przeszłości — przesuwamy go na jutro
   const eff: ProjectPlanInput = { ...input, startDate: input.startDate > game.clock.today ? input.startDate : addDays(game.clock.today, 1), totalPriceNet: price ?? input.totalPriceNet };
   const plan = useMemo(() => planProject(game, project, eff), [game, project, input, price]); // eslint-disable-line react-hooks/exhaustive-deps
-  const options = crewOptions(game);
   const accept = projectAcceptanceHint(plan, project);
   return (
     <div className="mt-3 grid gap-4 lg:grid-cols-2" data-testid={`quote-builder-${project.id}`}>
@@ -157,18 +176,21 @@ function QuoteBuilder({ project }: { project: RenoProject }) {
         <div className="rounded-xl border border-ink-700 p-3">
           <div className="mb-2 text-xs font-semibold tracking-wide text-slate-400 uppercase">Pakiety robót i wykonawcy</div>
           <ul className="space-y-2 text-sm">
-            {plan.packages.map((x) => (
+            {plan.packages.map((x) => {
+              const options = crewOptions(game, x.pkg.serviceId);
+              return (
               <li key={x.pkg.id} className="grid grid-cols-[1fr_auto] gap-2" data-testid={`pkg-row-${x.pkg.id}`}>
                 <div>
                   <div className="text-slate-200">{x.pkg.label} <span className="text-xs text-slate-500">· {x.pkg.units} {SERVICE_BY_ID.get(x.pkg.serviceId)!.unit}{x.pkg.complexity === 'trudne' ? ' · trudne' : ''}</span></div>
                   <div className="text-xs text-slate-500">{formatDatePL(x.startDate)} → {formatDatePL(x.endDate)} ({x.durationDays} dni{x.hoursPerDay < (input.hoursPerDay ?? 6) ? `, ${x.hoursPerDay} godz./dzień` : ''}) · nadwyżka <Money value={x.preview.economics.surplusBeforeOwner} signed /></div>
                 </div>
                 <select aria-label={`Wykonawcy: ${x.pkg.label}`} className={cx(field, 'w-56')} value={x.crewKey ?? ''} onChange={(e) => setInput({ ...input, crews: { ...(input.crews ?? {}), [x.pkg.id]: e.target.value === '' ? null : e.target.value } })}>
-                  {!options.some((o) => o.value === (x.crewKey ?? '')) && <option value={x.crewKey ?? ''}>{x.crewKey ?? 'Właściciel'}</option>}
+                  {!options.some((o) => o.value === (x.crewKey ?? '')) && <option value={x.crewKey ?? ''}>{crewLabel(game, x.crewKey)}</option>}
                   {options.map((o) => <option key={o.value || 'owner'} value={o.value}>{o.label}</option>)}
                 </select>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </div>
       </div>
@@ -265,11 +287,11 @@ export function ProjectsScreen() {
       <ScreenHeader title="Większe projekty" subtitle="Wykończenie całego mieszkania, remont lokalu, pakiet prac, seria lokali i podzlecenia. Projekt składa się z pakietów robót, które ruszają po odbiorze poprzednich." />
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard icon="shield" label="Dostęp do projektów" value={refs.tier === 0 ? 'jeszcze brak' : `poziom ${refs.tier}`} hint={TIER_LABEL[refs.tier]} accent={refs.tier > 0 ? 'gain' : 'gold'} />
-        <StatCard icon="trend" label="W realizacji" value={`${game.reno.projects.filter((p) => p.status === 'signed').length}`} hint="najwyżej 3 naraz" accent="sky" />
+        <StatCard icon="trend" label="W realizacji" value={`${game.reno.projects.filter((p) => p.status === 'signed').length}`} hint={`najwyżej ${B2B_RULES.maxActive} naraz`} accent="sky" />
         <StatCard icon="briefcase" label="Ukończone kontrakty" value={`${refs.completedJobs}`} hint={`ocena ${stars(refs.avgRating10)}`} accent="gain" />
       </div>
       <Card title="Zapytania i projekty w toku">
-        {active.length === 0 ? <Empty>Brak zapytań o większe projekty. Pojawiają się rzadko — częściej przy dobrych opiniach, ukończonych projektach i marketingu „współpraca z przedsiębiorcami”. Zobacz „Referencje firmy”, co odblokowuje kolejne poziomy.</Empty> : <div className="space-y-3">{active.map((p) => <ProjectCard key={p.id} p={p} />)}</div>}
+        {active.length === 0 ? <Empty>Brak zapytań o większe projekty. Pojawiają się co kilka tygodni — częściej przy dobrych opiniach, ukończonych projektach i marketingu „współpraca z przedsiębiorcami”. Bez ukończonych kontraktów widzisz tylko zapytania „na wyrost” (z listą braków). Zobacz „Referencje firmy”, co odblokowuje kolejne poziomy.</Empty> : <div className="space-y-3">{active.map((p) => <ProjectCard key={p.id} p={p} />)}</div>}
       </Card>
       {past.length > 0 && <Card title="Historia">{<div className="space-y-3">{past.map((p) => <ProjectCard key={p.id} p={p} />)}</div>}</Card>}
       <Calibration />
@@ -377,6 +399,26 @@ export function SegmentComparisonCard({ game }: { game: ReturnType<typeof useOpG
 
 /* ---------- 4. Referencje firmy ---------- */
 
+/** Konkretne wskazówki, czego brakuje do kolejnego poziomu (szczególnie zdolność realizacyjna, która blokuje poziom 3). */
+function NextTierCard({ refs }: { refs: ReturnType<typeof companyReferences> }) {
+  if (refs.tier >= 3) return null;
+  const next = (refs.tier + 1) as 1 | 2 | 3;
+  const req = TIER_REQUIREMENTS[next];
+  const tips: string[] = [];
+  if (refs.completedJobs < req.minCompleted) tips.push(`Ukończ jeszcze ${req.minCompleted - refs.completedJobs} kontraktów (liczą się też pakiety z projektów B2B).`);
+  if (refs.completedValueNet < req.minValueNet) tips.push(`Brakuje ${formatPLN(req.minValueNet - refs.completedValueNet, { round: true })} netto wartości ukończonych kontraktów.`);
+  if (req.minRating10 > 0 && (refs.avgRating10 === null || refs.avgRating10 < req.minRating10)) tips.push(`Podnieś średnią ocenę klientów do ${stars(req.minRating10)} (jakość i terminowość).`);
+  if (req.minProjectTier > 0 && refs.projectsDone.slice(req.minProjectTier - 1).reduce((a, x) => a + x, 0) < 1) tips.push(`Ukończ pierwszy projekt poziomu ${req.minProjectTier}+ — zapytania „na wyrost” o poziom wyżej pojawiają się od czasu do czasu, ale poziomy 2 i 3 wymagają wcześniej ukończonego projektu poziomu niższego.`);
+  if (req.minWorkers > refs.workers) tips.push(`Brakuje ${req.minWorkers - refs.workers} wykonawców. Liczy się: Ty (1) + zatrudnieni pracownicy + do 2 podwykonawców, z którymi zrealizowano już zlecenie. Najtaniej: zleć dwa kontrakty dwóm różnym podwykonawcom albo zatrudnij pracowników.`);
+  return (
+    <Card title={`Droga do poziomu ${next} (${TIER_LABEL[next]})`}>
+      {tips.length === 0 ? <p className="text-sm text-gain">Spełniasz wszystkie progi — poziom {next} odblokuje się przy następnym przeliczeniu referencji.</p> : (
+        <ul className="list-disc space-y-1 pl-5 text-sm text-slate-300" data-testid="next-tier-tips">{tips.map((x) => <li key={x}>{x}</li>)}</ul>
+      )}
+    </Card>
+  );
+}
+
 export function ProjectReferencesScreen() {
   const { game, biz } = useProjects();
   if (!biz) return <NoBusiness title="Referencje firmy" />;
@@ -406,6 +448,7 @@ export function ProjectReferencesScreen() {
           })}
         </div>
       </Card>
+      <NextTierCard refs={refs} />
       <SegmentComparisonCard game={game} />
       <Card title="Historia ukończonych projektów">
         {done.length === 0 ? <Empty>Żaden projekt nie został jeszcze ukończony.</Empty> : (

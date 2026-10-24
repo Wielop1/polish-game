@@ -25,6 +25,7 @@ import rawV6 from './fixtures/save-v6.json?raw';
 import { contract, hireEmployee, jobOf as jobOfKit, runUntil as runUntilKit, buyAll as buyAllKit } from '../engine/testkit.ts';
 import { SAVE_VERSION, parseSave, serializeSave } from './save.ts';
 import { migrateV8ToV9, migrateV9ToV10 } from './migrations.ts';
+import { B2B_CLIENT_POOL } from '../engine/projectsCatalog.ts';
 import expectV8 from './fixtures/save-v8.expect.json';
 import rawV8 from './fixtures/save-v8.json?raw';
 
@@ -746,7 +747,7 @@ describe('migracja zapisu v8 → v9 (prawdziwy zapis wygenerowany przez v0.8: JD
   it('po migracji gra toczy się dalej: niezmienniki OK, pula klientów B2B deterministyczna i bez duplikatów, ponowne wczytanie daje identyczny przebieg', () => {
     const a = advanceDays(migrated, 60);
     expect(checkInvariants(a)).toEqual([]);
-    expect(a.reno.b2bClients.length === 0 || a.reno.b2bClients.length === 10).toBe(true);
+    expect(a.reno.b2bClients.length === 0 || a.reno.b2bClients.length === B2B_CLIENT_POOL.length).toBe(true);
     expect(new Set(a.reno.projects.map((p) => p.id)).size).toBe(a.reno.projects.length);
     const b = advanceDays(parseSave(rawV8).ok ? (parseSave(rawV8) as { state: GameState }).state : migrated, 60);
     expect(b.reno.projects).toEqual(a.reno.projects);

@@ -4,7 +4,7 @@ import { checkInvariants } from './invariants.ts';
 import { currentOperator } from './operator.ts';
 import { zl } from './money.ts';
 import { referencePrice } from './renovationCatalog.ts';
-import { PROJECT_TEMPLATES, TIER_REQUIREMENTS, tierOfValue } from './projectsCatalog.ts';
+import { B2B_CLIENT_POOL, B2B_KINDS, B2B_LEGACY_POOL, B2B_RULES, PROJECT_TEMPLATES, TIER_REQUIREMENTS, tierOfValue } from './projectsCatalog.ts';
 import { suggestCrews, buildProject, companyReferences, defaultPlanInput, ensureB2BPool, planProject, projectAcceptance, projectById, projectValueNet, requirementChecks, segmentComparison } from './projects.ts';
 import { advanceDays } from './simulate.ts';
 import { addDays } from './date.ts';
@@ -192,19 +192,34 @@ describe('v0.8.1 · większe projekty: realizacja, zależności, płatności i r
     expect(run()).toEqual(run());
   }, 240_000);
 
-  it('limity: nowa firma widzi rzadkie zapytania B2B (najwyżej 2 otwarte) i żadne nie jest automatycznie przyznane', () => {
+  it('limity: nowa firma widzi rzadkie zapytania B2B (najwyżej 4 otwarte) i żadne nie jest automatycznie przyznane', () => {
     let s = opsGame({ seed: 'proj-gen', equip: ['paint-basic'] });
     let maxOpen = 0;
     for (let d = 0; d < 400; d++) {
       s = advanceDays(s, 1);
       maxOpen = Math.max(maxOpen, s.reno.projects.filter((p) => ['enquiry', 'quoted', 'counter', 'accepted'].includes(p.status)).length);
     }
-    expect(maxOpen).toBeLessThanOrEqual(2);
-    expect(s.reno.projects.length).toBeLessThan(20);
+    expect(maxOpen).toBeLessThanOrEqual(B2B_RULES.maxOpen);
+    expect(s.reno.projects.length).toBeGreaterThan(0);
+    expect(s.reno.projects.length).toBeLessThan(40);
     expect(s.reno.projects.every((p) => p.status !== 'signed' && p.status !== 'done')).toBe(true);
-    expect(s.reno.b2bClients).toHaveLength(10);
+    expect(s.reno.b2bClients).toHaveLength(B2B_CLIENT_POOL.length);
     expect(checkInvariants(s)).toEqual([]);
   }, 240_000);
+
+  it('okno realizacji klienta jest spełnialne: ekipa o wielkości poziomu (3 podwykonawców na pakiet) mieści się w oknie poziomu 3, sam właściciel jest blokowany', () => {
+    const { s, p } = projectGame({ seed: 'proj-window', template: 'serial_flats', client: 8, tier: 3 });
+    const crewOf = (n: number) => Object.fromEntries(p.packages.map((pk) => {
+      const subs = s.ops.subcontractors.filter((x) => x.services.includes(pk.serviceId)).slice(0, n);
+      return [pk.id, subs.length ? crewKey(subs.map((x) => ({ kind: 'sub' as const, id: x.id }))) : null];
+    }));
+    const solo = planProject(s, p, { ...defaultPlanInput(s, p), crews: Object.fromEntries(p.packages.map((pk) => [pk.id, null])) });
+    expect(solo.chainDays).toBeGreaterThan(p.maxDays * 1.5);
+    expect(solo.blockers.join(' ')).toContain('Najdłuższy pakiet');
+    const team3 = planProject(s, p, { ...defaultPlanInput(s, p), crews: crewOf(3) });
+    expect(team3.chainDays).toBeLessThanOrEqual(p.maxDays);
+    expect(team3.blockers.filter((b) => /Harmonogram/.test(b))).toEqual([]);
+  });
 
   it('seria deweloperska (poziom 3) wymaga referencji skali i zespołu — samotny wykonawca bez historii dostaje blokady, a nie projekt', () => {
     const { s, p } = projectGame({ seed: 'proj-t3', open: false, template: 'serial_flats', client: 8, tier: 3 });
@@ -216,21 +231,54 @@ describe('v0.8.1 · większe projekty: realizacja, zależności, płatności i r
 });
 
 describe('v0.8.1 · klienci B2B, referencje i zdolność realizacyjna', () => {
-  it('pula klientów B2B: 10 fikcyjnych podmiotów, deterministyczna z seeda, o różnych typach, terminach płatności i rzetelności', () => {
+  it('pula klientów B2B: 18 fikcyjnych podmiotów, deterministyczna z seeda, o różnych typach, terminach płatności i rzetelności', () => {
     const a = opsGame({ seed: 'pool-a' });
     const b = opsGame({ seed: 'pool-a' });
     const c = opsGame({ seed: 'pool-b' });
     const pa = structuredClone(ensureB2BPool(structuredClone(a)));
     expect(ensureB2BPool(structuredClone(b))).toEqual(pa);
     expect(ensureB2BPool(structuredClone(c))).not.toEqual(pa);
-    expect(pa).toHaveLength(10);
-    expect(new Set(pa.map((x) => x.kind)).size).toBe(5);
+    expect(pa).toHaveLength(B2B_CLIENT_POOL.length);
+    expect(new Set(pa.map((x) => x.kind)).size).toBe(Object.keys(B2B_KINDS).length);
     expect(pa.every((x) => x.name.includes('fikcyjn') && x.termDays >= 7 && x.termDays <= 60 && x.reliability >= 40 && x.relationship === 40)).toBe(true);
     // ponowne wywołanie nie dubluje klientów ani stron
     const s = structuredClone(a);
     ensureB2BPool(s); ensureB2BPool(s);
-    expect(s.reno.b2bClients).toHaveLength(10);
-    expect(Object.keys(s.parties).filter((id) => id.startsWith('party:b2b:'))).toHaveLength(10);
+    expect(s.reno.b2bClients).toHaveLength(B2B_CLIENT_POOL.length);
+    expect(Object.keys(s.parties).filter((id) => id.startsWith('party:b2b:'))).toHaveLength(B2B_CLIENT_POOL.length);
+  });
+
+  it('stary zapis z 10 klientami dostaje resztę puli bez zmiany istniejących klientów (relacja i historia zostają)', () => {
+    const fresh = structuredClone(opsGame({ seed: 'pool-legacy' }));
+    const full = structuredClone(ensureB2BPool(structuredClone(fresh)));
+    const old = structuredClone(fresh);
+    old.reno.b2bClients = full.slice(0, B2B_LEGACY_POOL).map((c, i) => ({ ...c, relationship: 40 + i, projectsDone: i % 2 }));
+    const migrated = ensureB2BPool(old);
+    expect(migrated).toHaveLength(B2B_CLIENT_POOL.length);
+    expect(migrated.slice(0, B2B_LEGACY_POOL).map((c) => [c.relationship, c.projectsDone])).toEqual(old.reno.b2bClients.slice(0, B2B_LEGACY_POOL).map((c) => [c.relationship, c.projectsDone]));
+    expect(migrated.slice(B2B_LEGACY_POOL)).toEqual(full.slice(B2B_LEGACY_POOL));
+    expect(checkInvariants(old)).toEqual([]);
+  });
+
+  it('różnorodność: każdy poziom ma kilka różnych typów projektów, a zapytania nowych klientów (spółdzielnie, sieci handlowe) są wyceniane przez te same reguły', () => {
+    const s = structuredClone(opsGame({ seed: 'proj-variety' }));
+    const clients = ensureB2BPool(s);
+    const op = currentOperator(s)!;
+    const reach = (tier: number) => {
+      const out = new Set<string>();
+      for (const c of clients) for (const tpl of B2B_KINDS[c.kind].templates) if (buildProject(s, op, c, tpl, tier, s.clock.today)) out.add(tpl);
+      return out;
+    };
+    expect(reach(1).size).toBeGreaterThanOrEqual(5);
+    expect(reach(2).size).toBeGreaterThanOrEqual(6);
+    expect(reach(3).size).toBeGreaterThanOrEqual(2);
+    for (const k of ['housing_coop', 'retail_chain'] as const) {
+      const c = clients.find((x) => x.kind === k)!;
+      const p = B2B_KINDS[k].templates.map((tpl) => buildProject(s, op, c, tpl, 1, s.clock.today) ?? buildProject(s, op, c, tpl, 2, s.clock.today)).find((x) => x)!;
+      const plan = planProject(s, p, defaultPlanInput(s, p));
+      expect(plan.packages.length).toBe(p.packages.length);
+      expect(p.requirements).toEqual(TIER_REQUIREMENTS[p.tier as 1 | 2 | 3]);
+    }
   });
 
   it('referencje rosną wyłącznie z rzeczywiście wykonanych robót: ukończone kontrakty odblokowują poziom 1, a ocena i liczba kontraktów mają znaczenie', () => {

@@ -35,6 +35,10 @@ test('v0.8.1: ekrany klientów B2B, projektów, pakietów i referencji renderuj�
   await nav(page, 'Referencje firmy');
   await expect(page.getByRole('heading', { name: 'Referencje firmy' })).toBeVisible();
   await expect(page.getByTestId('tier-ladder')).toContainText('zablokowany');
+  await expect(page.getByTestId('next-tier-tips')).toContainText('Ukończ jeszcze');
+  await nav(page, 'Klienci B2B');
+  await expect(page.getByTestId('b2b-clients')).toContainText('Spółdzielnia mieszkaniowa');
+  await expect(page.getByTestId('b2b-clients')).toContainText('Sieć handlowa');
 });
 
 test('v0.8.1: wycena pokazuje osobno koszty rzeczywiste, nadwyżkę, kalkulacyjną pracę właściciela, zysk ekonomiczny i płynność', async ({ page }) => {

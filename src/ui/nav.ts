@@ -130,7 +130,7 @@ export const NAV_SECTIONS: NavSection[] = [
       items: [
         { id: 'projects', label: 'Większe projekty', icon: 'briefcase', hint: 'Zapytania o wykończenie całych mieszkań i lokali', requires: 'renovation' },
         { id: 'projectPackages', label: 'Pakiety robót', icon: 'list', hint: 'Etapy i pakiety podpisanych projektów', requires: 'renovation' },
-        { id: 'b2bClients', label: 'Klienci B2B', icon: 'user', hint: 'Zarządcy, deweloperzy, firmy budowlane', requires: 'renovation' },
+        { id: 'b2bClients', label: 'Klienci B2B', icon: 'user', hint: 'Zarządcy, spółdzielnie, sieci, deweloperzy', requires: 'renovation' },
         { id: 'projectReferences', label: 'Referencje firmy', icon: 'shield', hint: 'Co odblokowuje większe projekty', requires: 'renovation' },
       ],
     }],
