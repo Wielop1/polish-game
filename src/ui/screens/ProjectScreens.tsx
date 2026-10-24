@@ -179,12 +179,12 @@ function QuoteBuilder({ project }: { project: RenoProject }) {
             {plan.packages.map((x) => {
               const options = crewOptions(game, x.pkg.serviceId);
               return (
-              <li key={x.pkg.id} className="grid grid-cols-[1fr_auto] gap-2" data-testid={`pkg-row-${x.pkg.id}`}>
+              <li key={x.pkg.id} className="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_14rem]" data-testid={`pkg-row-${x.pkg.id}`}>
                 <div>
                   <div className="text-slate-200">{x.pkg.label} <span className="text-xs text-slate-500">· {x.pkg.units} {SERVICE_BY_ID.get(x.pkg.serviceId)!.unit}{x.pkg.complexity === 'trudne' ? ' · trudne' : ''}</span></div>
                   <div className="text-xs text-slate-500">{formatDatePL(x.startDate)} → {formatDatePL(x.endDate)} ({x.durationDays} dni{x.hoursPerDay < (input.hoursPerDay ?? 6) ? `, ${x.hoursPerDay} godz./dzień` : ''}) · nadwyżka <Money value={x.preview.economics.surplusBeforeOwner} signed /></div>
                 </div>
-                <select aria-label={`Wykonawcy: ${x.pkg.label}`} className={cx(field, 'w-56')} value={x.crewKey ?? ''} onChange={(e) => setInput({ ...input, crews: { ...(input.crews ?? {}), [x.pkg.id]: e.target.value === '' ? null : e.target.value } })}>
+                <select aria-label={`Wykonawcy: ${x.pkg.label}`} className={cx(field, 'py-1.5 text-xs')} value={x.crewKey ?? ''} onChange={(e) => setInput({ ...input, crews: { ...(input.crews ?? {}), [x.pkg.id]: e.target.value === '' ? null : e.target.value } })}>
                   {!options.some((o) => o.value === (x.crewKey ?? '')) && <option value={x.crewKey ?? ''}>{crewLabel(game, x.crewKey)}</option>}
                   {options.map((o) => <option key={o.value || 'owner'} value={o.value}>{o.label}</option>)}
                 </select>

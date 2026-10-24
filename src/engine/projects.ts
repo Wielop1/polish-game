@@ -124,6 +124,12 @@ export function projectValueNet(templateId: ProjectTemplateId, area: number, fla
   return PROJECT_TEMPLATES[templateId].spec(area, flats).reduce((a, p) => a + referencePrice(p.serviceId, p.units, 'standard', 2), 0);
 }
 
+/** Okno realizacji klienta (dni kalendarzowe): ścieżka krytyczna przy ekipie założonej przez klienta (poziom 1 — jeden wykonawca, 2 — dwóch, 3 — trzech; 8 godz. dziennie) z realną wydajnością ekipy (dni robocze, koordynacja, tempo) i zapasem. Czysta funkcja pakietów. */
+export function projectWindowDays(packages: readonly RenoPackage[], tier: 1 | 2 | 3): number {
+  const dayOf = (p: RenoPackage) => Math.ceil(normCenti(p.serviceId, p.units, p.complexity) / mulBps(800 * tier, B2B_RULES.windowCapacityBps[tier])) + 1;
+  return Math.ceil(packages.reduce((a, p) => a + dayOf(p), 0) * 1.5) + 7;
+}
+
 export function buildProject(s: GameState, b: Operator, client: B2BClient, templateId: ProjectTemplateId, wantedTier: number, date: IsoDate): RenoProject | null {
   const rng = createRng(s.seed, `b2b:project:${b.id}:${date}`);
   const tpl = PROJECT_TEMPLATES[templateId];
@@ -155,9 +161,7 @@ export function buildProject(s: GameState, b: Operator, client: B2BClient, templ
   const budgetNet = roundTen(roundDiv(mulBps(refTotal, kind.priceFactorBps) * rng.int(95, 110), 100));
   const walkAwayNet = roundTen(roundDiv(budgetNet * rng.int(104, 114), 100));
   // okno klienta: ścieżka krytyczna przy ekipie założonej przez klienta (poziom 1 — jeden wykonawca, 2 — dwóch, 3 — trzech; 8 godz. dziennie) z realną wydajnością ekipy (dni robocze, koordynacja, tempo), w dniach kalendarzowych z zapasem
-  const dayOf = (p: RenoPackage) => Math.ceil(normCenti(p.serviceId, p.units, p.complexity) / mulBps(800 * tier, B2B_RULES.windowCapacityBps[tier as 1 | 2 | 3])) + 1;
-  const chain = packages.reduce((a, p) => a + dayOf(p), 0);
-  const maxDays = Math.ceil(chain * 1.5) + 7;
+  const maxDays = projectWindowDays(packages, tier as 1 | 2 | 3);
   return {
     id, businessId: b.id, b2bId: client.id, clientId: `party:${client.id}`, clientName: client.name, templateId, title: tpl.title ? tpl.title(area, flats) : `${tpl.label}: ${area} m²${flats > 1 ? ` × ${flats} lokali` : ''}`,
     location: DISTRICTS[rng.int(0, DISTRICTS.length - 1)]!, tier: tier as 1 | 2 | 3, areaM2: area, flats, status: 'enquiry', receivedOn: date,
@@ -587,6 +591,8 @@ export function processProjects(s: GameState, b: Operator, date: IsoDate): void 
   const st = reno(s);
   ensureB2BPool(s);
   if (st.projects.length === 0 && st.jobs.filter((j) => j.stage === 'done').length === 0) { rollB2BEnquiry(s, b, date); return; }
+  // okno klienta wynika wyłącznie z pakietów i poziomu — zapytania sprzed korekty okna (ADR-088) dostają aktualną wartość
+  for (const p of st.projects) if (p.status === 'enquiry' || p.status === 'quoted') p.maxDays = projectWindowDays(p.packages, p.tier as 1 | 2 | 3);
   for (const p of st.projects) {
     if (p.status === 'enquiry' && date > p.respondBy) { p.status = 'expired'; p.note = 'Termin odpowiedzi minął'; }
     else if (p.status === 'quoted' && p.quote && date >= p.quote.decideOn) decideProject(s, p, date);

@@ -5,7 +5,7 @@ import { currentOperator } from './operator.ts';
 import { zl } from './money.ts';
 import { referencePrice } from './renovationCatalog.ts';
 import { B2B_CLIENT_POOL, B2B_KINDS, B2B_LEGACY_POOL, B2B_RULES, PROJECT_TEMPLATES, TIER_REQUIREMENTS, tierOfValue } from './projectsCatalog.ts';
-import { suggestCrews, buildProject, companyReferences, defaultPlanInput, ensureB2BPool, planProject, projectAcceptance, projectById, projectValueNet, requirementChecks, segmentComparison } from './projects.ts';
+import { suggestCrews, buildProject, companyReferences, defaultPlanInput, ensureB2BPool, planProject, projectAcceptance, projectById, projectValueNet, projectWindowDays, requirementChecks, segmentComparison } from './projects.ts';
 import { advanceDays } from './simulate.ts';
 import { addDays } from './date.ts';
 import type { GameState, RenoProject } from './state.ts';
@@ -219,6 +219,15 @@ describe('v0.8.1 · większe projekty: realizacja, zależności, płatności i r
     const team3 = planProject(s, p, { ...defaultPlanInput(s, p), crews: crewOf(3) });
     expect(team3.chainDays).toBeLessThanOrEqual(p.maxDays);
     expect(team3.blockers.filter((b) => /Harmonogram/.test(b))).toEqual([]);
+  });
+
+  it('otwarte zapytanie ze starym oknem klienta dostaje aktualne okno przy najbliższym przeliczeniu dnia', () => {
+    const { s, p } = projectGame({ seed: 'proj-window-legacy', template: 'serial_flats', client: 8, tier: 3 });
+    const old = structuredClone(s);
+    projectById(old, p.id)!.maxDays = 96;
+    const next = advanceDays(old, 1);
+    expect(projectById(next, p.id)!.maxDays).toBe(projectWindowDays(p.packages, 3));
+    expect(projectById(next, p.id)!.maxDays).toBeGreaterThan(96);
   });
 
   it('seria deweloperska (poziom 3) wymaga referencji skali i zespołu — samotny wykonawca bez historii dostaje blokady, a nie projekt', () => {
